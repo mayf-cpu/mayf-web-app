@@ -1,0 +1,6 @@
+{
+  "name": "Maths at Your Fingertips",
+  "description": "The authoritative digital math companion for Class 5–10 students. Master formulas, chapter materials, and get step-by-step guidance from the AI Teacher.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
