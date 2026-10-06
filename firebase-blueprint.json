@@ -1,0 +1,430 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile information separated from security claims.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 256 },
+        "displayName": { "type": "string", "maxLength": 120 },
+        "photoURL": { "type": "string", "maxLength": 1000 },
+        "studentClass": { "type": "string", "enum": ["Class 5", "Class 6", "Class 7", "Class 8", "Class 9", "Class 10"] },
+        "board": { "type": "string", "enum": ["CBSE", "ICSE", "State Board"] },
+        "phoneNumber": { "type": "string", "maxLength": 30 },
+        "streakDays": { "type": "number" },
+        "lastActiveDate": { "type": "string", "maxLength": 30 },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["uid", "email", "studentClass", "board"]
+    },
+    "ContentItem": {
+      "title": "Content Item",
+      "description": "Educational resource item including worksheets, videos, formulas, PDFs, and tests.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 200 },
+        "slug": { "type": "string", "maxLength": 200 },
+        "shortDescription": { "type": "string", "maxLength": 300 },
+        "description": { "type": "string", "maxLength": 5000 },
+        "classLevels": { "type": "array" },
+        "categoryId": { "type": "string", "maxLength": 100 },
+        "subcategoryId": { "type": "string", "maxLength": 100 },
+        "topic": { "type": "string", "maxLength": 150 },
+        "contentType": {
+          "type": "string",
+          "enum": ["pdf", "multiImage", "singleImage", "video", "reel", "youtube", "facebook", "testPaper", "worksheet", "formulaSheet", "course", "other"]
+        },
+        "thumbnail": { "type": "string", "maxLength": 1000 },
+        "files": { "type": "array" },
+        "embedUrl": { "type": "string", "maxLength": 1000 },
+        "source": { "type": "string", "maxLength": 100 },
+        "accessType": { "type": "string", "enum": ["free", "paid"] },
+        "price": { "type": "number" },
+        "currency": { "type": "string", "maxLength": 10 },
+        "annualPassIncluded": { "type": "boolean" },
+        "downloadAllowed": { "type": "boolean" },
+        "visible": { "type": "boolean" },
+        "featured": { "type": "boolean" },
+        "trending": { "type": "boolean" },
+        "tags": { "type": "array" },
+        "searchTerms": { "type": "array" },
+        "seoTitle": { "type": "string", "maxLength": 200 },
+        "seoDescription": { "type": "string", "maxLength": 350 },
+        "socialImage": { "type": "string", "maxLength": 1000 },
+        "sortOrder": { "type": "number" },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 },
+        "publishedAt": { "type": "string", "maxLength": 50 },
+        "viewCount": { "type": "number" },
+        "downloadCount": { "type": "number" }
+      },
+      "required": ["id", "title", "slug", "classLevels", "contentType", "accessType", "visible"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Math subject categories (Number System, Algebra, Geometry, etc.).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 100 },
+        "name": { "type": "string", "maxLength": 100 },
+        "slug": { "type": "string", "maxLength": 100 },
+        "sortOrder": { "type": "number" },
+        "subcategories": { "type": "array" }
+      },
+      "required": ["id", "name", "slug"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "User purchase orders. Normal users cannot modify.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["created", "pending", "completed", "failed", "refunded"] },
+        "amount": { "type": "number" },
+        "currency": { "type": "string", "maxLength": 10 },
+        "items": { "type": "array" },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "userId", "status", "amount", "currency"]
+    },
+    "Payment": {
+      "title": "Payment Record",
+      "description": "Server-reconciled gateway payments. Highly sensitive.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "orderId": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "gateway": { "type": "string", "maxLength": 50 },
+        "gatewayTransactionId": { "type": "string", "maxLength": 200 },
+        "status": { "type": "string", "enum": ["authorized", "captured", "failed", "refunded"] },
+        "amount": { "type": "number" },
+        "currency": { "type": "string", "maxLength": 10 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "orderId", "userId", "status", "amount"]
+    },
+    "Entitlement": {
+      "title": "User Entitlement",
+      "description": "Access grant to content items. Normal users cannot modify.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "contentItemId": { "type": "string", "maxLength": 128 },
+        "grantedBy": { "type": "string", "enum": ["direct_purchase", "annual_pass", "admin_grant"] },
+        "validUntil": { "type": "string", "maxLength": 50 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "userId", "contentItemId", "grantedBy"]
+    },
+    "AnnualPass": {
+      "title": "Annual Pass Subscription",
+      "description": "Annual pass subscription record. Only server can mutate.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["active", "expired", "cancelled", "refunded"] },
+        "startDate": { "type": "string", "maxLength": 50 },
+        "endDate": { "type": "string", "maxLength": 50 },
+        "orderId": { "type": "string", "maxLength": 128 },
+        "academicYear": { "type": "string", "maxLength": 20 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "userId", "status", "startDate", "endDate"]
+    },
+    "Coupon": {
+      "title": "Discount Coupon",
+      "description": "Promotional discount codes managed by admin.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 50 },
+        "code": { "type": "string", "maxLength": 50 },
+        "discountType": { "type": "string", "enum": ["percentage", "fixed"] },
+        "discountValue": { "type": "number" },
+        "maxUses": { "type": "number" },
+        "usedCount": { "type": "number" },
+        "validUntil": { "type": "string", "maxLength": 50 },
+        "active": { "type": "boolean" }
+      },
+      "required": ["id", "code", "discountType", "discountValue", "active"]
+    },
+    "Promotion": {
+      "title": "Marketing Promotion Banner",
+      "description": "Timed sales or promotional events.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 100 },
+        "title": { "type": "string", "maxLength": 200 },
+        "bannerText": { "type": "string", "maxLength": 300 },
+        "ctaUrl": { "type": "string", "maxLength": 500 },
+        "active": { "type": "boolean" },
+        "startsAt": { "type": "string", "maxLength": 50 },
+        "endsAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "title", "active"]
+    },
+    "AiTeacherSession": {
+      "title": "AI Teacher Doubt Session",
+      "description": "Student doubt conversations with Professor Sigma.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 200 },
+        "studentClass": { "type": "string", "maxLength": 50 },
+        "chapterTopic": { "type": "string", "maxLength": 150 },
+        "messages": { "type": "array" },
+        "lastUpdated": { "type": "string", "maxLength": 50 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "userId", "title", "studentClass"]
+    },
+    "ActivityLog": {
+      "title": "User Activity Log",
+      "description": "Student revision and learning session telemetry.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "eventType": { "type": "string", "maxLength": 100 },
+        "metadata": { "type": "object" },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "userId", "eventType"]
+    },
+    "SavedItem": {
+      "title": "Saved / Starred Item",
+      "description": "Student bookmarked formulas, chapters, or questions.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "contentItemId": { "type": "string", "maxLength": 128 },
+        "itemType": { "type": "string", "enum": ["formula", "chapter", "content"] },
+        "title": { "type": "string", "maxLength": 200 },
+        "slug": { "type": "string", "maxLength": 200 },
+        "classLevel": { "type": "string", "maxLength": 50 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "userId", "contentItemId", "itemType"]
+    },
+    "NotificationItem": {
+      "title": "Student Notification",
+      "description": "Individual notifications regarding streak, tests, updates.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 200 },
+        "message": { "type": "string", "maxLength": 1000 },
+        "read": { "type": "boolean" },
+        "linkUrl": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "userId", "title", "read"]
+    },
+    "Broadcast": {
+      "title": "Platform Broadcast Announcement",
+      "description": "Global notices visible to all students.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 100 },
+        "title": { "type": "string", "maxLength": 200 },
+        "content": { "type": "string", "maxLength": 2000 },
+        "priority": { "type": "string", "enum": ["normal", "urgent"] },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "title", "content", "active"]
+    },
+    "SocialLink": {
+      "title": "Social Link",
+      "description": "Official social handles (YouTube channel, Instagram, etc.).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 50 },
+        "platform": { "type": "string", "maxLength": 50 },
+        "url": { "type": "string", "maxLength": 500 },
+        "title": { "type": "string", "maxLength": 100 },
+        "sortOrder": { "type": "number" }
+      },
+      "required": ["id", "platform", "url"]
+    },
+    "SiteSettings": {
+      "title": "Global Site Settings",
+      "description": "General settings, contact details, support numbers.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 50 },
+        "annualPassPriceInr": { "type": "number" },
+        "supportEmail": { "type": "string", "maxLength": 150 },
+        "supportPhone": { "type": "string", "maxLength": 30 },
+        "maintenanceMode": { "type": "boolean" },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "annualPassPriceInr"]
+    },
+    "HomeBlock": {
+      "title": "Homepage Dynamic Block",
+      "description": "Configurable homepage banners, featured topics, grids.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 100 },
+        "type": { "type": "string", "maxLength": 50 },
+        "title": { "type": "string", "maxLength": 150 },
+        "sortOrder": { "type": "number" },
+        "visible": { "type": "boolean" },
+        "config": { "type": "object" }
+      },
+      "required": ["id", "type", "sortOrder", "visible"]
+    },
+    "AdPlacement": {
+      "title": "Ad Placement",
+      "description": "Sponsor or educational announcement placement settings.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 100 },
+        "slot": { "type": "string", "maxLength": 100 },
+        "active": { "type": "boolean" },
+        "bannerUrl": { "type": "string", "maxLength": 500 },
+        "targetUrl": { "type": "string", "maxLength": 500 }
+      },
+      "required": ["id", "slot", "active"]
+    },
+    "SeoSettings": {
+      "title": "SEO Metadata Settings",
+      "description": "Static page meta tags, default social share cards.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 100 },
+        "routePath": { "type": "string", "maxLength": 200 },
+        "title": { "type": "string", "maxLength": 200 },
+        "metaDescription": { "type": "string", "maxLength": 350 },
+        "canonicalUrl": { "type": "string", "maxLength": 500 },
+        "ogImage": { "type": "string", "maxLength": 1000 }
+      },
+      "required": ["id", "routePath", "title"]
+    },
+    "ImportJob": {
+      "title": "Bulk Import Job",
+      "description": "Admin batch content ingestion logs.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["queued", "processing", "completed", "failed"] },
+        "itemCount": { "type": "number" },
+        "errorLog": { "type": "array" },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "status"]
+    },
+    "AnalyticsRollup": {
+      "title": "Analytics Aggregate Rollup",
+      "description": "Daily/weekly aggregate metrics for admin dashboard.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 50 },
+        "date": { "type": "string", "maxLength": 30 },
+        "activeUsers": { "type": "number" },
+        "totalOrders": { "type": "number" },
+        "revenueInr": { "type": "number" },
+        "aiDoubtsResolved": { "type": "number" }
+      },
+      "required": ["id", "date"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile documents keyed by Firebase Auth UID."
+    },
+    "/contentItems/{contentId}": {
+      "schema": "ContentItem",
+      "description": "Catalogue collection containing all free and paid study materials."
+    },
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Mathematical subject taxonomy and subcategory descriptors."
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Orders collection. Accessible only by owner and admin."
+    },
+    "/payments/{paymentId}": {
+      "schema": "Payment",
+      "description": "Payment records. Restricted strictly to admin and owner read."
+    },
+    "/entitlements/{entitlementId}": {
+      "schema": "Entitlement",
+      "description": "Content access entitlements granted to users."
+    },
+    "/annualPasses/{passId}": {
+      "schema": "AnnualPass",
+      "description": "Annual pass subscriptions granting all-class access."
+    },
+    "/coupons/{couponId}": {
+      "schema": "Coupon",
+      "description": "Discount vouchers. Read/write strictly controlled."
+    },
+    "/promotions/{promoId}": {
+      "schema": "Promotion",
+      "description": "Promotional events and banners."
+    },
+    "/aiTeacherSessions/{sessionId}": {
+      "schema": "AiTeacherSession",
+      "description": "Doubt clearing conversations per student."
+    },
+    "/activityLogs/{logId}": {
+      "schema": "ActivityLog",
+      "description": "Telemetry activity logs per student."
+    },
+    "/savedItems/{savedId}": {
+      "schema": "SavedItem",
+      "description": "Bookmarked formulas and chapters."
+    },
+    "/notifications/{notificationId}": {
+      "schema": "NotificationItem",
+      "description": "Individual notifications for students."
+    },
+    "/broadcasts/{broadcastId}": {
+      "schema": "Broadcast",
+      "description": "Global notices visible across the student body."
+    },
+    "/socialLinks/{linkId}": {
+      "schema": "SocialLink",
+      "description": "Social media links for footers and headers."
+    },
+    "/siteSettings/{settingId}": {
+      "schema": "SiteSettings",
+      "description": "Platform global configuration."
+    },
+    "/homeBlocks/{blockId}": {
+      "schema": "HomeBlock",
+      "description": "Dynamic configurable modules for homepage."
+    },
+    "/adPlacements/{placementId}": {
+      "schema": "AdPlacement",
+      "description": "Sponsor or announcement placements."
+    },
+    "/seoSettings/{seoId}": {
+      "schema": "SeoSettings",
+      "description": "Meta information for search engines and crawlers."
+    },
+    "/importJobs/{jobId}": {
+      "schema": "ImportJob",
+      "description": "Bulk import jobs for admin ingestion."
+    },
+    "/analyticsRollups/{rollupId}": {
+      "schema": "AnalyticsRollup",
+      "description": "Aggregated daily/weekly performance figures."
+    }
+  }
+}

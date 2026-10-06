@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, BookOpen, Download, Bot, CheckCircle2, FileText, Sparkles } from 'lucide-react';
+import { ArrowLeft, BookOpen, Download, Bot, CheckCircle2, FileText, Sparkles, Lock } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
 import { Link, useNavigation } from '../context/NavigationContext';
 import { INITIAL_CHAPTERS, INITIAL_FORMULAS, INITIAL_SOLVED_PROBLEMS } from '../data/curriculumData';
@@ -8,15 +8,19 @@ import { Badge } from '../components/ui/Badge';
 import { FormulaCard } from '../components/ui/FormulaCard';
 import { StepProblemCard } from '../components/ui/StepProblemCard';
 import { WatermarkGlyph } from '../components/ui/WatermarkGlyph';
+import { useAuth } from '../context/AuthContext';
 
 export const StudyChapterPage: React.FC = () => {
   const { currentRoute, goBack } = useNavigation();
+  const { user, isAnnualPassActive, isProActive } = useAuth();
   const slug = currentRoute.params.slug;
 
   const chapter = INITIAL_CHAPTERS.find((c) => c.slug === slug) || INITIAL_CHAPTERS[0];
 
-  const relevantFormulas = INITIAL_FORMULAS.filter((f) =>
-    f.category === chapter.category || f.applicableClasses.includes(chapter.classLevel)
+  const hasAccess = chapter.isFreePreview || isAnnualPassActive || isProActive;
+
+  const relevantFormulas = INITIAL_FORMULAS.filter(
+    (f) => f.category === chapter.category || f.applicableClasses.includes(chapter.classLevel)
   );
 
   const relevantProblems = INITIAL_SOLVED_PROBLEMS.filter(
@@ -57,9 +61,11 @@ export const StudyChapterPage: React.FC = () => {
                 {chapter.category}
               </span>
               {chapter.isFreePreview ? (
-                <Badge variant="free">FREE PREVIEW</Badge>
+                <Badge variant="free">FREE ACCESS · NO LOGIN NEEDED</Badge>
+              ) : hasAccess ? (
+                <Badge variant="pro">ANNUAL PASS UNLOCKED</Badge>
               ) : (
-                <Badge variant="pro">PRO CHAPTER</Badge>
+                <Badge variant="pro">PREMIUM CHAPTER</Badge>
               )}
             </div>
 
@@ -89,9 +95,32 @@ export const StudyChapterPage: React.FC = () => {
           </div>
         </div>
 
+        {/* Access Paywall Lock Alert if paid and unauthenticated */}
+        {!hasAccess && (
+          <div className="bg-[#FFF7ED] border border-[#FFEDD5] rounded-xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-lg bg-[#EA580C] text-white flex items-center justify-center shrink-0">
+                <Lock className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-heading font-bold text-base text-[#9A3412]">
+                  Premium Board Examination Unit
+                </h3>
+                <p className="text-xs sm:text-sm text-[#C2410C]">
+                  This comprehensive chapter is included with the Maths at Your Fingertips Annual Pass.
+                </p>
+              </div>
+            </div>
+            <Link href="/annual-pass">
+              <Button size="md" variant="accent" className="font-bold shrink-0">
+                Unlock with Annual Pass (₹999)
+              </Button>
+            </Link>
+          </div>
+        )}
+
         {/* Learning Outcomes & Key Theorems */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Learning Outcomes */}
           <div className="bg-white rounded-lg border border-[#E2E8F0] p-6 shadow-xs">
             <div className="flex items-center gap-2 text-xs font-heading font-bold text-[#00687A] uppercase tracking-wider mb-4">
               <CheckCircle2 className="w-4 h-4 text-[#06B6D4]" />
@@ -109,7 +138,6 @@ export const StudyChapterPage: React.FC = () => {
             </ul>
           </div>
 
-          {/* Key Theorems */}
           <div className="bg-white rounded-lg border border-[#E2E8F0] p-6 shadow-xs">
             <div className="flex items-center gap-2 text-xs font-heading font-bold text-[#00687A] uppercase tracking-wider mb-4">
               <FileText className="w-4 h-4 text-[#06B6D4]" />

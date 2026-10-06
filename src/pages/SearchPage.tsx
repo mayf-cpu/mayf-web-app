@@ -1,38 +1,48 @@
-import React, { useState } from 'react';
-import { Search, BookOpen, Layers, ArrowRight, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, BookOpen, Layers, ArrowRight, X, Sparkles } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
-import { INITIAL_CHAPTERS, INITIAL_FORMULAS } from '../data/curriculumData';
 import { Link } from '../context/NavigationContext';
+import { searchService } from '../lib/search/lightweightSearchService';
+import { SearchResultItem } from '../lib/search/searchInterface';
 
 export const SearchPage: React.FC = () => {
   const [query, setQuery] = useState('');
-
-  const filteredChapters = query.trim()
-    ? INITIAL_CHAPTERS.filter(
-        (c) =>
-          c.title.toLowerCase().includes(query.toLowerCase()) ||
-          c.description.toLowerCase().includes(query.toLowerCase()) ||
-          c.category.toLowerCase().includes(query.toLowerCase())
-      )
-    : [];
-
-  const filteredFormulas = query.trim()
-    ? INITIAL_FORMULAS.filter(
-        (f) =>
-          f.title.toLowerCase().includes(query.toLowerCase()) ||
-          f.plainTextFormula.toLowerCase().includes(query.toLowerCase()) ||
-          f.explanation.toLowerCase().includes(query.toLowerCase())
-      )
-    : [];
+  const [results, setResults] = useState<SearchResultItem[]>([]);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   const popularSearches = [
     'Quadratic Formula',
     'Pythagoras Theorem',
     'Trigonometric Identities',
-    'Volume of Cylinder',
+    'Surface Area of Cylinder',
     'Arithmetic Progression',
     'Real Numbers',
   ];
+
+  useEffect(() => {
+    if (!query.trim()) {
+      setResults([]);
+      setSuggestions([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const [items, auto] = await Promise.all([
+          searchService.search({ query, limit: 15 }),
+          searchService.autocomplete(query, 5),
+        ]);
+        setResults(items);
+        setSuggestions(auto);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [query]);
 
   return (
     <SharedLayout>
@@ -40,6 +50,10 @@ export const SearchPage: React.FC = () => {
         
         {/* Title */}
         <div>
+          <div className="flex items-center gap-2 text-xs font-heading font-semibold text-[#00687A] mb-1">
+            <Sparkles className="w-3.5 h-3.5 text-[#06B6D4]" />
+            <span>Pluggable Search Service · Normalized Tokens & Prefixes</span>
+          </div>
           <h1 className="font-heading font-extrabold text-2xl sm:text-3xl text-[#0F172A] tracking-tight">
             Curriculum & Formula Search
           </h1>
@@ -48,13 +62,13 @@ export const SearchPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Big Search Input */}
+        {/* Big Search Input with Autocomplete */}
         <div className="relative">
           <Search className="w-5 h-5 text-[#94A3B8] absolute left-4 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             autoFocus
-            placeholder="Type any formula name, theorem, or math topic (e.g., 'cylinder', 'discriminant')..."
+            placeholder="Type any formula name, theorem, or math topic (e.g. 'cylinder', 'pythagoras')..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="w-full pl-12 pr-10 py-3.5 bg-white border border-[#CBD5E1] rounded-xl text-sm sm:text-base text-[#0F172A] shadow-sm placeholder-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]"
@@ -68,6 +82,22 @@ export const SearchPage: React.FC = () => {
             </button>
           )}
         </div>
+
+        {/* Autocomplete suggestions bar */}
+        {suggestions.length > 0 && query.trim() && (
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+            <span className="text-[#64748B] font-semibold shrink-0">Suggestions:</span>
+            {suggestions.map((s, idx) => (
+              <button
+                key={idx}
+                onClick={() => setQuery(s)}
+                className="bg-[#EFF6FF] text-[#1D4ED8] hover:bg-[#DBEAFE] px-2.5 py-0.5 rounded-full shrink-0 font-medium cursor-pointer transition-colors"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Popular Tags when search is empty */}
         {!query.trim() && (
@@ -91,77 +121,62 @@ export const SearchPage: React.FC = () => {
 
         {/* Results */}
         {query.trim() && (
-          <div className="space-y-8">
-            
-            {/* Formulas Found */}
-            <div>
-              <div className="flex items-center gap-2 text-xs font-heading font-bold text-[#00687A] uppercase tracking-wider mb-3">
-                <Layers className="w-4 h-4 text-[#06B6D4]" />
-                <span>Matching Formulas ({filteredFormulas.length})</span>
-              </div>
-
-              {filteredFormulas.length === 0 ? (
-                <div className="text-xs text-[#94A3B8] italic p-4 bg-white rounded-lg border border-[#E2E8F0]">
-                  No formula cards match "{query}".
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {filteredFormulas.map((f) => (
-                    <Link
-                      key={f.id}
-                      href={`/formula/${f.slug}`}
-                      className="block p-4 bg-white hover:bg-[#F8FAFC] border border-[#E2E8F0] hover:border-[#1D4ED8] rounded-lg transition-all group"
-                    >
-                      <div className="flex items-center justify-between text-xs text-[#64748B] mb-1">
-                        <span className="font-semibold text-[#00687A]">{f.category}</span>
-                        <span>{f.applicableClasses.join(', ')}</span>
-                      </div>
-                      <div className="font-heading font-bold text-sm sm:text-base text-[#0F172A] group-hover:text-[#1D4ED8] transition-colors">
-                        {f.title}
-                      </div>
-                      <div className="font-mono text-xs font-semibold text-[#0037B0] bg-[#F0F9FF] rounded px-2 py-1 my-2 inline-block">
-                        {f.plainTextFormula}
-                      </div>
-                      <p className="text-xs text-[#64748B] line-clamp-1">{f.explanation}</p>
-                    </Link>
-                  ))}
-                </div>
-              )}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between text-xs text-[#64748B]">
+              <span className="font-medium">
+                Found <strong className="text-[#0F172A]">{results.length}</strong> matches for "{query}"
+              </span>
+              {isSearching && <span className="text-[#1D4ED8]">Indexing matches...</span>}
             </div>
 
-            {/* Chapters Found */}
-            <div>
-              <div className="flex items-center gap-2 text-xs font-heading font-bold text-[#00687A] uppercase tracking-wider mb-3">
-                <BookOpen className="w-4 h-4 text-[#06B6D4]" />
-                <span>Matching Chapters & Study Modules ({filteredChapters.length})</span>
+            {results.length === 0 && !isSearching ? (
+              <div className="text-xs text-[#94A3B8] italic p-6 bg-white rounded-lg border border-[#E2E8F0] text-center">
+                No matching formula cards or study modules found for "{query}".
               </div>
-
-              {filteredChapters.length === 0 ? (
-                <div className="text-xs text-[#94A3B8] italic p-4 bg-white rounded-lg border border-[#E2E8F0]">
-                  No study chapters match "{query}".
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {filteredChapters.map((c) => (
-                    <Link
-                      key={c.id}
-                      href={`/study/${c.slug}`}
-                      className="block p-4 bg-white hover:bg-[#F8FAFC] border border-[#E2E8F0] hover:border-[#1D4ED8] rounded-lg transition-all group"
-                    >
-                      <div className="flex items-center justify-between text-xs text-[#64748B] mb-1">
-                        <span className="font-semibold text-[#1D4ED8]">{c.classLevel}</span>
-                        <span>{c.category}</span>
+            ) : (
+              <div className="space-y-3">
+                {results.map((item) => (
+                  <Link
+                    key={item.id}
+                    href={item.url}
+                    className="block p-4 bg-white hover:bg-[#F8FAFC] border border-[#E2E8F0] hover:border-[#1D4ED8] rounded-lg transition-all group shadow-xs"
+                  >
+                    <div className="flex items-center justify-between text-xs text-[#64748B] mb-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-[#00687A]">{item.category}</span>
+                        {item.classLevel && (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span>{item.classLevel}</span>
+                          </>
+                        )}
                       </div>
-                      <div className="font-heading font-bold text-sm sm:text-base text-[#0F172A] group-hover:text-[#1D4ED8] transition-colors">
-                        {c.title}
-                      </div>
-                      <p className="text-xs text-[#64748B] mt-1 line-clamp-2">{c.description}</p>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
+                      <span className="text-[11px] font-mono uppercase bg-[#F1F5F9] px-2 py-0.5 rounded text-[#475569]">
+                        {item.type}
+                      </span>
+                    </div>
 
+                    <div className="font-heading font-bold text-sm sm:text-base text-[#0F172A] group-hover:text-[#1D4ED8] transition-colors">
+                      {item.title}
+                    </div>
+
+                    <p className="text-xs text-[#64748B] mt-1 line-clamp-2 leading-relaxed">
+                      {item.snippet}
+                    </p>
+
+                    <div className="mt-2 pt-2 border-t border-[#F1F5F9] flex items-center justify-between text-[11px]">
+                      <span className="font-medium text-[#059669]">
+                        {item.accessType === 'free' ? 'Free Material' : 'Annual Pass'}
+                      </span>
+                      <span className="text-[#1D4ED8] font-semibold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+                        <span>Open Details</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

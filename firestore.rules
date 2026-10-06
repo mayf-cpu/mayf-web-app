@@ -1,0 +1,266 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -------------------------------------------------------------
+    // Global Default-Deny Safety Net
+    // -------------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------
+    // Security Helpers & ABAC Primitives
+    // -------------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Authorization via verified Custom Claims on token
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.role == 'admin' ||
+        request.auth.token.role == 'superAdmin'
+      );
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && request.auth.token.role == 'superAdmin';
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // -------------------------------------------------------------
+    // 1. Content Items Collection (Public Study Material vs Paid)
+    // IMPORTANT RULE: Free study material is accessible WITHOUT auth.
+    // Only admins can create/update/delete content.
+    // -------------------------------------------------------------
+    match /contentItems/{contentId} {
+      allow get: if isValidId(contentId) && (existing().visible == true || isAdmin());
+      allow list: if existing().visible == true || isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // -------------------------------------------------------------
+    // 2. Categories Taxonomy
+    // -------------------------------------------------------------
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // -------------------------------------------------------------
+    // 3. User Profiles Collection (PII Isolation & Anti-Escalation)
+    // A normal user can never grant themselves role, pro, or annualPass
+    // -------------------------------------------------------------
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+
+      // Creating own profile: forbid injecting role or entitlement flags
+      allow create: if isOwner(userId)
+        && incoming().uid == request.auth.uid
+        && !('role' in incoming())
+        && !('isPro' in incoming())
+        && !('hasAnnualPass' in incoming())
+        && !('annualPassExpiry' in incoming());
+
+      // Updating profile: strictly limited to editable student fields
+      allow update: if isValidId(userId) && (
+        isAdmin() || (
+          isOwner(userId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'displayName',
+            'photoURL',
+            'studentClass',
+            'board',
+            'phoneNumber',
+            'streakDays',
+            'lastActiveDate',
+            'updatedAt'
+          ])
+        )
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // -------------------------------------------------------------
+    // 4. Orders Collection
+    // Read: Owner or Admin.
+    // Write: Strictly server-side/admin after payment verification.
+    // -------------------------------------------------------------
+    match /orders/{orderId} {
+      allow get: if isValidId(orderId) && (isOwner(existing().userId) || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // -------------------------------------------------------------
+    // 5. Payments Collection
+    // Read: Owner or Admin.
+    // Write: Strictly server-side/admin via verified gateway webhooks.
+    // -------------------------------------------------------------
+    match /payments/{paymentId} {
+      allow get: if isValidId(paymentId) && (isOwner(existing().userId) || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // -------------------------------------------------------------
+    // 6. Entitlements Collection
+    // Read: Owner or Admin.
+    // Write: Strictly server-side/admin (users cannot grant themselves Pro).
+    // -------------------------------------------------------------
+    match /entitlements/{entitlementId} {
+      allow get: if isValidId(entitlementId) && (isOwner(existing().userId) || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // -------------------------------------------------------------
+    // 7. Annual Passes Collection
+    // Read: Owner or Admin.
+    // Write: Strictly server-side/admin (users cannot modify expiry).
+    // -------------------------------------------------------------
+    match /annualPasses/{passId} {
+      allow get: if isValidId(passId) && (isOwner(existing().userId) || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // -------------------------------------------------------------
+    // 8. Saved Items / Favourites
+    // Mandatory authentication for bookmarks.
+    // -------------------------------------------------------------
+    match /savedItems/{savedId} {
+      allow get: if isValidId(savedId) && isOwner(existing().userId);
+      allow list: if isSignedIn() && existing().userId == request.auth.uid;
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
+      allow delete: if isValidId(savedId) && isOwner(existing().userId);
+      allow update: if false;
+    }
+
+    // -------------------------------------------------------------
+    // 9. AI Teacher Doubt Sessions
+    // -------------------------------------------------------------
+    match /aiTeacherSessions/{sessionId} {
+      allow get: if isValidId(sessionId) && (isOwner(existing().userId) || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
+      allow update: if isValidId(sessionId) && isOwner(existing().userId) && incoming().userId == request.auth.uid;
+      allow delete: if isValidId(sessionId) && (isOwner(existing().userId) || isAdmin());
+    }
+
+    // -------------------------------------------------------------
+    // 10. Activity Logs
+    // -------------------------------------------------------------
+    match /activityLogs/{logId} {
+      allow get: if isValidId(logId) && (isOwner(existing().userId) || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // -------------------------------------------------------------
+    // 11. Student Notifications
+    // -------------------------------------------------------------
+    match /notifications/{notificationId} {
+      allow get: if isValidId(notificationId) && isOwner(existing().userId);
+      allow list: if isSignedIn() && existing().userId == request.auth.uid;
+      allow update: if isValidId(notificationId) && isOwner(existing().userId)
+        && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+      allow create, delete: if isAdmin();
+    }
+
+    // -------------------------------------------------------------
+    // 12. Public Broadcast Announcements
+    // -------------------------------------------------------------
+    match /broadcasts/{broadcastId} {
+      allow read: if existing().active == true || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // -------------------------------------------------------------
+    // 13. Social Links
+    // -------------------------------------------------------------
+    match /socialLinks/{linkId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // -------------------------------------------------------------
+    // 14. Global Site Settings
+    // Normal users cannot modify platform settings.
+    // -------------------------------------------------------------
+    match /siteSettings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // -------------------------------------------------------------
+    // 15. Homepage Dynamic Blocks
+    // -------------------------------------------------------------
+    match /homeBlocks/{blockId} {
+      allow read: if existing().visible == true || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // -------------------------------------------------------------
+    // 16. Ad Placements
+    // -------------------------------------------------------------
+    match /adPlacements/{placementId} {
+      allow read: if existing().active == true || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // -------------------------------------------------------------
+    // 17. SEO Metadata Settings
+    // -------------------------------------------------------------
+    match /seoSettings/{seoId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // -------------------------------------------------------------
+    // 18. Coupons (Admin Only - server verifies discount tokens)
+    // -------------------------------------------------------------
+    match /coupons/{couponId} {
+      allow read, write: if isAdmin();
+    }
+
+    // -------------------------------------------------------------
+    // 19. Marketing Promotions
+    // -------------------------------------------------------------
+    match /promotions/{promoId} {
+      allow read: if existing().active == true || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // -------------------------------------------------------------
+    // 20. Ingestion Import Jobs & 21. Analytics Rollups (Admin Only)
+    // -------------------------------------------------------------
+    match /importJobs/{jobId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /analyticsRollups/{rollupId} {
+      allow read, write: if isAdmin();
+    }
+
+  }
+}

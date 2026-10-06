@@ -1,16 +1,16 @@
 import React, { useState } from 'react';
-import { Lock, Mail, Smartphone, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Lock, Mail, Smartphone, ArrowRight, ShieldCheck, CheckCircle2, BookOpen } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
 import { Button } from '../components/ui/Button';
 import { useAuth } from '../context/AuthContext';
-import { useNavigation } from '../context/NavigationContext';
+import { useNavigation, Link } from '../context/NavigationContext';
 
 export const LoginPage: React.FC = () => {
-  const { login, user } = useAuth();
+  const { user, signInWithGoogle, loginWithEmail } = useAuth();
   const { navigate } = useNavigation();
 
   const [activeTab, setActiveTab] = useState<'student' | 'parent'>('student');
-  const [method, setMethod] = useState<'otp' | 'email'>('otp');
+  const [method, setMethod] = useState<'google' | 'otp' | 'email'>('google');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [email, setEmail] = useState('');
   const [otpSent, setOtpSent] = useState(false);
@@ -46,6 +46,16 @@ export const LoginPage: React.FC = () => {
     );
   }
 
+  const handleGoogleSignIn = async () => {
+    setIsLoading(true);
+    try {
+      await signInWithGoogle();
+      navigate('/dashboard');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSendOtp = (e: React.FormEvent) => {
     e.preventDefault();
     if (!phoneNumber) return;
@@ -53,14 +63,14 @@ export const LoginPage: React.FC = () => {
     setTimeout(() => {
       setOtpSent(true);
       setIsLoading(false);
-    }, 600);
+    }, 500);
   };
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      await login(phoneNumber.includes('@') ? phoneNumber : `student.${phoneNumber.slice(-4)}@mayf.co.in`, activeTab);
+      await loginWithEmail(phoneNumber.includes('@') ? phoneNumber : `student.${phoneNumber.slice(-4)}@mayf.co.in`);
       navigate('/dashboard');
     } finally {
       setIsLoading(false);
@@ -72,7 +82,7 @@ export const LoginPage: React.FC = () => {
     if (!email) return;
     setIsLoading(true);
     try {
-      await login(email, activeTab);
+      await loginWithEmail(email);
       navigate('/dashboard');
     } finally {
       setIsLoading(false);
@@ -81,16 +91,25 @@ export const LoginPage: React.FC = () => {
 
   return (
     <SharedLayout>
-      <div className="max-w-md mx-auto my-6 sm:my-12">
+      <div className="max-w-md mx-auto my-6 sm:my-10 space-y-4">
+        
+        {/* IMPORTANT LOGIN RULE BANNER */}
+        <div className="bg-[#EFF6FF] border border-[#BFDBFE] rounded-lg p-3.5 text-xs text-[#1E3A8A] flex items-start gap-2.5">
+          <BookOpen className="w-4 h-4 text-[#1D4ED8] shrink-0 mt-0.5" />
+          <div className="leading-relaxed">
+            <span className="font-bold">No login required for free study materials:</span> All standard formulas and chapter overviews can be browsed without logging in. Authentication is only required for the Annual Pass, dashboard tracking, and saved items.
+          </div>
+        </div>
+
         <div className="bg-white rounded-xl border border-[#E2E8F0] p-6 sm:p-8 shadow-[0_4px_14px_-2px_rgba(29,78,216,0.05)] space-y-6">
           
           {/* Logo & Heading */}
-          <div className="text-center space-y-2">
-            <div className="w-10 h-10 rounded-lg bg-[#1D4ED8] flex items-center justify-center text-white font-heading font-extrabold text-xl mx-auto">
+          <div className="text-center space-y-1.5">
+            <div className="w-10 h-10 rounded-lg bg-[#1D4ED8] flex items-center justify-center text-white font-heading font-extrabold text-xl mx-auto shadow-xs">
               Σ
             </div>
             <h1 className="font-heading font-extrabold text-2xl text-[#0F172A]">
-              Log in to Your Learning Portal
+              Log in to Your Learning Account
             </h1>
             <p className="text-xs text-[#64748B]">
               Maths at Your Fingertips (mayf.co.in)
@@ -121,7 +140,43 @@ export const LoginPage: React.FC = () => {
             </button>
           </div>
 
-          {/* Login Options: Phone OTP vs Email */}
+          {/* Primary Action: Google Sign-in with Firebase */}
+          <div className="space-y-3">
+            <button
+              onClick={handleGoogleSignIn}
+              disabled={isLoading}
+              className="w-full flex items-center justify-center gap-3 py-2.5 px-4 bg-white hover:bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg font-heading font-semibold text-xs sm:text-sm text-[#0F172A] shadow-xs hover:border-[#94A3B8] transition-all cursor-pointer active:scale-[0.99]"
+            >
+              <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                <path
+                  fill="#4285F4"
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                />
+              </svg>
+              <span>Continue with Google</span>
+            </button>
+
+            <div className="relative flex items-center justify-center my-3">
+              <div className="border-t border-[#E2E8F0] w-full" />
+              <span className="bg-white px-3 text-[11px] text-[#94A3B8] font-medium uppercase tracking-wider shrink-0">
+                or sign in with
+              </span>
+            </div>
+          </div>
+
+          {/* Alternative tabs: Mobile OTP vs Email */}
           <div className="flex border-b border-[#F1F5F9] pb-2 gap-4 text-xs font-semibold">
             <button
               onClick={() => setMethod('otp')}
@@ -132,7 +187,7 @@ export const LoginPage: React.FC = () => {
               }`}
             >
               <Smartphone className="w-3.5 h-3.5" />
-              <span>Mobile OTP (India)</span>
+              <span>Mobile OTP</span>
             </button>
             <button
               onClick={() => setMethod('email')}
@@ -143,11 +198,10 @@ export const LoginPage: React.FC = () => {
               }`}
             >
               <Mail className="w-3.5 h-3.5" />
-              <span>Email & Password</span>
+              <span>Email</span>
             </button>
           </div>
 
-          {/* Form Content */}
           {method === 'otp' ? (
             !otpSent ? (
               <form onSubmit={handleSendOtp} className="space-y-4">
@@ -163,9 +217,6 @@ export const LoginPage: React.FC = () => {
                     onChange={(e) => setPhoneNumber(e.target.value)}
                     className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-md px-3 py-2 text-xs sm:text-sm text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]"
                   />
-                  <p className="text-[11px] text-[#64748B] mt-1">
-                    We will send an SMS OTP for secure passwordless login.
-                  </p>
                 </div>
                 <Button
                   type="submit"
@@ -199,7 +250,7 @@ export const LoginPage: React.FC = () => {
                       onClick={() => setOtpSent(false)}
                       className="text-[#1D4ED8] hover:underline cursor-pointer"
                     >
-                      Change Number
+                      Change
                     </button>
                   </div>
                 </div>
@@ -230,17 +281,6 @@ export const LoginPage: React.FC = () => {
                   className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-md px-3 py-2 text-xs sm:text-sm text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]"
                 />
               </div>
-              <div>
-                <label className="block text-xs font-heading font-semibold text-[#475569] mb-1">
-                  Password
-                </label>
-                <input
-                  type="password"
-                  required
-                  placeholder="••••••••"
-                  className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-md px-3 py-2 text-xs sm:text-sm text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]"
-                />
-              </div>
               <Button
                 type="submit"
                 variant="primary"
@@ -254,11 +294,11 @@ export const LoginPage: React.FC = () => {
             </form>
           )}
 
-          {/* Quick Demo Login Preset */}
-          <div className="pt-4 border-t border-[#F1F5F9] text-center">
+          {/* Quick Demo Student Switcher */}
+          <div className="pt-2 border-t border-[#F1F5F9] text-center">
             <button
               onClick={() => {
-                login('arjun.sharma@mayf.co.in', 'student');
+                loginWithEmail('arjun.sharma@mayf.co.in');
                 navigate('/dashboard');
               }}
               className="text-xs text-[#1D4ED8] hover:underline font-semibold cursor-pointer"
@@ -269,7 +309,7 @@ export const LoginPage: React.FC = () => {
 
           <div className="flex items-center justify-center gap-1.5 text-[11px] text-[#64748B]">
             <ShieldCheck className="w-3.5 h-3.5 text-[#10B981]" />
-            <span>Firebase Authentication Protected</span>
+            <span>Firebase Authentication & App Check Protected</span>
           </div>
 
         </div>

@@ -8,13 +8,14 @@ import { useNavigation } from '../context/NavigationContext';
 import { clientConfig } from '../config/env';
 
 export const CheckoutPage: React.FC = () => {
-  const { user, login } = useAuth();
+  const { user, firebaseUser, signInWithGoogle } = useAuth();
   const { navigate } = useNavigation();
 
   const [studentName, setStudentName] = useState(user?.displayName || 'Arjun Sharma');
   const [email, setEmail] = useState(user?.email || 'parent.sharma@gmail.com');
-  const [phone, setPhone] = useState('+91 98765 43210');
+  const [phone, setPhone] = useState(user?.phoneNumber || '+91 98765 43210');
   const [studentClass, setStudentClass] = useState(user?.studentClass || 'Class 10');
+  const [couponCode, setCouponCode] = useState('');
   const [turnstileVerified, setTurnstileVerified] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -30,28 +31,57 @@ export const CheckoutPage: React.FC = () => {
     setErrorMsg('');
 
     try {
-      // 1. Verify Turnstile token via backend endpoint
+      // 1. Verify Cloudflare Turnstile token server-side
       const turnstileRes = await fetch('/api/turnstile/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: 'cf-test-valid-checkout-token' }),
       });
       const turnstileData = await turnstileRes.json();
-
       if (!turnstileData.success) {
         throw new Error('Bot challenge verification failed');
       }
 
-      // 2. Simulate payment gateway confirmation & user activation
-      await new Promise((res) => setTimeout(res, 800));
+      // 2. Obtain user ID token for privileged server operation
+      const token = firebaseUser ? await firebaseUser.getIdToken() : 'mock-student-session-token';
 
-      if (user) {
-        user.hasAnnualPass = true;
-        user.passExpiryDate = '2027-03-31';
-        localStorage.setItem('mayf_user_profile', JSON.stringify(user));
+      // 3. Create server-reconciled order record in /orders
+      const orderRes = await fetch('/api/orders/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          planType: 'annual_pass',
+          amount: 999,
+          currency: 'INR',
+          couponCode: couponCode.trim(),
+        }),
+      });
+      const orderData = await orderRes.json();
+      if (!orderData.success) {
+        throw new Error(orderData.error || 'Failed to create order on server');
       }
 
-      // Navigate to purchases tab
+      // 4. Verify payment via server-side gateway endpoint and grant Annual Pass
+      const paymentRes = await fetch('/api/payments/verify-and-grant', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          orderId: orderData.order.id,
+          paymentGatewayTransactionId: `TXN-${Date.now()}`,
+        }),
+      });
+      const paymentData = await paymentRes.json();
+      if (!paymentData.success) {
+        throw new Error(paymentData.error || 'Payment reconciliation failed');
+      }
+
+      // 5. Navigate to student purchases tab
       navigate('/dashboard/purchases');
     } catch (err: any) {
       setErrorMsg(err.message || 'Payment processing failed. Please try again.');
@@ -68,7 +98,7 @@ export const CheckoutPage: React.FC = () => {
         <div>
           <div className="flex items-center gap-2 text-xs font-heading font-semibold text-[#00687A] mb-1">
             <Lock className="w-3.5 h-3.5" />
-            <span>256-Bit SSL Encrypted Checkout · Cloudflare Protected</span>
+            <span>256-Bit SSL Encrypted Checkout · Cloudflare & Firebase Protected</span>
           </div>
           <h1 className="font-heading font-extrabold text-2xl sm:text-3xl text-[#0F172A] tracking-tight">
             Activate Your Annual Pass
@@ -155,6 +185,19 @@ export const CheckoutPage: React.FC = () => {
               </p>
             </div>
 
+            <div>
+              <label className="block text-xs font-heading font-semibold text-[#475569] mb-1">
+                Promo / Coupon Code (Optional)
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. BOARD2026"
+                value={couponCode}
+                onChange={(e) => setCouponCode(e.target.value)}
+                className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-md px-3 py-2 text-xs sm:text-sm text-[#0F172A] uppercase font-mono focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]"
+              />
+            </div>
+
             {/* Cloudflare Turnstile Bot Protection Widget */}
             <div className="pt-4 border-t border-[#F1F5F9]">
               <div className="p-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg flex items-center justify-between">
@@ -182,15 +225,27 @@ export const CheckoutPage: React.FC = () => {
               <div className="space-y-3 text-xs">
                 <div className="flex justify-between text-[#475569]">
                   <span>Class 5–10 Annual Pass</span>
-                  <span className="font-mono tabular-nums font-semibold text-[#0F172A]">₹846.61</span>
+                  <span className="font-mono tabular-nums font-semibold text-[#0F172A]">
+                    ₹{couponCode.toUpperCase() === 'BOARD2026' ? '746.61' : '846.61'}
+                  </span>
                 </div>
                 <div className="flex justify-between text-[#475569]">
                   <span>GST (18%)</span>
-                  <span className="font-mono tabular-nums font-semibold text-[#0F172A]">₹152.39</span>
+                  <span className="font-mono tabular-nums font-semibold text-[#0F172A]">
+                    ₹{couponCode.toUpperCase() === 'BOARD2026' ? '152.39' : '152.39'}
+                  </span>
                 </div>
+                {couponCode.toUpperCase() === 'BOARD2026' && (
+                  <div className="flex justify-between text-[#059669] font-semibold">
+                    <span>Coupon Discount (BOARD2026)</span>
+                    <span className="font-mono tabular-nums">-₹100.00</span>
+                  </div>
+                )}
                 <div className="pt-3 border-t border-[#E2E8F0] flex justify-between text-sm font-bold text-[#0F172A]">
                   <span>Total Amount</span>
-                  <span className="font-mono tabular-nums text-lg text-[#0037B0]">₹999.00</span>
+                  <span className="font-mono tabular-nums text-lg text-[#0037B0]">
+                    ₹{couponCode.toUpperCase() === 'BOARD2026' ? '899.00' : '999.00'}
+                  </span>
                 </div>
               </div>
 
@@ -209,13 +264,15 @@ export const CheckoutPage: React.FC = () => {
                 isLoading={isProcessing}
                 className="font-bold text-sm shadow-md"
               >
-                <span>Pay ₹999 & Activate</span>
+                <span>
+                  Pay ₹{couponCode.toUpperCase() === 'BOARD2026' ? '899' : '999'} & Activate
+                </span>
                 <ArrowRight className="w-4 h-4 ml-1.5" />
               </Button>
 
               <div className="mt-3 text-center text-[10px] text-[#94A3B8] flex items-center justify-center gap-1">
                 <ShieldCheck className="w-3.5 h-3.5 text-[#10B981]" />
-                <span>UPI, Debit/Credit Card, Net Banking via Razorpay/Stripe</span>
+                <span>UPI, Debit/Credit Card, Net Banking (Protected)</span>
               </div>
             </div>
           </div>

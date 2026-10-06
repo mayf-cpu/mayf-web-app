@@ -1,0 +1,109 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "contentItems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "visible", "order": "ASCENDING" },
+        { "fieldPath": "classLevels", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "sortOrder", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "contentItems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "visible", "order": "ASCENDING" },
+        { "fieldPath": "classLevels", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "publishedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "contentItems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "visible", "order": "ASCENDING" },
+        { "fieldPath": "categoryId", "order": "ASCENDING" },
+        { "fieldPath": "sortOrder", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "contentItems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "visible", "order": "ASCENDING" },
+        { "fieldPath": "categoryId", "order": "ASCENDING" },
+        { "fieldPath": "publishedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "contentItems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "visible", "order": "ASCENDING" },
+        { "fieldPath": "accessType", "order": "ASCENDING" },
+        { "fieldPath": "sortOrder", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "contentItems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "visible", "order": "ASCENDING" },
+        { "fieldPath": "contentType", "order": "ASCENDING" },
+        { "fieldPath": "sortOrder", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "contentItems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "visible", "order": "ASCENDING" },
+        { "fieldPath": "searchTerms", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "publishedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "savedItems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "aiTeacherSessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "lastUpdated", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "read", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "activityLogs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
