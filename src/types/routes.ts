@@ -18,6 +18,7 @@ export type AppRoute =
   | '/dashboard/saved'
   | '/dashboard/ai-history'
   | '/search'
+  | '/admin/import-sync'
   | '/privacy'
   | '/terms'
   | '/refund-policy';
@@ -48,6 +49,7 @@ export function matchCurrentPath(pathname: string): RouteMatch {
     '/dashboard/saved',
     '/dashboard/ai-history',
     '/search',
+    '/admin/import-sync',
     '/privacy',
     '/terms',
     '/refund-policy',

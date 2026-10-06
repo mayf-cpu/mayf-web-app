@@ -25,6 +25,7 @@ import { DashboardDownloadsPage } from './pages/DashboardDownloadsPage';
 import { DashboardSavedPage } from './pages/DashboardSavedPage';
 import { DashboardAiHistoryPage } from './pages/DashboardAiHistoryPage';
 import { SearchPage } from './pages/SearchPage';
+import { AdminImportSyncPage } from './pages/AdminImportSyncPage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { TermsPage } from './pages/TermsPage';
 import { RefundPolicyPage } from './pages/RefundPolicyPage';
@@ -64,6 +65,8 @@ function AppRouter() {
       return <DashboardAiHistoryPage />;
     case '/search':
       return <SearchPage />;
+    case '/admin/import-sync':
+      return <AdminImportSyncPage />;
     case '/privacy':
       return <PrivacyPage />;
     case '/terms':

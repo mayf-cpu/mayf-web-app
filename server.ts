@@ -4,6 +4,15 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
 import { verifyStudentSessionToken } from './src/lib/firebase/admin';
+import {
+  INGESTION_JOBS_STORE,
+  verifyWebhookSecret,
+  processRegistryRow,
+  processBatchIngestion,
+  retryIngestionJob,
+  syncRegistryNow,
+} from './src/lib/ingestion/ingestionService';
+import { ContentRegistryRow } from './src/lib/ingestion/types';
 
 dotenv.config();
 
@@ -329,6 +338,118 @@ Substitute given values carefully and compute without skipping algebraic steps.
     return res.status(500).json({
       error: 'Failed to generate AI Teacher response. Please retry in a moment.',
     });
+  }
+});
+
+// -------------------------------------------------------------
+// Content Ingestion Webhook (Google Apps Script Integration)
+// Authenticated endpoint triggered when status in Google Sheet is "Approved"
+// -------------------------------------------------------------
+app.post('/api/ingestion/webhook', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!verifyWebhookSecret(authHeader)) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized: Invalid or missing INGESTION_WEBHOOK_SECRET bearer token.',
+      });
+    }
+
+    const { items, action = 'import_approved' } = req.body;
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request: "items" array containing Content Registry rows is required.',
+      });
+    }
+
+    // Process rows idempotently and copy approved files to production Cloud Storage
+    const response = await processBatchIngestion(items as ContentRegistryRow[], 'apps_script_webhook');
+    return res.json(response);
+  } catch (error: any) {
+    console.error('[MAYF Ingestion] Webhook handling failure:', error);
+    return res.status(500).json({
+      success: false,
+      error: error?.message || 'Internal content ingestion pipeline error',
+    });
+  }
+});
+
+// -------------------------------------------------------------
+// Admin Ingestion Jobs API
+// -------------------------------------------------------------
+app.get('/api/admin/ingest/jobs', (_req: Request, res: Response) => {
+  const jobs = INGESTION_JOBS_STORE;
+  const summary = {
+    all: jobs.length,
+    pending: jobs.filter((j) => j.status === 'pending').length,
+    approved: jobs.filter((j) => j.status === 'approved').length,
+    importing: jobs.filter((j) => j.status === 'importing').length,
+    imported: jobs.filter((j) => j.status === 'imported').length,
+    failed: jobs.filter((j) => j.status === 'failed').length,
+  };
+
+  return res.json({
+    success: true,
+    summary,
+    jobs,
+  });
+});
+
+app.post('/api/admin/ingest/retry', async (req: Request, res: Response) => {
+  try {
+    const { jobId } = req.body;
+    if (!jobId) {
+      return res.status(400).json({ success: false, error: 'jobId is required to retry import.' });
+    }
+
+    const updatedJob = await retryIngestionJob(jobId);
+    return res.json({
+      success: true,
+      job: updatedJob,
+      message: `Job ${jobId} successfully retried. Current status: ${updatedJob.status}.`,
+    });
+  } catch (error: any) {
+    console.error('[MAYF Ingestion] Retry failure:', error);
+    return res.status(500).json({ success: false, error: error?.message || 'Retry failed' });
+  }
+});
+
+app.post('/api/admin/ingest/sync', async (_req: Request, res: Response) => {
+  try {
+    const syncOutcome = await syncRegistryNow();
+    return res.json({
+      success: true,
+      totalProcessed: syncOutcome.totalProcessed,
+      message: `Synchronized ${syncOutcome.totalProcessed} pending/approved rows from Content Registry.`,
+    });
+  } catch (error: any) {
+    console.error('[MAYF Ingestion] Manual sync failure:', error);
+    return res.status(500).json({ success: false, error: error?.message || 'Sync failed' });
+  }
+});
+
+app.post('/api/admin/ingest/simulate-approval', async (req: Request, res: Response) => {
+  try {
+    const { content_id } = req.body;
+    const target = INGESTION_JOBS_STORE.find((j) => j.content_id === content_id);
+    if (!target) {
+      return res.status(404).json({ success: false, error: `Row with content_id "${content_id}" not found.` });
+    }
+
+    // Mark as approved and run ingestion
+    target.sourceRowMetadata.status = 'Approved';
+    const outcome = await processRegistryRow(target.sourceRowMetadata, 'admin_manual_sync');
+    return res.json({
+      success: outcome.success,
+      job: outcome.job,
+      message: outcome.success
+        ? `Successfully imported "${target.title}" into production storage and Firestore.`
+        : `Ingestion failed: ${outcome.error}`,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || 'Simulation error' });
   }
 });
 
