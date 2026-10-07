@@ -1,22 +1,48 @@
-import React, { useState } from 'react';
-import { Bot, Send, Sparkles, HelpCircle, Layers, Lightbulb, RefreshCw, User } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  Bot,
+  Send,
+  Sparkles,
+  Camera,
+  Upload,
+  Image as ImageIcon,
+  X,
+  ThumbsUp,
+  ThumbsDown,
+  RefreshCw,
+  History,
+  ShieldCheck,
+  Zap,
+  Info,
+  Check,
+} from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
 import { Button } from '../components/ui/Button';
 import { useAuth } from '../context/AuthContext';
 import { StudentClass } from '../lib/firebase/types';
-import { useNavigation } from '../context/NavigationContext';
+import { useNavigation, Link } from '../context/NavigationContext';
+import { MathRenderer } from '../components/ui/MathRenderer';
 
 interface ChatMessage {
   id: string;
   sender: 'student' | 'ai_teacher';
   text: string;
   timestamp: string;
-  suggestedFormulas?: string[];
-  stepHints?: string[];
+  questionType?: 'text' | 'image' | 'camera' | 'screenshot';
+  imageUrl?: string;
+  userRating?: 'helpful' | 'unhelpful';
+}
+
+interface ImagePayload {
+  data: string; // base64
+  mimeType: string;
+  previewUrl: string;
+  fileName: string;
+  type: 'image' | 'camera' | 'screenshot';
 }
 
 export const AiTeacherPage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, firebaseUser } = useAuth();
   const { currentRoute } = useNavigation();
   const queryTopic = currentRoute.searchParams.get('topic');
 
@@ -25,82 +51,226 @@ export const AiTeacherPage: React.FC = () => {
   );
   const [topic, setTopic] = useState<string>(queryTopic || 'Quadratic Equations');
   const [inputQuestion, setInputQuestion] = useState('');
+  const [selectedImage, setSelectedImage] = useState<ImagePayload | null>(null);
   const [loading, setLoading] = useState(false);
+  const [quotaRemaining, setQuotaRemaining] = useState<number | null>(null);
+  const [activeModel, setActiveModel] = useState<string>('gemini-3.8-flash');
+  const [ratingSubmittedIds, setRatingSubmittedIds] = useState<Record<string, 'helpful' | 'unhelpful'>>({});
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome-1',
       sender: 'ai_teacher',
-      text: `Hello! I am **Professor Sigma**, your 24/7 AI Mathematics Teacher for **${studentClass}**.\n\nWhether you are stuck on a textbook theorem, confusing signs in an equation, or need a step-by-step hint for your homework—ask me anything! I will break it down into clear, logical steps.`,
+      text: `### Understanding the Question\nHello! I am **Professor Sigma**, your dedicated AI Mathematics Teacher for **${studentClass}**.\n\n### Given Information\n* Grades Covered: Classes 5 to 10 (CBSE & ICSE Syllabuses)\n* Supported Inputs: Typed algebra, textbook photo upload, mobile camera photograph, and clipboard screenshot\n\n### Concept Used\nMulti-step pedagogical problem decomposition with beautiful KaTeX equations: $$\\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}, \\quad a^2 + b^2 = c^2, \\quad \\sin^2 \\theta + \\cos^2 \\theta = 1$$\n\n### Step-by-Step Solution\n1. Type any math doubt or take a photo of your exercise problem.\n2. I will break it down into givens, theorems, worked algebraic steps, and exam verification.\n3. If an image is blurry or numbers are cut off, I will ask for clarification rather than guessing.\n\n### Final Answer\nReady whenever you are! Ask your first doubt below.`,
       timestamp: 'Just now',
-      suggestedFormulas: ['Quadratic Formula: x = (-b ± √(b² - 4ac)) / (2a)', 'Pythagoras: h² = p² + b²'],
-      stepHints: ['Identify what is given and what you need to find.', 'Relate the problem to a standard theorem.'],
     },
   ]);
 
-  const quickPrompts = [
-    'How do I derive the Quadratic Formula from ax² + bx + c = 0?',
-    'Why is √2 an irrational number? Can you show the proof?',
-    'What is the difference between CSA and TSA of a cylinder?',
-    'Explain why sin²θ + cos²θ = 1 using a right triangle.',
-  ];
+  // Fetch model config on mount
+  useEffect(() => {
+    fetch('/api/ai-teacher/config')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.model) setActiveModel(data.model);
+      })
+      .catch(() => {});
+  }, []);
 
-  const handleSendMessage = async (textToSend?: string) => {
-    const question = textToSend || inputQuestion;
-    if (!question.trim() || loading) return;
+  // Auto-scroll chat to latest message
+  useEffect(() => {
+    if (chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    }
+  }, [messages, loading]);
+
+  // Quick mathematical symbol helper
+  const insertSymbol = (symbol: string) => {
+    if (!textareaRef.current) return;
+    const start = textareaRef.current.selectionStart || inputQuestion.length;
+    const end = textareaRef.current.selectionEnd || inputQuestion.length;
+    const newText = inputQuestion.substring(0, start) + symbol + inputQuestion.substring(end);
+    setInputQuestion(newText);
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.setSelectionRange(start + symbol.length, start + symbol.length);
+      }
+    }, 0);
+  };
+
+  // Handle image file selection
+  const handleFileChange = (file: File, type: 'image' | 'camera' | 'screenshot') => {
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      alert('Please upload a valid image (JPEG, PNG, or WebP).');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      alert('Image size exceeds 10 MB limit. Please select a smaller photo.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64String = reader.result as string;
+      setSelectedImage({
+        data: base64String,
+        mimeType: file.type,
+        previewUrl: URL.createObjectURL(file),
+        fileName: file.name || 'photograph.jpg',
+        type,
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Clipboard paste listener for screenshots
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          handleFileChange(file, 'screenshot');
+          break;
+        }
+      }
+    }
+  };
+
+  // Rating handler
+  const handleRateDoubt = async (doubtId: string, rating: 'helpful' | 'unhelpful') => {
+    setRatingSubmittedIds((prev) => ({ ...prev, [doubtId]: rating }));
+    try {
+      await fetch('/api/ai-teacher/rate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ doubtId, rating }),
+      });
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleSendMessage = async (textOverride?: string) => {
+    const questionText = textOverride !== undefined ? textOverride : inputQuestion;
+    const hasImage = Boolean(selectedImage);
+
+    if ((!questionText.trim() && !hasImage) || loading) return;
+
+    const studentMsgId = 'msg-' + Date.now();
+    const currentImg = selectedImage;
 
     const studentMsg: ChatMessage = {
-      id: 'msg-' + Date.now(),
+      id: studentMsgId,
       sender: 'student',
-      text: question.trim(),
+      text: questionText.trim() || 'Please solve the problem in the uploaded image.',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      questionType: currentImg ? currentImg.type : 'text',
+      imageUrl: currentImg?.previewUrl,
     };
 
     setMessages((prev) => [...prev, studentMsg]);
     setInputQuestion('');
+    setSelectedImage(null);
     setLoading(true);
 
     try {
-      const response = await fetch('/api/ai-teacher/ask', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: question,
-          studentClass,
-          chapterTopic: topic,
-          history: messages.slice(-4),
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Server returned error status');
+      let authToken: string | null = null;
+      if (firebaseUser) {
+        authToken = await firebaseUser.getIdToken();
+      } else if (user) {
+        authToken = `dev-token-${user.uid}`;
       }
 
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (authToken) {
+        headers['Authorization'] = `Bearer ${authToken}`;
+      }
+
+      const payload: any = {
+        message: questionText.trim(),
+        studentClass,
+        chapterTopic: topic,
+        questionType: currentImg ? currentImg.type : 'text',
+      };
+
+      if (currentImg) {
+        payload.image = {
+          data: currentImg.data,
+          mimeType: currentImg.mimeType,
+        };
+      }
+
+      const response = await fetch('/api/ai-teacher/ask', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+
       const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Server error occurred');
+      }
+
+      if (typeof data.quotaRemaining === 'number') {
+        setQuotaRemaining(data.quotaRemaining);
+      }
+
       const teacherMsg: ChatMessage = {
-        id: 'msg-' + (Date.now() + 1),
+        id: data.doubtId || 'msg-' + (Date.now() + 1),
         sender: 'ai_teacher',
         text: data.reply,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        suggestedFormulas: data.suggestedFormulas,
-        stepHints: data.stepHints,
       };
 
       setMessages((prev) => [...prev, teacherMsg]);
-    } catch (err) {
-      const fallbackMsg: ChatMessage = {
+    } catch (err: any) {
+      console.error('[MAYF AI Teacher Error]:', err);
+      const errorMsg: ChatMessage = {
         id: 'msg-err-' + Date.now(),
         sender: 'ai_teacher',
-        text: `Let's work through your question: "${question}".\n\n**Step 1: Write down the known values**\nAlways state what quantities are given with units.\n\n**Step 2: Choose the applicable theorem**\nFor this topic, check standard identities in your formula deck.\n\n**Step 3: Check boundary conditions**\nEnsure there is no division by zero or negative square root in real numbers.`,
+        text: `### Understanding the Question\nI encountered a temporary connection issue: "${err?.message || 'Network request failed'}"\n\n### Step-by-Step Solution\n* Please ensure your mathematics question is clearly stated.\n* If you uploaded a photograph, verify that numbers and signs are legible.\n* Try asking again in a few seconds.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        suggestedFormulas: ['Standard Formula for ' + topic],
-        stepHints: ['Work step by step without skipping lines.'],
       };
-      setMessages((prev) => [...prev, fallbackMsg]);
+      setMessages((prev) => [...prev, errorMsg]);
     } finally {
       setLoading(false);
     }
   };
+
+  const mathSymbols = [
+    { label: 'x²', val: 'x^2' },
+    { label: '√x', val: '\\sqrt{x}' },
+    { label: 'a/b', val: '\\frac{a}{b}' },
+    { label: 'π', val: '\\pi' },
+    { label: 'θ', val: '\\theta' },
+    { label: '±', val: '\\pm' },
+    { label: '≤', val: '\\le' },
+    { label: '≥', val: '\\ge' },
+    { label: 'Δ', val: '\\Delta' },
+    { label: '°', val: '^\\circ' },
+  ];
+
+  const quickPrompts = [
+    'How do I solve 2x² - 5x + 3 = 0 using the quadratic formula?',
+    'Prove that √5 is an irrational number by contradiction.',
+    'What is the formula for the total surface area of a cone?',
+    'State and prove Basic Proportionality Theorem (BPT).',
+    'How do I find HCF and LCM of 96 and 404 using prime factorisation?',
+  ];
 
   const classes: StudentClass[] = [
     'Class 5',
@@ -113,126 +283,197 @@ export const AiTeacherPage: React.FC = () => {
 
   return (
     <SharedLayout>
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="max-w-4xl mx-auto space-y-5">
         
-        {/* Header & Configuration Bar */}
-        <div className="bg-white rounded-lg border border-[#E2E8F0] p-4 sm:p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+        {/* Header & Classroom Controls */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 text-xs font-heading font-semibold text-[#00687A] mb-1">
-              <Sparkles className="w-3.5 h-3.5 text-[#06B6D4]" />
-              <span>AI Math Teacher · Professor Sigma</span>
+            <div className="flex items-center gap-2 text-xs font-heading font-semibold text-blue-700 mb-1">
+              <Sparkles className="w-4 h-4 text-cyan-500" />
+              <span>Professor Sigma · Dedicated AI Mathematics Tutor</span>
             </div>
-            <h1 className="font-heading font-bold text-xl sm:text-2xl text-[#0F172A]">
-              Step-by-Step Doubt Tutor
+            <h1 className="font-heading font-extrabold text-2xl text-slate-900 tracking-tight">
+              Class 5–10 Step-by-Step AI Teacher
             </h1>
-            <p className="text-xs text-[#64748B]">
-              Rigorous pedagogical guidance tuned for CBSE and ICSE standards.
+            <p className="text-xs text-slate-500 mt-0.5">
+              Multimodal reasoning with typed math, camera capture, and textbook photo analysis.
             </p>
           </div>
 
-          {/* Selectors */}
+          {/* Model & Grade Badges */}
           <div className="flex items-center gap-3 flex-wrap">
             <div className="text-xs">
-              <label htmlFor="grade-select" className="text-[#64748B] font-medium block mb-1">Your Grade:</label>
+              <label htmlFor="grade-select" className="text-slate-500 font-medium block mb-1">
+                Student Grade:
+              </label>
               <select
                 id="grade-select"
-                aria-label="Your Grade"
                 value={studentClass}
                 onChange={(e) => setStudentClass(e.target.value as StudentClass)}
-                className="bg-[#F8FAFC] border border-[#CBD5E1] rounded-md px-2.5 py-1.5 font-heading font-semibold text-xs text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]"
+                className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 font-heading font-semibold text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600"
               >
                 {classes.map((c) => (
                   <option key={c} value={c}>
-                    {c}
+                    {c} (CBSE/ICSE)
                   </option>
                 ))}
               </select>
             </div>
 
             <div className="text-xs">
-              <label htmlFor="topic-focus" className="text-[#64748B] font-medium block mb-1">Topic Focus:</label>
+              <label htmlFor="topic-focus" className="text-slate-500 font-medium block mb-1">
+                Topic Focus:
+              </label>
               <input
                 id="topic-focus"
                 type="text"
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
-                placeholder="e.g. Polynomials, Triangles"
-                className="bg-[#F8FAFC] border border-[#CBD5E1] rounded-md px-2.5 py-1.5 text-xs text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8] w-40"
+                placeholder="e.g. Triangles, Algebra"
+                className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600 w-36 sm:w-44"
               />
             </div>
           </div>
         </div>
 
+        {/* Security, Model, and Quota Strip */}
+        <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border border-blue-200/60 rounded-xl text-xs text-slate-700">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="inline-flex items-center gap-1 font-mono text-[11px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-semibold">
+              <Zap className="w-3 h-3 text-blue-600" />
+              {activeModel}
+            </span>
+            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-800 font-medium">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+              Firebase App Check Protected
+            </span>
+            {quotaRemaining !== null && (
+              <span className="text-[11px] text-slate-600">
+                Daily Doubts Remaining: <strong>{quotaRemaining}</strong>
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Link
+              href="/dashboard/ai-history"
+              className="inline-flex items-center gap-1 text-[11px] text-blue-700 hover:text-blue-900 font-semibold cursor-pointer"
+            >
+              <History className="w-3.5 h-3.5" />
+              <span>View My AI History</span>
+            </Link>
+          </div>
+        </div>
+
         {/* Quick Prompts Strip */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-          <span className="text-xs text-[#64748B] font-semibold shrink-0">Try asking:</span>
+          <span className="text-xs text-slate-500 font-semibold shrink-0">Try asking:</span>
           {quickPrompts.map((q, idx) => (
             <button
               key={idx}
               onClick={() => handleSendMessage(q)}
-              className="text-xs bg-white hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#1D4ED8]/30 text-[#475569] hover:text-[#1D4ED8] px-3 py-1.5 rounded-full shrink-0 transition-colors cursor-pointer text-left font-medium"
+              className="text-xs bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-slate-600 hover:text-blue-700 px-3 py-1.5 rounded-full shrink-0 transition-colors cursor-pointer text-left font-medium"
             >
               {q}
             </button>
           ))}
         </div>
 
-        {/* Chat Transcript Container */}
-        <div className="bg-white rounded-lg border border-[#E2E8F0] shadow-sm min-h-[460px] flex flex-col justify-between overflow-hidden">
+        {/* Main Chat Box */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm min-h-[500px] flex flex-col justify-between overflow-hidden">
           
           {/* Messages Feed */}
-          <div className="p-4 sm:p-6 space-y-6 flex-1 overflow-y-auto max-h-[580px]">
+          <div
+            ref={chatScrollRef}
+            className="p-4 sm:p-6 space-y-6 flex-1 overflow-y-auto max-h-[620px]"
+          >
             {messages.map((msg) => {
               const isTeacher = msg.sender === 'ai_teacher';
+              const rating = ratingSubmittedIds[msg.id];
+
               return (
                 <div
                   key={msg.id}
-                  className={`flex gap-3 ${isTeacher ? 'items-start' : 'items-start flex-row-reverse'}`}
+                  className={`flex gap-3.5 ${isTeacher ? 'items-start' : 'items-start flex-row-reverse'}`}
                 >
                   <div
-                    className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-bold text-xs ${
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 font-bold text-xs shadow-xs ${
                       isTeacher
-                        ? 'bg-[#1D4ED8] text-white shadow-xs'
-                        : 'bg-[#F1F5F9] text-[#1E293B] border border-[#CBD5E1]'
+                        ? 'bg-blue-700 text-white'
+                        : 'bg-slate-100 text-slate-800 border border-slate-300'
                     }`}
                   >
                     {isTeacher ? 'Σ' : 'You'}
                   </div>
 
                   <div
-                    className={`max-w-[85%] rounded-lg p-4 sm:p-5 ${
+                    className={`max-w-[88%] rounded-2xl p-4 sm:p-5 ${
                       isTeacher
-                        ? 'bg-[#F8FAFC] border border-[#E2E8F0] text-[#1E293B]'
-                        : 'bg-[#1D4ED8] text-white shadow-xs'
+                        ? 'bg-slate-50 border border-slate-200 text-slate-900 shadow-2xs'
+                        : 'bg-blue-700 text-white shadow-xs'
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-4 mb-2 text-[11px] opacity-75">
+                    {/* Message Header */}
+                    <div
+                      className={`flex items-center justify-between gap-4 mb-2.5 text-[11px] ${
+                        isTeacher ? 'text-slate-500' : 'text-blue-200'
+                      }`}
+                    >
                       <span className="font-heading font-semibold">
-                        {isTeacher ? 'Professor Sigma (AI Tutor)' : 'You'}
+                        {isTeacher ? 'Professor Sigma (AI Teacher)' : 'Student Question'}
                       </span>
-                      <span>{msg.timestamp}</span>
+                      <span className="font-mono text-[10px]">{msg.timestamp}</span>
                     </div>
 
-                    {/* Message Body */}
-                    <div className="text-xs sm:text-sm leading-relaxed whitespace-pre-wrap font-sans">
-                      {msg.text}
-                    </div>
+                    {/* Image Attachment (if student sent photo) */}
+                    {msg.imageUrl && (
+                      <div className="mb-3 rounded-lg overflow-hidden border border-white/20 max-w-xs shadow-sm bg-black/10">
+                        <img
+                          src={msg.imageUrl}
+                          alt="Uploaded problem"
+                          className="w-full h-auto max-h-48 object-contain"
+                        />
+                      </div>
+                    )}
 
-                    {/* Suggested Formulas Callout (if teacher) */}
-                    {isTeacher && msg.suggestedFormulas && msg.suggestedFormulas.length > 0 && (
-                      <div className="mt-4 pt-3 border-t border-[#E2E8F0] space-y-1.5">
-                        <div className="text-[11px] font-heading font-bold uppercase tracking-wider text-[#00687A] flex items-center gap-1">
-                          <Layers className="w-3.5 h-3.5 text-[#06B6D4]" />
-                          <span>Key Formula Reference</span>
+                    {/* Message Body with KaTeX */}
+                    {isTeacher ? (
+                      <MathRenderer content={msg.text} />
+                    ) : (
+                      <div className="text-xs sm:text-sm leading-relaxed whitespace-pre-wrap font-sans">
+                        {msg.text}
+                      </div>
+                    )}
+
+                    {/* Feedback Rating Strip (For Teacher responses) */}
+                    {isTeacher && msg.id !== 'welcome-1' && (
+                      <div className="mt-4 pt-3 border-t border-slate-200/80 flex items-center justify-between text-xs text-slate-500">
+                        <span className="text-[11px]">Was this step-by-step solution helpful?</span>
+                        <div className="flex items-center gap-1.5">
+                          {rating ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded">
+                              <Check className="w-3 h-3 text-emerald-600" />
+                              Feedback recorded
+                            </span>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => handleRateDoubt(msg.id, 'helpful')}
+                                className="p-1 text-slate-400 hover:text-emerald-600 hover:bg-slate-100 rounded transition-colors cursor-pointer"
+                                title="Helpful answer"
+                              >
+                                <ThumbsUp className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleRateDoubt(msg.id, 'unhelpful')}
+                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-slate-100 rounded transition-colors cursor-pointer"
+                                title="Not helpful"
+                              >
+                                <ThumbsDown className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
                         </div>
-                        {msg.suggestedFormulas.map((f, i) => (
-                          <div
-                            key={i}
-                            className="bg-white border border-[#E0F2FE] rounded px-2.5 py-1.5 font-mono text-xs font-semibold text-[#0037B0]"
-                          >
-                            {f}
-                          </div>
-                        ))}
                       </div>
                     )}
                   </div>
@@ -242,49 +483,157 @@ export const AiTeacherPage: React.FC = () => {
 
             {loading && (
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-[#1D4ED8] text-white flex items-center justify-center font-bold text-xs">
+                <div className="w-9 h-9 rounded-xl bg-blue-700 text-white flex items-center justify-center font-bold text-xs shadow-xs">
                   Σ
                 </div>
-                <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg p-3 text-xs text-[#64748B] flex items-center gap-2">
-                  <RefreshCw className="w-4 h-4 animate-spin text-[#1D4ED8]" />
-                  <span>Professor Sigma is analyzing the algebraic steps...</span>
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs text-slate-600 flex items-center gap-2.5">
+                  <RefreshCw className="w-4 h-4 animate-spin text-blue-700" />
+                  <span>Professor Sigma is analyzing the algebraic steps and theorems...</span>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Input Box Footer */}
-          <div className="p-4 bg-[#FAFBFD] border-t border-[#E2E8F0]">
+          {/* Input Console */}
+          <div className="p-4 bg-slate-50 border-t border-slate-200 space-y-2.5">
+            
+            {/* Mathematical Equation Shortcuts Bar */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+              <span className="text-[11px] text-slate-400 font-semibold shrink-0 mr-1">Insert Math:</span>
+              {mathSymbols.map((s, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => insertSymbol(s.val)}
+                  className="px-2 py-0.5 text-xs font-mono bg-white hover:bg-blue-50 border border-slate-200 rounded text-slate-700 hover:text-blue-700 transition-colors cursor-pointer shrink-0 font-semibold"
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Selected Image Preview Pill */}
+            {selectedImage && (
+              <div className="flex items-center gap-3 p-2 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900">
+                <div className="w-10 h-10 rounded-lg overflow-hidden border border-blue-300 shrink-0 bg-white">
+                  <img
+                    src={selectedImage.previewUrl}
+                    alt="Preview"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold truncate max-w-xs">{selectedImage.fileName}</span>
+                    <span className="text-[10px] font-mono uppercase bg-blue-200 px-1.5 py-0.2 rounded font-bold">
+                      {selectedImage.mimeType.split('/')[1]}
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-blue-700">
+                    {selectedImage.type === 'camera' ? 'Camera photograph' : selectedImage.type === 'screenshot' ? 'Clipboard screenshot' : 'Uploaded file'} ready for analysis
+                  </span>
+                </div>
+                <button
+                  onClick={() => setSelectedImage(null)}
+                  className="p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
+                  title="Remove image"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            {/* Input Form */}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 handleSendMessage();
               }}
-              className="flex items-center gap-2"
+              className="flex items-end gap-2"
             >
+              {/* Hidden file inputs */}
               <input
-                type="text"
-                placeholder={`Ask a math doubt in ${topic} for ${studentClass}...`}
-                value={inputQuestion}
-                onChange={(e) => setInputQuestion(e.target.value)}
-                disabled={loading}
-                className="flex-1 bg-white border border-[#CBD5E1] rounded-lg px-4 py-2.5 text-xs sm:text-sm text-[#0F172A] placeholder-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]"
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleFileChange(file, 'image');
+                }}
               />
-              <Button
-                type="submit"
-                variant="primary"
-                size="md"
-                disabled={!inputQuestion.trim() || loading}
-                isLoading={loading}
-                className="px-5 font-bold"
-              >
-                <Send className="w-4 h-4" />
-                <span className="hidden sm:inline">Ask</span>
-              </Button>
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleFileChange(file, 'camera');
+                }}
+              />
+
+              {/* Action buttons (Camera, Upload) */}
+              <div className="flex items-center gap-1 shrink-0 pb-1">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-2.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 text-slate-600 hover:text-blue-700 transition-colors cursor-pointer"
+                  title="Upload math problem photo (JPEG, PNG, WebP)"
+                >
+                  <Upload className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => cameraInputRef.current?.click()}
+                  className="p-2.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 text-slate-600 hover:text-blue-700 transition-colors cursor-pointer"
+                  title="Take photo with camera (supported mobile devices)"
+                >
+                  <Camera className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Textarea */}
+              <div className="flex-1 relative">
+                <textarea
+                  ref={textareaRef}
+                  rows={2}
+                  value={inputQuestion}
+                  onChange={(e) => setInputQuestion(e.target.value)}
+                  onPaste={handlePaste}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                  disabled={loading}
+                  placeholder={`Ask a math doubt in ${topic} for ${studentClass}... (Paste screenshot with Ctrl+V)`}
+                  className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 resize-none"
+                />
+              </div>
+
+              {/* Submit Button */}
+              <div className="shrink-0 pb-1">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="md"
+                  disabled={(!inputQuestion.trim() && !selectedImage) || loading}
+                  isLoading={loading}
+                  className="h-10 px-4 font-bold gap-1.5"
+                >
+                  <Send className="w-4 h-4" />
+                  <span className="hidden sm:inline">Ask Tutor</span>
+                </Button>
+              </div>
             </form>
-            <div className="mt-2 text-[11px] text-[#64748B] flex items-center justify-between">
-              <span>Supports arithmetic, geometry proofs, algebra identities, and word problems.</span>
-              <span className="hidden sm:inline">Powered by server-side Gemini</span>
+
+            <div className="text-[11px] text-slate-500 flex items-center justify-between">
+              <span>Supports fractions, roots, algebra, geometry, trigonometry, and matrices. Paste screenshots directly into box.</span>
+              <span className="hidden sm:inline">Press Enter to send · Shift+Enter for newline</span>
             </div>
           </div>
 

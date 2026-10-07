@@ -1,21 +1,27 @@
 import React, { useState } from 'react';
 import { Clock, Download, CheckCircle2, AlertCircle, FileText } from 'lucide-react';
 import { Button } from '../ui/Button';
+import { TurnstileModal } from '../ui/TurnstileModal';
 
 interface TestPaperViewerProps {
   title: string;
   classLevel: string;
   downloadUrl?: string;
+  contentId?: string;
+  accessType?: 'free' | 'paid';
 }
 
 export const TestPaperViewer: React.FC<TestPaperViewerProps> = ({
   title,
   classLevel,
   downloadUrl,
+  contentId,
+  accessType = 'paid',
 }) => {
   const [timerSeconds, setTimerSeconds] = useState(10800); // 3 Hours (180 mins)
   const [timerRunning, setTimerRunning] = useState(false);
   const [activeSection, setActiveSection] = useState<'A' | 'B' | 'C' | 'D' | 'E'>('A');
+  const [isTurnstileOpen, setIsTurnstileOpen] = useState(false);
 
   React.useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -128,13 +134,24 @@ export const TestPaperViewer: React.FC<TestPaperViewerProps> = ({
       {/* Footer controls */}
       <div className="pt-4 border-t border-[#E2E8F0] flex flex-wrap items-center justify-between gap-3 text-xs text-[#64748B]">
         <span>General Instruction: All questions are compulsory. Internal choices provided in sections C & D.</span>
-        {downloadUrl && (
-          <Button size="sm" variant="secondary" onClick={() => window.open(downloadUrl, '_blank')}>
-            <Download className="w-3.5 h-3.5 mr-1" />
-            <span>Download Paper PDF</span>
-          </Button>
-        )}
+        <Button size="sm" variant="secondary" onClick={() => setIsTurnstileOpen(true)}>
+          <Download className="w-3.5 h-3.5 mr-1" />
+          <span>Download Paper PDF</span>
+        </Button>
       </div>
+
+      {/* Cloudflare Turnstile Secure Download Modal */}
+      {isTurnstileOpen && (
+        <TurnstileModal
+          isOpen={isTurnstileOpen}
+          onClose={() => setIsTurnstileOpen(false)}
+          contentId={contentId || 'cnt-test-class10-mock-1'}
+          title={title}
+          classLevel={classLevel}
+          accessType={accessType}
+          fallbackFileName="MAYF_Exam_Paper.pdf"
+        />
+      )}
     </div>
   );
 };

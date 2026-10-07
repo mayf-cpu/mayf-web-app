@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
 import { Download, Maximize2, Minimize2, ZoomIn, ZoomOut, Printer, FileText } from 'lucide-react';
 import { Button } from '../ui/Button';
+import { TurnstileModal } from '../ui/TurnstileModal';
 
 interface PdfViewerProps {
   pdfUrl: string;
   title: string;
   fileName?: string;
   downloadAllowed?: boolean;
+  contentId?: string;
+  accessType?: 'free' | 'paid';
 }
 
 export const PdfViewer: React.FC<PdfViewerProps> = ({
@@ -14,18 +17,15 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   title,
   fileName = 'MAYF_Document.pdf',
   downloadAllowed = true,
+  contentId,
+  accessType = 'free',
 }) => {
   const [zoomLevel, setZoomLevel] = useState<number>(100);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [isTurnstileOpen, setIsTurnstileOpen] = useState(false);
 
   const handleDownload = () => {
-    const a = document.createElement('a');
-    a.href = pdfUrl;
-    a.download = fileName;
-    a.target = '_blank';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    setIsTurnstileOpen(true);
   };
 
   const handlePrint = () => {
@@ -113,6 +113,18 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         <span>Verified Class 5–10 CBSE / ICSE Document</span>
         <span>Scroll to read all pages</span>
       </div>
+
+      {/* Cloudflare Turnstile Secure Download Modal */}
+      {isTurnstileOpen && (
+        <TurnstileModal
+          isOpen={isTurnstileOpen}
+          onClose={() => setIsTurnstileOpen(false)}
+          contentId={contentId || fileName.replace(/\.[^/.]+$/, '')}
+          title={title}
+          accessType={accessType}
+          fallbackFileName={fileName}
+        />
+      )}
     </div>
   );
 };

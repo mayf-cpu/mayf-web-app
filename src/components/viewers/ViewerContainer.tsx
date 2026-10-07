@@ -31,6 +31,8 @@ export const ViewerContainer: React.FC<ViewerContainerProps> = ({ item }) => {
                 title={item.title}
                 fileName={`${item.slug}.pdf`}
                 downloadAllowed={item.downloadAllowed}
+                contentId={item.id}
+                accessType={item.accessType}
               />
             );
 
@@ -48,6 +50,8 @@ export const ViewerContainer: React.FC<ViewerContainerProps> = ({ item }) => {
                 imageUrl={primaryFile?.url || item.thumbnail || ''}
                 title={item.title}
                 downloadAllowed={item.downloadAllowed}
+                contentId={item.id}
+                accessType={item.accessType}
               />
             );
 
@@ -85,6 +89,8 @@ export const ViewerContainer: React.FC<ViewerContainerProps> = ({ item }) => {
                 title={item.title}
                 classLevel={item.classLevels.join(', ')}
                 downloadUrl={primaryFile?.url}
+                contentId={item.id}
+                accessType={item.accessType}
               />
             );
 

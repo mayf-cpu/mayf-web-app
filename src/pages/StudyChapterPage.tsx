@@ -14,6 +14,7 @@ import { ContentItem } from '../lib/firebase/types';
 import { ViewerContainer } from '../components/viewers/ViewerContainer';
 import { SeoHead } from '../components/common/SeoHead';
 import { INITIAL_FORMULAS, INITIAL_SOLVED_PROBLEMS } from '../data/curriculumData';
+import { TurnstileModal } from '../components/ui/TurnstileModal';
 
 export const StudyChapterPage: React.FC = () => {
   const { currentRoute, goBack } = useNavigation();
@@ -23,6 +24,7 @@ export const StudyChapterPage: React.FC = () => {
   const [contentItem, setContentItem] = useState<ContentItem | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isTurnstileOpen, setIsTurnstileOpen] = useState(false);
 
   useEffect(() => {
     async function loadItem() {
@@ -208,7 +210,17 @@ export const StudyChapterPage: React.FC = () => {
                   <span className="font-mono tabular-nums">{activeItem.downloadCount} downloads</span>
                 </span>
               )}
-              <span className="font-mono text-[11px] text-[#94A3B8]">
+              {activeItem.downloadAllowed && (
+                <button
+                  onClick={() => setIsTurnstileOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#1D4ED8] font-semibold rounded-md text-xs cursor-pointer transition-colors"
+                  title="Secure Cloudflare Turnstile Download"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Asset</span>
+                </button>
+              )}
+              <span className="font-mono text-[11px] text-[#94A3B8] hidden sm:inline">
                 Canonical: {canonicalUrl}
               </span>
             </div>
@@ -289,6 +301,19 @@ export const StudyChapterPage: React.FC = () => {
               ))}
             </div>
           </section>
+        )}
+
+        {/* Cloudflare Turnstile Secure Download Modal */}
+        {isTurnstileOpen && (
+          <TurnstileModal
+            isOpen={isTurnstileOpen}
+            onClose={() => setIsTurnstileOpen(false)}
+            contentId={activeItem.id}
+            title={activeItem.title}
+            classLevel={activeItem.classLevels.join(', ')}
+            accessType={activeItem.accessType}
+            fallbackFileName={`${activeItem.slug}.pdf`}
+          />
         )}
 
       </div>

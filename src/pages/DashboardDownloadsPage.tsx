@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { DownloadCloud, FileText, CheckCircle2, Download } from 'lucide-react';
+import { DownloadCloud, FileText, CheckCircle2, Download, ShieldCheck } from 'lucide-react';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { Button } from '../components/ui/Button';
+import { TurnstileModal } from '../components/ui/TurnstileModal';
 
 interface DownloadItem {
   id: string;
@@ -11,10 +12,12 @@ interface DownloadItem {
   pages: number;
   category: string;
   description: string;
+  accessType?: 'free' | 'paid';
 }
 
 export const DashboardDownloadsPage: React.FC = () => {
   const [downloadedIds, setDownloadedIds] = useState<string[]>([]);
+  const [activeModalItem, setActiveModalItem] = useState<DownloadItem | null>(null);
 
   const downloads: DownloadItem[] = [
     {
@@ -24,6 +27,7 @@ export const DashboardDownloadsPage: React.FC = () => {
       fileSize: '2.4 MB',
       pages: 14,
       category: 'Formula Flashcards',
+      accessType: 'free',
       description: 'Every formula in Real Numbers, Polynomials, Linear Systems, Quadratics, AP, Triangles, Trig, Circles, and Surface Areas in printable high-resolution PDF format.',
     },
     {
@@ -33,6 +37,7 @@ export const DashboardDownloadsPage: React.FC = () => {
       fileSize: '1.8 MB',
       pages: 8,
       category: 'Theorems & Axioms',
+      accessType: 'free',
       description: 'Complete step-by-step proofs for Basic Proportionality Theorem (BPT), Tangent Theorem, and cyclic properties with diagrams.',
     },
     {
@@ -42,6 +47,7 @@ export const DashboardDownloadsPage: React.FC = () => {
       fileSize: '1.5 MB',
       pages: 10,
       category: 'Formula Flashcards',
+      accessType: 'free',
       description: 'Quick reference for Herons formula, Surface Areas & Volumes of cylinders/cones, and Circle chord angle properties.',
     },
     {
@@ -51,6 +57,7 @@ export const DashboardDownloadsPage: React.FC = () => {
       fileSize: '1.2 MB',
       pages: 12,
       category: 'Practice Sheet',
+      accessType: 'free',
       description: 'Handcrafted word problems with step-by-step worked solutions for algebraic expressions and identities.',
     },
     {
@@ -60,37 +67,23 @@ export const DashboardDownloadsPage: React.FC = () => {
       fileSize: '950 KB',
       pages: 6,
       category: 'Foundation',
+      accessType: 'free',
       description: 'Fraction addition rules, divisibility tricks, LCM/HCF shortcuts, and integer sign rules chart for study table wall mounting.',
+    },
+    {
+      id: 'cnt-test-class10-mock-1',
+      title: 'CBSE Class 10 Standard Mathematics 80-Mark Mock Board Exam Paper',
+      classLevel: 'Class 10',
+      fileSize: '1.8 MB',
+      pages: 16,
+      category: 'Mock Exam',
+      accessType: 'paid',
+      description: 'Full syllabus 3-hour sample examination with Section A to Section E marking scheme and answer key.',
     },
   ];
 
   const handleDownload = (item: DownloadItem) => {
-    // Generate text/blob file download simulation
-    const blob = new Blob(
-      [
-        `=======================================================\n` +
-        `MATHS AT YOUR FINGERTIPS (mayf.co.in)\n` +
-        `Official Student Revision Asset: ${item.title}\n` +
-        `Target Grade: ${item.classLevel} | Category: ${item.category}\n` +
-        `=======================================================\n\n` +
-        `Document Contents:\n` +
-        `${item.description}\n\n` +
-        `Verified by Professor Sigma. All CBSE & ICSE syllabus standards included.\n` +
-        `Download generated: ${new Date().toLocaleString()}\n`
-      ],
-      { type: 'text/plain' }
-    );
-
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${item.id}-${item.classLevel.toLowerCase().replace(/\s+/g, '-')}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-
-    setDownloadedIds((prev) => [...prev, item.id]);
+    setActiveModalItem(item);
   };
 
   return (
@@ -98,9 +91,39 @@ export const DashboardDownloadsPage: React.FC = () => {
       title="Downloadable Revision Materials"
       subtitle="High-resolution, printable PDF notes and formula cheat sheets for offline study."
     >
+      {/* Cloudflare Turnstile Verification Modal */}
+      {activeModalItem && (
+        <TurnstileModal
+          isOpen={Boolean(activeModalItem)}
+          onClose={() => setActiveModalItem(null)}
+          contentId={activeModalItem.id}
+          title={activeModalItem.title}
+          classLevel={activeModalItem.classLevel}
+          accessType={activeModalItem.accessType || 'free'}
+          fallbackFileName={`${activeModalItem.id}.pdf`}
+          onDownloadSuccess={(fileName) => {
+            setDownloadedIds((prev) => [...prev, activeModalItem.id]);
+          }}
+        />
+      )}
+
+      {/* Security Info Banner */}
+      <div className="mb-4 p-3 bg-blue-50/70 border border-blue-200/80 rounded-xl flex items-center justify-between text-xs text-blue-900 gap-3">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
+          <span>
+            <strong>Cloudflare Turnstile Protected:</strong> Every download uses server-verified Managed security challenges and short-lived authorized links.
+          </span>
+        </div>
+        <span className="hidden sm:inline-block text-[11px] font-mono text-blue-700 bg-blue-100 px-2 py-0.5 rounded font-semibold">
+          Managed Challenge Mode
+        </span>
+      </div>
+
       <div className="space-y-4">
         {downloads.map((item) => {
           const isDownloaded = downloadedIds.includes(item.id);
+          const isPaid = item.accessType === 'paid';
           return (
             <div
               key={item.id}
@@ -117,6 +140,13 @@ export const DashboardDownloadsPage: React.FC = () => {
                     </span>
                     <span className="text-[11px] text-[#00687A] font-semibold bg-[#ECFEFF] px-2 py-0.5 rounded">
                       {item.category}
+                    </span>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${
+                        isPaid ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+                      }`}
+                    >
+                      {isPaid ? 'Annual Pass Asset' : 'Free Resource'}
                     </span>
                     <span className="text-[11px] text-[#64748B] font-mono">
                       {item.fileSize} · {item.pages} pages

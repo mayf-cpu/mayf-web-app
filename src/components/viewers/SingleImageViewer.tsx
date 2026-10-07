@@ -1,20 +1,26 @@
 import React, { useState } from 'react';
 import { ZoomIn, ZoomOut, Maximize2, Minimize2, Download, Image as ImageIcon } from 'lucide-react';
 import { Button } from '../ui/Button';
+import { TurnstileModal } from '../ui/TurnstileModal';
 
 interface SingleImageViewerProps {
   imageUrl: string;
   title: string;
   downloadAllowed?: boolean;
+  contentId?: string;
+  accessType?: 'free' | 'paid';
 }
 
 export const SingleImageViewer: React.FC<SingleImageViewerProps> = ({
   imageUrl,
   title,
   downloadAllowed = true,
+  contentId = 'cnt-single-image-trig-chart',
+  accessType = 'free',
 }) => {
   const [zoomLevel, setZoomLevel] = useState(100);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isTurnstileOpen, setIsTurnstileOpen] = useState(false);
 
   return (
     <div
@@ -30,6 +36,18 @@ export const SingleImageViewer: React.FC<SingleImageViewerProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {downloadAllowed && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setIsTurnstileOpen(true)}
+              className="text-xs h-7 py-0 px-2.5"
+            >
+              <Download className="w-3.5 h-3.5 mr-1" />
+              <span className="hidden sm:inline">Save Image</span>
+            </Button>
+          )}
+
           <div className="flex items-center gap-1 bg-white/10 px-2 py-1 rounded">
             <button
               onClick={() => setZoomLevel((z) => Math.max(70, z - 15))}
@@ -74,6 +92,18 @@ export const SingleImageViewer: React.FC<SingleImageViewerProps> = ({
         <span>High-Resolution Mathematical Reference</span>
         <span>Click zoom controls for deep inspection</span>
       </div>
+
+      {/* Cloudflare Turnstile Secure Download Modal */}
+      {isTurnstileOpen && (
+        <TurnstileModal
+          isOpen={isTurnstileOpen}
+          onClose={() => setIsTurnstileOpen(false)}
+          contentId={contentId}
+          title={title}
+          accessType={accessType}
+          fallbackFileName="MAYF_Reference_Image.png"
+        />
+      )}
     </div>
   );
 };
