@@ -78,12 +78,21 @@ export const Header: React.FC = () => {
           {user ? (
             <Link
               href="/dashboard"
-              className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-lg border border-[#E2E8F0] hover:border-[#CBD5E1] bg-[#F8FAFC] text-xs font-semibold text-[#0F172A] transition-colors"
+              className="flex items-center gap-2 pl-1.5 pr-3 py-1 rounded-lg border border-[#E2E8F0] hover:border-[#CBD5E1] bg-[#F8FAFC] text-xs font-semibold text-[#0F172A] transition-colors"
               title="Open Student Dashboard"
             >
-              <div className="w-6 h-6 rounded-full bg-[#EFF6FF] text-[#1D4ED8] flex items-center justify-center font-bold">
-                {user.displayName.charAt(0)}
-              </div>
+              {user.photoURL ? (
+                <img
+                  src={user.photoURL}
+                  alt={user.displayName}
+                  className="w-6 h-6 rounded-full object-cover ring-1 ring-blue-300"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="w-6 h-6 rounded-full bg-[#EFF6FF] text-[#1D4ED8] flex items-center justify-center font-bold text-xs">
+                  {user.displayName.charAt(0)}
+                </div>
+              )}
               <span className="hidden sm:inline max-w-[90px] truncate">{user.displayName}</span>
             </Link>
           ) : (

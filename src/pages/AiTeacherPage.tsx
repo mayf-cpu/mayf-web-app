@@ -22,6 +22,7 @@ import { useAuth } from '../context/AuthContext';
 import { StudentClass } from '../lib/firebase/types';
 import { useNavigation, Link } from '../context/NavigationContext';
 import { MathRenderer } from '../components/ui/MathRenderer';
+import { logProductEvent } from '../lib/activity/activityService';
 
 interface ChatMessage {
   id: string;
@@ -237,6 +238,20 @@ export const AiTeacherPage: React.FC = () => {
       };
 
       setMessages((prev) => [...prev, teacherMsg]);
+
+      // Log verified product event into student's account activity
+      logProductEvent({
+        userId: user?.uid || 'anonymous-student',
+        eventType: 'ai_question',
+        title: `Asked Professor Sigma: "${studentMsg.text.slice(0, 50)}..."`,
+        targetId: data.doubtId,
+        targetType: 'ai_doubt',
+        metadata: {
+          studentClass: studentClass,
+          topic: topic,
+          questionType: studentMsg.questionType || 'text',
+        },
+      });
     } catch (err: any) {
       console.error('[MAYF AI Teacher Error]:', err);
       const errorMsg: ChatMessage = {

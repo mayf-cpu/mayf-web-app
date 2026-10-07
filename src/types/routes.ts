@@ -13,10 +13,17 @@ export type AppRoute =
   | '/checkout'
   | '/login'
   | '/dashboard'
+  | '/dashboard/profile'
+  | '/dashboard/membership'
+  | '/dashboard/annual-pass'
+  | '/dashboard/activity'
+  | '/dashboard/recently-viewed'
+  | '/dashboard/saved'
   | '/dashboard/purchases'
   | '/dashboard/downloads'
-  | '/dashboard/saved'
   | '/dashboard/ai-history'
+  | '/dashboard/courses'
+  | '/dashboard/notifications'
   | '/search'
   | '/admin/import-sync'
   | '/privacy'
@@ -44,10 +51,17 @@ export function matchCurrentPath(pathname: string): RouteMatch {
     '/checkout',
     '/login',
     '/dashboard',
+    '/dashboard/profile',
+    '/dashboard/membership',
+    '/dashboard/annual-pass',
+    '/dashboard/activity',
+    '/dashboard/recently-viewed',
+    '/dashboard/saved',
     '/dashboard/purchases',
     '/dashboard/downloads',
-    '/dashboard/saved',
     '/dashboard/ai-history',
+    '/dashboard/courses',
+    '/dashboard/notifications',
     '/search',
     '/admin/import-sync',
     '/privacy',

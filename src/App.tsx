@@ -54,15 +54,18 @@ function AppRouter() {
     case '/login':
       return <LoginPage />;
     case '/dashboard':
-      return <DashboardOverviewPage />;
-    case '/dashboard/purchases':
-      return <DashboardPurchasesPage />;
-    case '/dashboard/downloads':
-      return <DashboardDownloadsPage />;
+    case '/dashboard/profile':
+    case '/dashboard/membership':
+    case '/dashboard/annual-pass':
+    case '/dashboard/activity':
+    case '/dashboard/recently-viewed':
     case '/dashboard/saved':
-      return <DashboardSavedPage />;
+    case '/dashboard/purchases':
+    case '/dashboard/downloads':
     case '/dashboard/ai-history':
-      return <DashboardAiHistoryPage />;
+    case '/dashboard/courses':
+    case '/dashboard/notifications':
+      return <DashboardOverviewPage />;
     case '/search':
       return <SearchPage />;
     case '/admin/import-sync':

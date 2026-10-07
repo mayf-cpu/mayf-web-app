@@ -85,12 +85,14 @@ service cloud.firestore {
           isOwner(userId) &&
           incoming().diff(existing()).affectedKeys().hasOnly([
             'displayName',
+            'email',
             'photoURL',
             'studentClass',
             'board',
             'phoneNumber',
             'streakDays',
             'lastActiveDate',
+            'lastLoginAt',
             'updatedAt'
           ])
         )
@@ -173,7 +175,8 @@ service cloud.firestore {
       allow get: if isValidId(logId) && (isOwner(existing().userId) || isAdmin());
       allow list: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
       allow create: if isSignedIn() && incoming().userId == request.auth.uid;
-      allow update, delete: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin() || (isSignedIn() && isOwner(existing().userId));
     }
 
     // -------------------------------------------------------------
@@ -184,7 +187,8 @@ service cloud.firestore {
       allow list: if isSignedIn() && existing().userId == request.auth.uid;
       allow update: if isValidId(notificationId) && isOwner(existing().userId)
         && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
-      allow create, delete: if isAdmin();
+      allow create: if isSignedIn() && (incoming().userId == request.auth.uid || isAdmin());
+      allow delete: if isAdmin() || (isSignedIn() && isOwner(existing().userId));
     }
 
     // -------------------------------------------------------------

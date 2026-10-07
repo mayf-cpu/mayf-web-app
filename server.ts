@@ -15,6 +15,7 @@ import {
 import { ContentRegistryRow } from './src/lib/ingestion/types';
 import crypto from 'crypto';
 import { getDownloadableItem } from './src/lib/download/downloadRegistry';
+import { FORMULA_DECK_ITEMS } from './src/data/formulaDeckData';
 
 dotenv.config();
 
@@ -769,6 +770,56 @@ function checkAiQuota(key: string, dailyLimit: number): { allowed: boolean; rema
 
   return { allowed: true, remaining: dailyLimit - usage.count };
 }
+
+// -------------------------------------------------------------
+// Formula Deck Public API
+// -------------------------------------------------------------
+app.get('/api/formulas', (req: Request, res: Response) => {
+  const { category, classLevel, query } = req.query;
+  let items = FORMULA_DECK_ITEMS;
+
+  if (category && typeof category === 'string' && category !== 'All') {
+    items = items.filter((f) => f.category === category);
+  }
+
+  if (classLevel && typeof classLevel === 'string' && classLevel !== 'All') {
+    items = items.filter((f) => f.applicableClasses.includes(classLevel as any));
+  }
+
+  if (query && typeof query === 'string') {
+    const q = query.toLowerCase().trim();
+    items = items.filter(
+      (f) =>
+        f.title.toLowerCase().includes(q) ||
+        f.plainTextFormula.toLowerCase().includes(q) ||
+        f.explanation.toLowerCase().includes(q) ||
+        f.category.toLowerCase().includes(q)
+    );
+  }
+
+  return res.json({
+    success: true,
+    count: items.length,
+    formulas: items,
+  });
+});
+
+app.get('/api/formulas/:slug', (req: Request, res: Response) => {
+  const { slug } = req.params;
+  const formula = FORMULA_DECK_ITEMS.find((f) => f.slug === slug || f.id === slug);
+
+  if (!formula) {
+    return res.status(404).json({
+      success: false,
+      error: `Formula with slug "${slug}" not found in Formula Deck.`,
+    });
+  }
+
+  return res.json({
+    success: true,
+    formula,
+  });
+});
 
 /**
  * AI Teacher Configuration Endpoint

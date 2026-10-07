@@ -32,6 +32,7 @@ export interface UserProfileDoc {
   streakDays: number;
   lastActiveDate: string;
   createdAt: string;
+  lastLoginAt?: string;
   updatedAt: string;
 }
 
@@ -231,13 +232,52 @@ export interface AiTeacherSession {
 
 /**
  * 11. Activity Logs (/activityLogs/{logId})
+ * Only useful product events stored with retention capping.
  */
+export type ActivityEventType =
+  | 'content_view'
+  | 'download'
+  | 'save'
+  | 'unsave'
+  | 'ai_question'
+  | 'purchase'
+  | 'course_open'
+  | 'formula_view';
+
 export interface ActivityLog {
   id: string;
   userId: string;
-  eventType: string;
+  eventType: ActivityEventType;
+  title: string;
+  targetId?: string;
+  targetSlug?: string;
+  targetType?: 'formula' | 'chapter' | 'download' | 'course' | 'ai_doubt' | 'membership' | 'general';
   metadata?: Record<string, unknown>;
   createdAt: string;
+}
+
+export interface RecentlyViewedItem {
+  id: string;
+  title: string;
+  type: 'formula' | 'chapter' | 'course';
+  slug: string;
+  category?: string;
+  classLevel?: StudentClass;
+  viewedAt: string;
+}
+
+export interface StudentCourse {
+  id: string;
+  title: string;
+  slug: string;
+  description: string;
+  targetClass: StudentClass;
+  totalChapters: number;
+  completedChapters: number;
+  totalFormulas: number;
+  level: 'Foundation' | 'Standard' | 'Board Exemplar';
+  topics: string[];
+  bannerGradient: string;
 }
 
 /**
@@ -363,6 +403,17 @@ export interface AnalyticsRollup {
 /**
  * Pedagogical Study & Formula Helper Types (Preserved for backwards-compatibility)
  */
+export type FormulaCategory =
+  | 'Arithmetic'
+  | 'Fractions'
+  | 'Algebra'
+  | 'Geometry'
+  | 'Mensuration'
+  | 'Coordinate Geometry'
+  | 'Statistics'
+  | 'Probability'
+  | 'Trigonometry';
+
 export type MathSubjectCategory =
   | 'Number System'
   | 'Algebra'
@@ -371,7 +422,11 @@ export type MathSubjectCategory =
   | 'Trigonometry'
   | 'Mensuration'
   | 'Statistics & Probability'
-  | 'Commercial Math';
+  | 'Commercial Math'
+  | 'Arithmetic'
+  | 'Fractions'
+  | 'Statistics'
+  | 'Probability';
 
 export interface StudyChapter {
   id: string;
@@ -393,20 +448,31 @@ export interface FormulaItem {
   id: string;
   slug: string;
   title: string;
-  category: MathSubjectCategory;
+  category: FormulaCategory | MathSubjectCategory;
   applicableClasses: StudentClass[];
   latexFormula: string;
   plainTextFormula: string;
   variables: { symbol: string; meaning: string; unit?: string }[];
   explanation: string;
+  diagramType?: string;
+  diagramCaption?: string;
+  example?: string;
   exampleProblem: {
     question: string;
     stepByStepSolution: string[];
     answer: string;
+    alternativeMethod?: string;
   };
+  relatedFormulaSlugs?: string[];
+  tags?: string[];
   mnemonicHint?: string;
   isProOnly: boolean;
   watermarkGlyph: string;
+  seo?: {
+    title: string;
+    description: string;
+    keywords?: string[];
+  };
 }
 
 export interface SolvedProblemStep {

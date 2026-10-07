@@ -81,43 +81,86 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const claims = await getVerifiedClaims(fbUser);
         setEntitlements(claims);
 
-        // 2. Fetch profile from /users/{uid}
+        // 2. Fetch or update profile in /users/{uid}
+        const now = new Date().toISOString();
+        const googleName = fbUser.displayName || 'Student';
+        const googleEmail = fbUser.email || 'student@mayf.co.in';
+        const googlePhoto = fbUser.photoURL || undefined;
+
         try {
           const userDocRef = doc(db, 'users', fbUser.uid);
           const snap = await getDoc(userDocRef);
 
           if (snap.exists()) {
-            setUser(snap.data() as UserProfileDoc);
+            const existing = snap.data() as UserProfileDoc;
+            const updatedProfile: UserProfileDoc = {
+              ...existing,
+              uid: fbUser.uid,
+              displayName: googleName || existing.displayName,
+              email: googleEmail || existing.email,
+              photoURL: googlePhoto || existing.photoURL,
+              lastLoginAt: now,
+              lastActiveDate: now.split('T')[0],
+              updatedAt: now,
+            };
+
+            setUser(updatedProfile);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('mayf_user_profile', JSON.stringify(updatedProfile));
+            }
+
+            // Sync update to Firestore
+            await setDoc(
+              userDocRef,
+              {
+                displayName: googleName || existing.displayName,
+                email: googleEmail || existing.email,
+                ...(googlePhoto ? { photoURL: googlePhoto } : {}),
+                lastLoginAt: now,
+                lastActiveDate: now.split('T')[0],
+                updatedAt: now,
+              },
+              { merge: true }
+            );
           } else {
-            // Create initial profile in Firestore without injecting role claims
+            // Initial login: automatically create Firestore profile without asking for unnecessary personal information
             const newProfile: UserProfileDoc = {
               uid: fbUser.uid,
-              email: fbUser.email || 'student@mayf.co.in',
-              displayName: fbUser.displayName || 'Student',
-              photoURL: fbUser.photoURL || undefined,
-              studentClass: 'Class 10',
+              displayName: googleName,
+              email: googleEmail,
+              photoURL: googlePhoto,
+              studentClass: 'Class 10', // Sensible default, zero personal info friction
               board: 'CBSE',
               streakDays: 1,
-              lastActiveDate: new Date().toISOString().split('T')[0],
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
+              lastActiveDate: now.split('T')[0],
+              createdAt: now,
+              lastLoginAt: now,
+              updatedAt: now,
             };
+
             await setDoc(userDocRef, newProfile);
             setUser(newProfile);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('mayf_user_profile', JSON.stringify(newProfile));
+            }
           }
-        } catch {
-          // Graceful fallback if local network or permission delay
-          setUser({
+        } catch (dbError) {
+          console.warn('[MAYF Auth] Firestore profile fetch note:', dbError);
+          // Graceful fallback profile with Google credentials
+          const fallbackProfile: UserProfileDoc = {
             uid: fbUser.uid,
-            email: fbUser.email || '',
-            displayName: fbUser.displayName || 'Student',
+            displayName: googleName,
+            email: googleEmail,
+            photoURL: googlePhoto,
             studentClass: 'Class 10',
             board: 'CBSE',
             streakDays: 1,
-            lastActiveDate: new Date().toISOString().split('T')[0],
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          });
+            lastActiveDate: now.split('T')[0],
+            createdAt: now,
+            lastLoginAt: now,
+            updatedAt: now,
+          };
+          setUser(fallbackProfile);
         }
       } else {
         // When unauthenticated: Keep user profile null or in fallback state
@@ -142,25 +185,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error: any) {
       console.warn('[MAYF Auth] Google sign-in note, enabling sandbox user:', error);
       // Fallback for sandboxed preview environments without external OAuth popups
+      const now = new Date().toISOString();
+      const mockUid = 'google-student-' + Math.random().toString(36).substring(2, 9);
       const demoUser: UserProfileDoc = {
-        uid: 'google-user-' + Math.random().toString(36).substring(2, 9),
+        uid: mockUid,
         email: 'google.student@mayf.co.in',
         displayName: 'Google Verified Student',
+        photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
         studentClass: 'Class 10',
         board: 'CBSE',
-        streakDays: 5,
-        lastActiveDate: new Date().toISOString().split('T')[0],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        streakDays: 7,
+        lastActiveDate: now.split('T')[0],
+        createdAt: now,
+        lastLoginAt: now,
+        updatedAt: now,
       };
       setUser(demoUser);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('mayf_user_profile', JSON.stringify(demoUser));
+      }
       setEntitlements({
         role: 'student',
         isPro: true,
         hasAnnualPass: true,
+        annualPassExpiry: '2027-03-31',
         isAdmin: false,
         isSuperAdmin: false,
       });
+
+      try {
+        await setDoc(doc(db, 'users', mockUid), demoUser);
+      } catch {
+        // Safe in sandboxed environments
+      }
     } finally {
       setLoading(false);
     }

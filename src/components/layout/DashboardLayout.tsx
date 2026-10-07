@@ -45,9 +45,18 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         {/* Student Profile Card Header */}
         <div className="bg-white rounded-lg border border-[#E2E8F0] p-5 sm:p-6 shadow-[0_4px_14px_-2px_rgba(29,78,216,0.05)] flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-full bg-[#1D4ED8] text-white flex items-center justify-center font-heading font-extrabold text-xl shadow-xs shrink-0">
-              {user ? user.displayName.charAt(0) : 'S'}
-            </div>
+            {user?.photoURL ? (
+              <img
+                src={user.photoURL}
+                alt={user.displayName}
+                className="w-14 h-14 rounded-full object-cover ring-2 ring-[#1D4ED8]/20 shadow-xs shrink-0"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="w-14 h-14 rounded-full bg-[#1D4ED8] text-white flex items-center justify-center font-heading font-extrabold text-xl shadow-xs shrink-0">
+                {user ? user.displayName.charAt(0) : 'S'}
+              </div>
+            )}
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="font-heading font-bold text-xl text-[#0F172A]">

@@ -15,6 +15,7 @@ import { ViewerContainer } from '../components/viewers/ViewerContainer';
 import { SeoHead } from '../components/common/SeoHead';
 import { INITIAL_FORMULAS, INITIAL_SOLVED_PROBLEMS } from '../data/curriculumData';
 import { TurnstileModal } from '../components/ui/TurnstileModal';
+import { logProductEvent } from '../lib/activity/activityService';
 
 export const StudyChapterPage: React.FC = () => {
   const { currentRoute, goBack } = useNavigation();
@@ -31,13 +32,28 @@ export const StudyChapterPage: React.FC = () => {
       setLoading(true);
       try {
         const item = await fetchContentItemBySlug(slug);
-        setContentItem(item || (slug ? null : SEED_CONTENT_ITEMS[0]));
+        const resolved = item || (slug ? null : SEED_CONTENT_ITEMS[0]);
+        setContentItem(resolved);
+        if (resolved) {
+          logProductEvent({
+            userId: user?.uid || 'anonymous-student',
+            eventType: 'content_view',
+            title: `Studied Chapter: ${resolved.title}`,
+            targetId: resolved.id,
+            targetSlug: resolved.slug,
+            targetType: 'chapter',
+            metadata: {
+              category: resolved.categoryId,
+              classLevel: resolved.classLevels[0],
+            },
+          });
+        }
       } finally {
         setLoading(false);
       }
     }
     loadItem();
-  }, [slug]);
+  }, [slug, user?.uid]);
 
   if (loading) {
     return (
