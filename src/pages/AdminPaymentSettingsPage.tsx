@@ -40,6 +40,8 @@ import {
   CheckSquare,
   Square,
   AlertTriangle,
+  Tag,
+  Percent,
 } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
 import { Button } from '../components/ui/Button';
@@ -54,11 +56,26 @@ import {
   Entitlement,
   EntitlementHistoryLog,
 } from '../lib/payments/types';
+import { CouponsManagementTab } from '../components/admin/CouponsManagementTab';
+import { PromotionsManagementTab } from '../components/admin/PromotionsManagementTab';
 
 export const AdminPaymentSettingsPage: React.FC = () => {
   const { user, firebaseUser } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<'settings' | 'orders' | 'annual-pass' | 'idempotency' | 'simulator'>('settings');
+  const [activeTab, setActiveTab] = useState<'settings' | 'orders' | 'annual-pass' | 'coupons' | 'promotions' | 'idempotency' | 'simulator'>('settings');
+  const [authToken, setAuthToken] = useState('admin-dev-session');
+
+  useEffect(() => {
+    async function loadToken() {
+      if (firebaseUser) {
+        try {
+          const t = await firebaseUser.getIdToken();
+          setAuthToken(t);
+        } catch {}
+      }
+    }
+    loadToken();
+  }, [firebaseUser]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -662,6 +679,30 @@ export const AdminPaymentSettingsPage: React.FC = () => {
           >
             <Award className="w-4 h-4" />
             <span>Annual Pass & Entitlements ({entitlements.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('coupons')}
+            className={`py-2.5 px-4 text-xs font-heading font-semibold border-b-2 transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
+              activeTab === 'coupons'
+                ? 'border-[#00687A] text-[#00687A]'
+                : 'border-transparent text-[#64748B] hover:text-[#0F172A]'
+            }`}
+          >
+            <Tag className="w-4 h-4" />
+            <span>Coupons Engine</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('promotions')}
+            className={`py-2.5 px-4 text-xs font-heading font-semibold border-b-2 transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
+              activeTab === 'promotions'
+                ? 'border-[#00687A] text-[#00687A]'
+                : 'border-transparent text-[#64748B] hover:text-[#0F172A]'
+            }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Promotional Banners</span>
           </button>
 
           <button
@@ -1419,6 +1460,16 @@ export const AdminPaymentSettingsPage: React.FC = () => {
               </div>
             )}
           </div>
+        )}
+
+        {/* TAB: COUPONS ENGINE */}
+        {activeTab === 'coupons' && (
+          <CouponsManagementTab authHeaders={{ Authorization: `Bearer ${authToken}` }} />
+        )}
+
+        {/* TAB: PROMOTIONAL BANNERS */}
+        {activeTab === 'promotions' && (
+          <PromotionsManagementTab authHeaders={{ Authorization: `Bearer ${authToken}` }} />
         )}
 
         {/* TAB 1: GATEWAY SETTINGS */}

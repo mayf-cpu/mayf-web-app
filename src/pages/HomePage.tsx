@@ -9,6 +9,7 @@ import { WatermarkGlyph } from '../components/ui/WatermarkGlyph';
 import { Link, useNavigation } from '../context/NavigationContext';
 import { INITIAL_FORMULAS, INITIAL_CHAPTERS, INITIAL_SOLVED_PROBLEMS } from '../data/curriculumData';
 import { StudentClass } from '../lib/firebase/types';
+import { PromotionalBanner } from '../components/ui/PromotionalBanner';
 
 export const HomePage: React.FC = () => {
   const { navigate } = useNavigation();
@@ -30,7 +31,9 @@ export const HomePage: React.FC = () => {
   return (
     <SharedLayout>
       <div className="space-y-16 md:space-y-24">
-        
+        {/* Authoritative Admin Promotional Banner for Homepage */}
+        <PromotionalBanner placement="homepage" />
+
         {/* HERO SECTION */}
         <section className="relative overflow-hidden pt-4 pb-8 md:py-12">
           {/* Subtle math watermark decoration */}

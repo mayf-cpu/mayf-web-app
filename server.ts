@@ -18,6 +18,7 @@ import { getDownloadableItem } from './src/lib/download/downloadRegistry';
 import { FORMULA_DECK_ITEMS } from './src/data/formulaDeckData';
 import { paymentService } from './src/lib/payments/paymentService';
 import { entitlementService } from './src/lib/payments/entitlementService';
+import { couponService } from './src/lib/coupons/couponService';
 import { PaymentProvider } from './src/lib/payments/types';
 
 dotenv.config();
@@ -1063,6 +1064,159 @@ app.get('/api/admin/annual-pass/history', requireAuth, requireAdmin, (req: Reque
     totalLogs: history.length,
     history,
   });
+});
+
+// -------------------------------------------------------------
+// Authoritative Coupon Engine & Promotional Blocks API
+// -------------------------------------------------------------
+
+/**
+ * Public/Student: Authoritative Server-Side Coupon Validation
+ * Never trusts client discounts. Evaluates start/end dates, min cart, max discount,
+ * usage limits, per-user limits, and product scope (all / annual pass / selected).
+ */
+app.post('/api/coupons/validate', async (req: Request, res: Response) => {
+  try {
+    const { code, cartGrossAmount, currency = 'INR', items = [], userId } = req.body;
+
+    let effectiveUserId = userId;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split('Bearer ')[1];
+      const verified = await verifyStudentSessionToken(token);
+      if (verified) {
+        effectiveUserId = verified.uid;
+      }
+    }
+
+    const validation = couponService.validateCoupon({
+      code,
+      userId: effectiveUserId,
+      cartGrossAmount: Number(cartGrossAmount) || 0,
+      currency,
+      items,
+    });
+
+    return res.json({
+      success: true,
+      ...validation,
+    });
+  } catch (error: any) {
+    console.error('[MAYF Coupons] Validation error:', error);
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to validate coupon' });
+  }
+});
+
+/**
+ * Public: Get Published Promotional Blocks for Homepage or Catalogue
+ */
+app.get('/api/promotions', (req: Request, res: Response) => {
+  try {
+    const placement = req.query.placement as 'homepage' | 'catalogue' | undefined;
+    const promotions = couponService.getPublicPromotions(placement);
+    return res.json({
+      success: true,
+      promotions,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: 'Failed to retrieve promotions' });
+  }
+});
+
+/**
+ * Admin: List All Configured Coupons
+ */
+app.get('/api/admin/coupons', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+  try {
+    const coupons = couponService.getAllCoupons();
+    return res.json({
+      success: true,
+      coupons,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: 'Failed to list coupons' });
+  }
+});
+
+/**
+ * Admin: Create or Update Coupon
+ */
+app.post('/api/admin/coupons', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const saved = couponService.saveCoupon(req.body);
+    return res.json({
+      success: true,
+      coupon: saved,
+      message: `Coupon "${saved.code}" successfully saved.`,
+    });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err?.message || 'Failed to save coupon' });
+  }
+});
+
+/**
+ * Admin: Delete Coupon
+ */
+app.delete('/api/admin/coupons/:code', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const code = req.params.code;
+    const deleted = couponService.deleteCoupon(code);
+    return res.json({
+      success: true,
+      deleted,
+      message: deleted ? `Coupon "${code}" deleted.` : `Coupon "${code}" not found.`,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Failed to delete coupon' });
+  }
+});
+
+/**
+ * Admin: List All Promotional Blocks
+ */
+app.get('/api/admin/promotions', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+  try {
+    const promotions = couponService.getAllPromotions();
+    return res.json({
+      success: true,
+      promotions,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: 'Failed to list promotional blocks' });
+  }
+});
+
+/**
+ * Admin: Create or Update Promotional Block
+ */
+app.post('/api/admin/promotions', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const saved = couponService.savePromotion(req.body);
+    return res.json({
+      success: true,
+      promotion: saved,
+      message: `Promotional block "${saved.title}" saved successfully.`,
+    });
+  } catch (err: any) {
+    return res.status(400).json({ success: false, error: err?.message || 'Failed to save promotional block' });
+  }
+});
+
+/**
+ * Admin: Delete Promotional Block
+ */
+app.delete('/api/admin/promotions/:id', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const id = req.params.id;
+    const deleted = couponService.deletePromotion(id);
+    return res.json({
+      success: true,
+      deleted,
+      message: deleted ? 'Promotional block deleted.' : 'Promotional block not found.',
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Failed to delete promotional block' });
+  }
 });
 
 // -------------------------------------------------------------

@@ -26,6 +26,7 @@ import {
 } from './types';
 import { RazorpayAdapter } from './adapters/razorpayAdapter';
 import { StripeAdapter } from './adapters/stripeAdapter';
+import { couponService } from '../coupons/couponService';
 
 export class PaymentService {
   private razorpayAdapter: RazorpayAdapter;
@@ -169,14 +170,21 @@ export class PaymentService {
 
     // Calculate coupon discount securely on server (never trust client-calculated discounts)
     let discount = 0;
-    if (this.settings.allowCouponDiscounts && coupon) {
-      const cleanCoupon = coupon.trim().toUpperCase();
-      if (cleanCoupon === 'BOARD2026') {
-        discount = 100;
-      } else if (cleanCoupon === 'TOPPER15') {
-        discount = Math.round(grossAmount * 0.15);
-      } else if (cleanCoupon === 'SCHOLARSHIP50') {
-        discount = Math.round(grossAmount * 0.5);
+    let validatedCoupon = coupon ? coupon.trim().toUpperCase() : undefined;
+    if (this.settings.allowCouponDiscounts && validatedCoupon) {
+      const val = couponService.validateCoupon({
+        code: validatedCoupon,
+        userId,
+        cartGrossAmount: grossAmount,
+        currency,
+        items,
+      });
+      if (val.valid) {
+        discount = val.discountAmount;
+        validatedCoupon = val.code;
+      } else {
+        // If client provided an invalid/expired coupon, do not apply discount
+        validatedCoupon = undefined;
       }
     }
     // Cap discount to gross amount
@@ -284,6 +292,10 @@ export class PaymentService {
     order.status = 'paid';
     order.providerPaymentId = verification.providerPaymentId;
     order.paidAt = new Date().toISOString();
+
+    if (order.coupon) {
+      couponService.recordCouponRedemption(order.coupon, order.userId);
+    }
 
     return {
       success: true,

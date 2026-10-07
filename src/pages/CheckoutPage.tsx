@@ -50,8 +50,17 @@ export const CheckoutPage: React.FC = () => {
   const [email, setEmail] = useState(user?.email || 'parent.sharma@gmail.com');
   const [phone, setPhone] = useState(user?.phoneNumber || '+91 98765 43210');
   const [studentClass, setStudentClass] = useState(user?.studentClass || 'Class 10');
-  const [couponCode, setCouponCode] = useState('BOARD2026');
-  const [appliedCoupon, setAppliedCoupon] = useState('BOARD2026');
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState('');
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponValidation, setCouponValidation] = useState<{
+    valid: boolean;
+    code?: string;
+    discountAmount: number;
+    netAmount: number;
+    message?: string;
+    error?: string;
+  } | null>(null);
 
   // Process & Verification State
   const [isProcessing, setIsProcessing] = useState(false);
@@ -77,33 +86,123 @@ export const CheckoutPage: React.FC = () => {
   const [configuredPriceINR, setConfiguredPriceINR] = useState(999);
   const [configuredPassName, setConfiguredPassName] = useState('Maths at Your Fingertips Annual Pass (Class 5–10)');
 
+  // Authoritative server-side coupon validation
+  const validateCouponOnServer = async (codeToValidate: string, gross: number) => {
+    const cleanCode = (codeToValidate || '').trim().toUpperCase();
+    if (!cleanCode) {
+      setCouponValidation(null);
+      setAppliedCoupon('');
+      return;
+    }
+
+    setCouponLoading(true);
+    try {
+      const token = firebaseUser ? await firebaseUser.getIdToken() : undefined;
+      const res = await fetch('/api/coupons/validate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          code: cleanCode,
+          cartGrossAmount: gross,
+          currency: selectedProvider === 'razorpay' ? 'INR' : 'USD',
+          userId: user?.uid,
+          items: [
+            {
+              id: 'item-annual-pass',
+              title: configuredPassName,
+              unitPrice: gross,
+              quantity: 1,
+              annualPass: true,
+            },
+          ],
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success && data.valid) {
+        setCouponValidation({
+          valid: true,
+          code: data.code,
+          discountAmount: data.discountAmount,
+          netAmount: data.netAmount,
+          message: data.message,
+        });
+        setAppliedCoupon(data.code);
+      } else {
+        setCouponValidation({
+          valid: false,
+          code: cleanCode,
+          discountAmount: 0,
+          netAmount: gross,
+          error: data.error || data.message || 'Invalid promotional code.',
+        });
+        setAppliedCoupon('');
+      }
+    } catch (err: any) {
+      setCouponValidation({
+        valid: false,
+        code: cleanCode,
+        discountAmount: 0,
+        netAmount: gross,
+        error: 'Unable to reach coupon validation server.',
+      });
+      setAppliedCoupon('');
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
   useEffect(() => {
-    async function loadConfig() {
+    async function loadConfigAndCoupon() {
+      let initialGross = 999;
       try {
         const res = await fetch('/api/annual-pass/config');
         if (res.ok) {
           const data = await res.json();
           if (data.success && data.settings) {
-            if (data.settings.salePrice) setConfiguredPriceINR(data.settings.salePrice);
+            if (data.settings.salePrice) {
+              setConfiguredPriceINR(data.settings.salePrice);
+              initialGross = data.settings.salePrice;
+            }
             if (data.settings.name) setConfiguredPassName(data.settings.name);
           }
         }
       } catch (err) {
         console.warn('Could not fetch pass config in checkout:', err);
       }
+
+      // Check URL query parameters for coupon
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const urlCoupon = params.get('coupon') || 'BOARD2026';
+        if (urlCoupon) {
+          const upper = urlCoupon.trim().toUpperCase();
+          setCouponCode(upper);
+          validateCouponOnServer(upper, initialGross);
+        }
+      } catch {}
     }
-    loadConfig();
+    loadConfigAndCoupon();
   }, []);
 
   const isINR = selectedProvider === 'razorpay';
   const grossPrice = isINR ? configuredPriceINR : 29;
-  const isDiscountActive = appliedCoupon.toUpperCase() === 'BOARD2026';
-  const discountAmount = isDiscountActive ? (isINR ? 100 : 5) : 0;
-  const netAmount = Math.max(0, grossPrice - discountAmount);
+  const isDiscountActive = Boolean(couponValidation && couponValidation.valid && couponValidation.discountAmount > 0);
+  const discountAmount = isDiscountActive ? couponValidation!.discountAmount : 0;
+  const netAmount = isDiscountActive ? couponValidation!.netAmount : grossPrice;
 
   const handleApplyCoupon = (e: React.FormEvent) => {
     e.preventDefault();
-    setAppliedCoupon(couponCode.trim().toUpperCase());
+    validateCouponOnServer(couponCode, grossPrice);
+  };
+
+  const handleRemoveCoupon = () => {
+    setCouponCode('');
+    setAppliedCoupon('');
+    setCouponValidation(null);
   };
 
   /**
@@ -484,7 +583,7 @@ export const CheckoutPage: React.FC = () => {
                 <Badge variant="pro">ANNUAL PASS</Badge>
               </div>
 
-              {/* Coupon Code Input */}
+              {/* Coupon Code Input & Authoritative Server Verification */}
               <div className="mb-4">
                 <label className="block text-xs font-heading font-semibold text-[#475569] mb-1">
                   Have a Coupon?
@@ -494,23 +593,52 @@ export const CheckoutPage: React.FC = () => {
                     type="text"
                     value={couponCode}
                     onChange={(e) => setCouponCode(e.target.value)}
-                    placeholder="BOARD2026"
-                    className="flex-1 bg-[#F8FAFC] border border-[#CBD5E1] rounded-md px-2.5 py-1.5 text-xs font-mono uppercase focus:outline-none focus:ring-2 focus:ring-[#00687A]"
+                    placeholder="e.g. BOARD2026, TOPPER15"
+                    disabled={couponLoading}
+                    className="flex-1 bg-[#F8FAFC] border border-[#CBD5E1] rounded-md px-2.5 py-1.5 text-xs font-mono uppercase focus:outline-none focus:ring-2 focus:ring-[#00687A] disabled:opacity-50"
                   />
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
                     onClick={handleApplyCoupon}
-                    className="text-xs shrink-0"
+                    disabled={couponLoading || !couponCode.trim()}
+                    className="text-xs shrink-0 cursor-pointer"
                   >
-                    Apply
+                    {couponLoading ? 'Checking...' : 'Apply'}
                   </Button>
                 </div>
-                {isDiscountActive && (
-                  <span className="text-[11px] text-[#059669] font-medium mt-1 block">
-                    ✓ BOARD2026 applied ({isINR ? '₹100' : '$5'} discount)
-                  </span>
+
+                {/* Server-Side Validation Feedback */}
+                {couponValidation && couponValidation.valid && (
+                  <div className="mt-2 p-2 rounded bg-[#ECFDF5] border border-[#A7F3D0] flex items-start justify-between gap-2 text-[11px] text-[#065F46]">
+                    <div>
+                      <div className="font-bold flex items-center gap-1">
+                        <span>✓</span>
+                        <span>{couponValidation.code}</span>
+                        <span className="text-[10px] font-normal px-1.5 py-0.2 rounded bg-[#D1FAE5]">
+                          -{isINR ? `₹${discountAmount}` : `$${discountAmount}`}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-[#047857] mt-0.5">
+                        {couponValidation.message || 'Server verified discount applied.'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRemoveCoupon}
+                      className="text-[10px] text-[#991B1B] hover:underline font-semibold cursor-pointer shrink-0 mt-0.5"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+
+                {couponValidation && !couponValidation.valid && couponValidation.error && (
+                  <div className="mt-2 p-2 rounded bg-[#FEF2F2] border border-[#FECACA] text-[11px] text-[#991B1B]">
+                    <span className="font-bold">Invalid coupon: </span>
+                    <span>{couponValidation.error}</span>
+                  </div>
                 )}
               </div>
 

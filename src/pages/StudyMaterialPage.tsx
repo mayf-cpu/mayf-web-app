@@ -8,6 +8,7 @@ import { fetchContentCatalogue, MAX_PAGE_SIZE, CatalogueSortOption, DifficultyLe
 import { searchService } from '../lib/search/lightweightSearchService';
 import { QueryDocumentSnapshot } from 'firebase/firestore';
 import { SeoHead } from '../components/common/SeoHead';
+import { PromotionalBanner } from '../components/ui/PromotionalBanner';
 
 export const StudyMaterialPage: React.FC = () => {
   const [selectedClass, setSelectedClass] = useState<StudentClass | 'All'>('All');
@@ -178,7 +179,9 @@ export const StudyMaterialPage: React.FC = () => {
       />
 
       <div className="space-y-8">
-        
+        {/* Authoritative Admin Promotional Banner for Catalogue */}
+        <PromotionalBanner placement="catalogue" />
+
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
