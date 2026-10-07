@@ -27,23 +27,79 @@ import {
   ArrowRight,
   ExternalLink,
   ChevronRight,
+  Award,
+  UserPlus,
+  Plus,
+  Trash2,
+  History,
+  Calendar,
+  Clock,
+  Sparkles,
+  X,
+  Search,
+  CheckSquare,
+  Square,
+  AlertTriangle,
 } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { useAuth } from '../context/AuthContext';
 import { Link } from '../context/NavigationContext';
-import { MaskedPaymentGatewaySettings, StoredOrder, WebhookEventLog } from '../lib/payments/types';
+import {
+  MaskedPaymentGatewaySettings,
+  StoredOrder,
+  WebhookEventLog,
+  AnnualPassSettings,
+  Entitlement,
+  EntitlementHistoryLog,
+} from '../lib/payments/types';
 
 export const AdminPaymentSettingsPage: React.FC = () => {
   const { user, firebaseUser } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<'settings' | 'orders' | 'idempotency' | 'simulator'>('settings');
+  const [activeTab, setActiveTab] = useState<'settings' | 'orders' | 'annual-pass' | 'idempotency' | 'simulator'>('settings');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [actionSuccessMsg, setActionSuccessMsg] = useState('');
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+
+  // Annual Pass & Entitlements State
+  const [passSettings, setPassSettings] = useState<AnnualPassSettings | null>(null);
+  const [passEnabled, setPassEnabled] = useState(true);
+  const [passName, setPassName] = useState('Maths at Your Fingertips All-Class Annual Pass');
+  const [regularPrice, setRegularPrice] = useState(1999);
+  const [salePrice, setSalePrice] = useState(999);
+  const [durationDays, setDurationDays] = useState(365);
+  const [passDescription, setPassDescription] = useState('');
+  const [passBenefits, setPassBenefits] = useState<string[]>([]);
+  const [newBenefit, setNewBenefit] = useState('');
+  const [passEligibleContent, setPassEligibleContent] = useState<string[]>([]);
+  const [newEligibleContent, setNewEligibleContent] = useState('');
+  const [promotionalStartDate, setPromotionalStartDate] = useState('');
+  const [promotionalEndDate, setPromotionalEndDate] = useState('');
+
+  const [entitlements, setEntitlements] = useState<Entitlement[]>([]);
+  const [entitlementHistory, setEntitlementHistory] = useState<EntitlementHistoryLog[]>([]);
+  const [passSearchQuery, setPassSearchQuery] = useState('');
+  const [passStatusFilter, setPassStatusFilter] = useState<'all' | 'active' | 'expired' | 'revoked'>('all');
+
+  // Modals
+  const [showGrantModal, setShowGrantModal] = useState(false);
+  const [grantUserId, setGrantUserId] = useState('');
+  const [grantDuration, setGrantDuration] = useState(365);
+  const [grantNotes, setGrantNotes] = useState('');
+
+  const [showExtendModal, setShowExtendModal] = useState(false);
+  const [targetExtendUserId, setTargetExtendUserId] = useState('');
+  const [extendDays, setExtendDays] = useState(30);
+  const [extendReason, setExtendReason] = useState('');
+
+  const [showRevokeModal, setShowRevokeModal] = useState(false);
+  const [targetRevokeUserId, setTargetRevokeUserId] = useState('');
+  const [revokeReason, setRevokeReason] = useState('');
 
   // Settings State
   const [settings, setSettings] = useState<MaskedPaymentGatewaySettings | null>(null);
@@ -129,12 +185,234 @@ export const AdminPaymentSettingsPage: React.FC = () => {
           setWebhookLogs(lData.logs || []);
         }
       }
+
+      // 4. Fetch Annual Pass Settings
+      const apRes = await fetch('/api/admin/annual-pass/settings', { headers: authHeaders });
+      if (apRes.ok) {
+        const apData = await apRes.json();
+        if (apData.success && apData.settings) {
+          setPassSettings(apData.settings);
+          setPassEnabled(Boolean(apData.settings.enabled));
+          setPassName(apData.settings.name || '');
+          setRegularPrice(apData.settings.regularPrice ?? 1999);
+          setSalePrice(apData.settings.salePrice ?? 999);
+          setDurationDays(apData.settings.durationDays ?? 365);
+          setPassDescription(apData.settings.description || '');
+          setPassBenefits(apData.settings.benefits || []);
+          setPassEligibleContent(apData.settings.eligibleContent || []);
+          setPromotionalStartDate(apData.settings.promotionalStartDate || '');
+          setPromotionalEndDate(apData.settings.promotionalEndDate || '');
+        }
+      }
+
+      // 5. Fetch Entitlements
+      const entRes = await fetch('/api/admin/annual-pass/entitlements', { headers: authHeaders });
+      if (entRes.ok) {
+        const entData = await entRes.json();
+        if (entData.success) {
+          setEntitlements(entData.entitlements || []);
+        }
+      }
+
+      // 6. Fetch Entitlement History
+      const histRes = await fetch('/api/admin/annual-pass/history', { headers: authHeaders });
+      if (histRes.ok) {
+        const hData = await histRes.json();
+        if (hData.success) {
+          setEntitlementHistory(hData.history || []);
+        }
+      }
     } catch (err: any) {
       console.error('Error fetching admin payment info:', err);
       setErrorMessage(err.message || 'Failed to load payment admin configuration');
     } finally {
       setLoading(false);
     }
+  };
+
+  // Annual Pass Handlers
+  const handleSaveAnnualPassSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setErrorMessage('');
+    setActionSuccessMsg('');
+
+    try {
+      const token = firebaseUser ? await firebaseUser.getIdToken() : 'admin-dev-session';
+      const res = await fetch('/api/admin/annual-pass/settings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          enabled: passEnabled,
+          name: passName.trim(),
+          regularPrice: Number(regularPrice),
+          salePrice: Number(salePrice),
+          durationDays: Number(durationDays),
+          description: passDescription.trim(),
+          benefits: passBenefits,
+          eligibleContent: passEligibleContent,
+          promotionalStartDate: promotionalStartDate || null,
+          promotionalEndDate: promotionalEndDate || null,
+        }),
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to update Annual Pass settings');
+      }
+
+      setPassSettings(data.settings);
+      setActionSuccessMsg('Annual Pass configuration successfully saved and synchronized!');
+      setTimeout(() => setActionSuccessMsg(''), 4000);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to save Annual Pass settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleGrantPass = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!grantUserId.trim()) {
+      setErrorMessage('Student User ID is required.');
+      return;
+    }
+    setSaving(true);
+    setErrorMessage('');
+
+    try {
+      const token = firebaseUser ? await firebaseUser.getIdToken() : 'admin-dev-session';
+      const res = await fetch('/api/admin/annual-pass/grant', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          userId: grantUserId.trim(),
+          durationDays: Number(grantDuration) || 365,
+          notes: grantNotes.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to grant Annual Pass');
+      }
+
+      setShowGrantModal(false);
+      setGrantUserId('');
+      setGrantNotes('');
+      setActionSuccessMsg(data.message || 'Annual Pass successfully granted!');
+      setTimeout(() => setActionSuccessMsg(''), 4000);
+      fetchData();
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to grant pass');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleExtendPass = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetExtendUserId) return;
+    setSaving(true);
+    setErrorMessage('');
+
+    try {
+      const token = firebaseUser ? await firebaseUser.getIdToken() : 'admin-dev-session';
+      const res = await fetch('/api/admin/annual-pass/extend', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          userId: targetExtendUserId,
+          daysToAdd: Number(extendDays),
+          reason: extendReason.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to extend Annual Pass');
+      }
+
+      setShowExtendModal(false);
+      setTargetExtendUserId('');
+      setExtendReason('');
+      setActionSuccessMsg(data.message || 'Annual Pass extended successfully!');
+      setTimeout(() => setActionSuccessMsg(''), 4000);
+      fetchData();
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to extend pass');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRevokePass = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetRevokeUserId) return;
+    setSaving(true);
+    setErrorMessage('');
+
+    try {
+      const token = firebaseUser ? await firebaseUser.getIdToken() : 'admin-dev-session';
+      const res = await fetch('/api/admin/annual-pass/revoke', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          userId: targetRevokeUserId,
+          reason: revokeReason.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to revoke Annual Pass');
+      }
+
+      setShowRevokeModal(false);
+      setTargetRevokeUserId('');
+      setRevokeReason('');
+      setActionSuccessMsg(data.message || 'Annual Pass revoked successfully. Premium access stopped immediately.');
+      setTimeout(() => setActionSuccessMsg(''), 4000);
+      fetchData();
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to revoke pass');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddBenefit = () => {
+    if (newBenefit.trim()) {
+      setPassBenefits((prev) => [...prev, newBenefit.trim()]);
+      setNewBenefit('');
+    }
+  };
+
+  const handleRemoveBenefit = (idx: number) => {
+    setPassBenefits((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleAddEligibleContent = () => {
+    if (newEligibleContent.trim() && !passEligibleContent.includes(newEligibleContent.trim())) {
+      setPassEligibleContent((prev) => [...prev, newEligibleContent.trim()]);
+      setNewEligibleContent('');
+    }
+  };
+
+  const handleRemoveEligibleContent = (tag: string) => {
+    setPassEligibleContent((prev) => prev.filter((t) => t !== tag));
   };
 
   useEffect(() => {
@@ -353,6 +631,13 @@ export const AdminPaymentSettingsPage: React.FC = () => {
           </div>
         )}
 
+        {actionSuccessMsg && (
+          <div className="p-4 rounded-lg bg-[#EFF6FF] border border-[#93C5FD] flex items-center gap-3 text-xs sm:text-sm text-[#1D4ED8]">
+            <CheckCircle2 className="w-5 h-5 shrink-0" />
+            <span>{actionSuccessMsg}</span>
+          </div>
+        )}
+
         {/* Navigation Tabs */}
         <div className="flex border-b border-[#E2E8F0] gap-2 overflow-x-auto">
           <button
@@ -365,6 +650,18 @@ export const AdminPaymentSettingsPage: React.FC = () => {
           >
             <Sliders className="w-4 h-4" />
             <span>Gateway Credentials</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('annual-pass')}
+            className={`py-2.5 px-4 text-xs font-heading font-semibold border-b-2 transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 ${
+              activeTab === 'annual-pass'
+                ? 'border-[#00687A] text-[#00687A]'
+                : 'border-transparent text-[#64748B] hover:text-[#0F172A]'
+            }`}
+          >
+            <Award className="w-4 h-4" />
+            <span>Annual Pass & Entitlements ({entitlements.length})</span>
           </button>
 
           <button
@@ -403,6 +700,726 @@ export const AdminPaymentSettingsPage: React.FC = () => {
             <span>Webhook Simulator & Idempotency Tester</span>
           </button>
         </div>
+
+        {/* TAB: ANNUAL PASS CONTROL */}
+        {activeTab === 'annual-pass' && (
+          <div className="space-y-8">
+            {/* Top KPI Metrics Banner */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="bg-white p-4 rounded-xl border border-[#E2E8F0] shadow-xs">
+                <span className="text-[11px] font-heading font-semibold text-[#64748B] block uppercase tracking-wider">
+                  Pass Pricing Tier
+                </span>
+                <div className="flex items-baseline gap-2 mt-1">
+                  <span className="font-mono text-2xl font-extrabold text-[#00687A]">₹{salePrice}</span>
+                  <span className="font-mono text-xs text-[#94A3B8] line-through">₹{regularPrice}</span>
+                </div>
+                <span className="text-[11px] text-[#059669] font-medium block mt-0.5">
+                  Default {durationDays} days duration
+                </span>
+              </div>
+
+              <div className="bg-white p-4 rounded-xl border border-[#E2E8F0] shadow-xs">
+                <span className="text-[11px] font-heading font-semibold text-[#64748B] block uppercase tracking-wider">
+                  Purchasing State
+                </span>
+                <div className="flex items-center gap-2 mt-2">
+                  <div className={`w-3 h-3 rounded-full ${passEnabled ? 'bg-[#10B981]' : 'bg-[#EF4444]'}`} />
+                  <span className="font-heading font-bold text-base text-[#0F172A]">
+                    {passEnabled ? 'Active in Catalog' : 'Disabled'}
+                  </span>
+                </div>
+                <span className="text-[11px] text-[#64748B] block mt-1">
+                  {promotionalStartDate && promotionalEndDate ? `Promo: ${promotionalStartDate} to ${promotionalEndDate}` : 'Open enrollment'}
+                </span>
+              </div>
+
+              <div className="bg-white p-4 rounded-xl border border-[#E2E8F0] shadow-xs">
+                <span className="text-[11px] font-heading font-semibold text-[#64748B] block uppercase tracking-wider">
+                  Active Student Passes
+                </span>
+                <span className="font-mono text-2xl font-extrabold text-[#1D4ED8] block mt-1">
+                  {entitlements.filter((e) => e.status === 'active').length}
+                </span>
+                <span className="text-[11px] text-[#64748B] block mt-0.5">
+                  Full premium access active
+                </span>
+              </div>
+
+              <div className="bg-white p-4 rounded-xl border border-[#E2E8F0] shadow-xs">
+                <span className="text-[11px] font-heading font-semibold text-[#64748B] block uppercase tracking-wider">
+                  Expired / Revoked
+                </span>
+                <div className="flex items-center gap-3 mt-1 font-mono text-xl font-bold">
+                  <span className="text-[#D97706]">{entitlements.filter((e) => e.status === 'expired').length} exp</span>
+                  <span className="text-[#DC2626]">{entitlements.filter((e) => e.status === 'revoked').length} rev</span>
+                </div>
+                <span className="text-[11px] text-[#64748B] block mt-0.5">
+                  Order histories preserved
+                </span>
+              </div>
+            </div>
+
+            {/* 1. CONFIGURATION SECTION */}
+            <form onSubmit={handleSaveAnnualPassSettings} className="bg-white rounded-xl border border-[#E2E8F0] p-6 shadow-xs space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-[#F1F5F9] gap-4">
+                <div>
+                  <h2 className="font-heading font-bold text-lg text-[#0F172A] flex items-center gap-2">
+                    <Sliders className="w-5 h-5 text-[#00687A]" />
+                    <span>Annual Pass Configuration Settings</span>
+                  </h2>
+                  <p className="text-xs text-[#64748B] mt-0.5">
+                    Configure pricing, duration, syllabus benefits, and promotional campaign dates.
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 text-xs font-semibold text-[#0F172A] cursor-pointer bg-[#F8FAFC] border border-[#CBD5E1] px-3 py-1.5 rounded-lg">
+                    <input
+                      type="checkbox"
+                      checked={passEnabled}
+                      onChange={(e) => setPassEnabled(e.target.checked)}
+                      className="rounded text-[#00687A] focus:ring-[#00687A]"
+                    />
+                    <span>Pass Purchasing Enabled</span>
+                  </label>
+                  <Button type="submit" size="sm" variant="primary" isLoading={saving} className="text-xs font-bold">
+                    <span>Save Pass Settings</span>
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-heading font-semibold text-[#475569] mb-1">
+                    Pass Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={passName}
+                    onChange={(e) => setPassName(e.target.value)}
+                    className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg px-3 py-2 text-xs sm:text-sm font-medium text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#00687A]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-heading font-semibold text-[#475569] mb-1">
+                    Regular Price (₹)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    value={regularPrice}
+                    onChange={(e) => setRegularPrice(Number(e.target.value))}
+                    className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg px-3 py-2 text-xs sm:text-sm font-mono font-bold text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#00687A]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-heading font-semibold text-[#475569] mb-1">
+                    Sale Price (₹)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    value={salePrice}
+                    onChange={(e) => setSalePrice(Number(e.target.value))}
+                    className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg px-3 py-2 text-xs sm:text-sm font-mono font-bold text-[#059669] focus:outline-none focus:ring-2 focus:ring-[#00687A]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-heading font-semibold text-[#475569] mb-1">
+                    Default Duration (Days)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={durationDays}
+                    onChange={(e) => setDurationDays(Number(e.target.value))}
+                    className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg px-3 py-2 text-xs sm:text-sm font-mono font-bold text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#00687A]"
+                  />
+                  <span className="text-[10px] text-[#64748B]">Default: 365 days (1 academic year)</span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-heading font-semibold text-[#475569] mb-1">
+                    Promotional Start Date
+                  </label>
+                  <input
+                    type="date"
+                    value={promotionalStartDate}
+                    onChange={(e) => setPromotionalStartDate(e.target.value)}
+                    className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#00687A]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-heading font-semibold text-[#475569] mb-1">
+                    Promotional End Date
+                  </label>
+                  <input
+                    type="date"
+                    value={promotionalEndDate}
+                    onChange={(e) => setPromotionalEndDate(e.target.value)}
+                    className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#00687A]"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-heading font-semibold text-[#475569] mb-1">
+                    Pass Description
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={passDescription}
+                    onChange={(e) => setPassDescription(e.target.value)}
+                    className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#00687A]"
+                  />
+                </div>
+              </div>
+
+              {/* Eligible Content Tags */}
+              <div className="space-y-2 pt-2 border-t border-[#F1F5F9]">
+                <label className="block text-xs font-heading font-semibold text-[#475569]">
+                  Eligible Content Scope & Syllabus Modules
+                </label>
+                <div className="flex flex-wrap gap-2 items-center">
+                  {passEligibleContent.map((tag) => (
+                    <span
+                      key={tag}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-[#EFF6FF] text-[#1D4ED8] border border-[#BFDBFE]"
+                    >
+                      <span>{tag}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveEligibleContent(tag)}
+                        className="hover:text-[#DC2626] cursor-pointer"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="text"
+                      placeholder="Add scope (e.g. Class 10)..."
+                      value={newEligibleContent}
+                      onChange={(e) => setNewEligibleContent(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddEligibleContent();
+                        }
+                      }}
+                      className="bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg px-2.5 py-1 text-xs text-[#0F172A] focus:outline-none focus:ring-1 focus:ring-[#00687A]"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddEligibleContent}
+                      className="px-2 py-1 bg-[#F1F5F9] text-[#334155] rounded-lg text-xs font-bold hover:bg-[#E2E8F0] cursor-pointer"
+                    >
+                      + Add
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Benefits List */}
+              <div className="space-y-2 pt-2 border-t border-[#F1F5F9]">
+                <label className="block text-xs font-heading font-semibold text-[#475569]">
+                  Configured Pass Benefits (Rendered on Marketing & Dashboard Cards)
+                </label>
+                <div className="space-y-2">
+                  {passBenefits.map((benefit, idx) => (
+                    <div key={idx} className="flex items-center justify-between gap-3 bg-[#F8FAFC] p-2 rounded-lg border border-[#E2E8F0] text-xs">
+                      <div className="flex items-center gap-2">
+                        <Check className="w-3.5 h-3.5 text-[#10B981] shrink-0" strokeWidth={3} />
+                        <span className="text-[#0F172A]">{benefit}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveBenefit(idx)}
+                        className="text-[#94A3B8] hover:text-[#DC2626] cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="text"
+                      placeholder="Type a benefit and press enter or click Add..."
+                      value={newBenefit}
+                      onChange={(e) => setNewBenefit(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddBenefit();
+                        }
+                      }}
+                      className="flex-1 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg px-3 py-1.5 text-xs text-[#0F172A] focus:outline-none focus:ring-1 focus:ring-[#00687A]"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddBenefit}
+                      className="px-3 py-1.5 bg-[#00687A] text-white rounded-lg text-xs font-semibold hover:bg-[#005260] cursor-pointer"
+                    >
+                      + Add Benefit
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </form>
+
+            {/* 2. ENTITLEMENTS MANAGER */}
+            <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-xs overflow-hidden space-y-0">
+              <div className="p-5 border-b border-[#E2E8F0] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h3 className="font-heading font-bold text-base text-[#0F172A] flex items-center gap-2">
+                    <Award className="w-5 h-5 text-[#1D4ED8]" />
+                    <span>Student Entitlements Registry</span>
+                  </h3>
+                  <p className="text-xs text-[#64748B]">
+                    Authoritatively controls student access to premium chapters, cheatsheets, and AI Teacher.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="accent"
+                    onClick={() => {
+                      setGrantUserId('');
+                      setGrantDuration(durationDays || 365);
+                      setGrantNotes('');
+                      setShowGrantModal(true);
+                    }}
+                    className="text-xs font-bold"
+                  >
+                    <UserPlus className="w-3.5 h-3.5 mr-1" />
+                    <span>Grant Annual Pass</span>
+                  </Button>
+                </div>
+              </div>
+
+              {/* Filter and Search Bar */}
+              <div className="p-4 bg-[#F8FAFC] border-b border-[#E2E8F0] flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 flex-1 min-w-[240px]">
+                  <Search className="w-4 h-4 text-[#94A3B8]" />
+                  <input
+                    type="text"
+                    placeholder="Search by student UID, order ID, or notes..."
+                    value={passSearchQuery}
+                    onChange={(e) => setPassSearchQuery(e.target.value)}
+                    className="w-full bg-white border border-[#CBD5E1] rounded-lg px-3 py-1.5 text-xs text-[#0F172A] focus:outline-none focus:ring-1 focus:ring-[#00687A]"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[#64748B] font-medium">Status:</span>
+                  {(['all', 'active', 'expired', 'revoked'] as const).map((st) => (
+                    <button
+                      key={st}
+                      onClick={() => setPassStatusFilter(st)}
+                      className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer capitalize ${
+                        passStatusFilter === st
+                          ? 'bg-[#00687A] text-white'
+                          : 'bg-white border border-[#CBD5E1] text-[#475569] hover:bg-[#F1F5F9]'
+                      }`}
+                    >
+                      {st}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Entitlements Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-[#475569] font-semibold">
+                    <tr>
+                      <th className="py-2.5 px-4">Student User ID</th>
+                      <th className="py-2.5 px-4">Type</th>
+                      <th className="py-2.5 px-4">Status</th>
+                      <th className="py-2.5 px-4">Starts At</th>
+                      <th className="py-2.5 px-4">Expires At</th>
+                      <th className="py-2.5 px-4">Granted By</th>
+                      <th className="py-2.5 px-4">Notes / Order</th>
+                      <th className="py-2.5 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#F1F5F9]">
+                    {entitlements
+                      .filter((e) => {
+                        if (passStatusFilter !== 'all' && e.status !== passStatusFilter) return false;
+                        if (!passSearchQuery.trim()) return true;
+                        const q = passSearchQuery.toLowerCase();
+                        return (
+                          e.userId.toLowerCase().includes(q) ||
+                          (e.orderId && e.orderId.toLowerCase().includes(q)) ||
+                          (e.notes && e.notes.toLowerCase().includes(q))
+                        );
+                      })
+                      .map((ent) => {
+                        const nowMs = Date.now();
+                        const expMs = new Date(ent.expiresAt).getTime();
+                        const isExpiredByTime = expMs <= nowMs;
+                        const daysLeft = Math.max(0, Math.ceil((expMs - nowMs) / (24 * 60 * 60 * 1000)));
+
+                        return (
+                          <tr key={ent.id} className="hover:bg-[#F8FAFC]">
+                            <td className="py-3 px-4 font-mono font-bold text-[#0F172A]">{ent.userId}</td>
+                            <td className="py-3 px-4">
+                              <span className="font-mono text-[11px] bg-[#EFF6FF] text-[#1D4ED8] px-2 py-0.5 rounded font-semibold border border-[#BFDBFE]">
+                                {ent.type}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              {ent.status === 'active' && !isExpiredByTime && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]">
+                                  Active ({daysLeft}d left)
+                                </span>
+                              )}
+                              {(ent.status === 'expired' || (ent.status === 'active' && isExpiredByTime)) && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]">
+                                  Expired (Orders Kept)
+                                </span>
+                              )}
+                              {ent.status === 'revoked' && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#FEF2F2] text-[#DC2626] border border-[#FECACA]">
+                                  Revoked
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-[#64748B]">
+                              {new Date(ent.startsAt).toLocaleDateString()}
+                            </td>
+                            <td className="py-3 px-4 font-semibold text-[#0F172A]">
+                              {new Date(ent.expiresAt).toLocaleDateString()}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="capitalize font-medium text-[#475569]">{ent.grantedBy}</span>
+                            </td>
+                            <td className="py-3 px-4 text-[#64748B] max-w-[200px] truncate" title={ent.notes || ent.orderId}>
+                              {ent.notes || ent.orderId || '—'}
+                            </td>
+                            <td className="py-3 px-4 text-right space-x-1.5 whitespace-nowrap">
+                              <button
+                                onClick={() => {
+                                  setTargetExtendUserId(ent.userId);
+                                  setExtendDays(30);
+                                  setExtendReason('');
+                                  setShowExtendModal(true);
+                                }}
+                                className="px-2.5 py-1 bg-[#EFF6FF] text-[#1D4ED8] hover:bg-[#DBEAFE] font-semibold rounded text-[11px] cursor-pointer"
+                              >
+                                Extend
+                              </button>
+                              {ent.status !== 'revoked' && (
+                                <button
+                                  onClick={() => {
+                                    setTargetRevokeUserId(ent.userId);
+                                    setRevokeReason('');
+                                    setShowRevokeModal(true);
+                                  }}
+                                  className="px-2.5 py-1 bg-[#FEF2F2] text-[#DC2626] hover:bg-[#FEE2E2] font-semibold rounded text-[11px] cursor-pointer"
+                                >
+                                  Revoke
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* 3. AUDIT HISTORY LOG */}
+            <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-xs overflow-hidden">
+              <div className="p-4 border-b border-[#E2E8F0] font-heading font-bold text-sm text-[#0F172A] flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <History className="w-4 h-4 text-[#00687A]" />
+                  <span>Entitlement Audit History Log ({entitlementHistory.length})</span>
+                </span>
+                <span className="text-xs text-[#64748B] font-normal">All grants, extensions, revocations, and expirations</span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-[#475569] font-semibold">
+                    <tr>
+                      <th className="py-2 px-4">Timestamp</th>
+                      <th className="py-2 px-4">Student UID</th>
+                      <th className="py-2 px-4">Action</th>
+                      <th className="py-2 px-4">Actor</th>
+                      <th className="py-2 px-4">Previous Expiry</th>
+                      <th className="py-2 px-4">New Expiry</th>
+                      <th className="py-2 px-4">Reason / Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#F1F5F9]">
+                    {entitlementHistory.map((hist) => (
+                      <tr key={hist.id} className="hover:bg-[#F8FAFC]">
+                        <td className="py-2.5 px-4 text-[#64748B]">
+                          {new Date(hist.timestamp).toLocaleString()}
+                        </td>
+                        <td className="py-2.5 px-4 font-mono font-semibold text-[#0F172A]">
+                          {hist.userId}
+                        </td>
+                        <td className="py-2.5 px-4">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              hist.action === 'created' || hist.action === 'granted'
+                                ? 'bg-[#ECFDF5] text-[#059669]'
+                                : hist.action === 'extended'
+                                ? 'bg-[#EFF6FF] text-[#1D4ED8]'
+                                : hist.action === 'expired'
+                                ? 'bg-[#FEF3C7] text-[#D97706]'
+                                : 'bg-[#FEF2F2] text-[#DC2626]'
+                            }`}
+                          >
+                            {hist.action}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-4 font-mono text-[11px] text-[#475569]">
+                          {hist.actor} {hist.actorId ? `(${hist.actorId})` : ''}
+                        </td>
+                        <td className="py-2.5 px-4 text-[#64748B]">
+                          {hist.previousExpiresAt ? new Date(hist.previousExpiresAt).toLocaleDateString() : '—'}
+                        </td>
+                        <td className="py-2.5 px-4 font-semibold text-[#0F172A]">
+                          {hist.newExpiresAt ? new Date(hist.newExpiresAt).toLocaleDateString() : '—'}
+                        </td>
+                        <td className="py-2.5 px-4 text-[#334155]">{hist.reason || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* MODAL: GRANT PASS */}
+            {showGrantModal && (
+              <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+                  <div className="flex items-center justify-between border-b border-[#F1F5F9] pb-3">
+                    <h3 className="font-heading font-bold text-base text-[#0F172A] flex items-center gap-2">
+                      <UserPlus className="w-5 h-5 text-[#00687A]" />
+                      <span>Grant Annual Pass to Student</span>
+                    </h3>
+                    <button onClick={() => setShowGrantModal(false)} className="text-[#94A3B8] hover:text-[#0F172A]">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleGrantPass} className="space-y-4 text-xs">
+                    <div>
+                      <label className="block font-heading font-semibold text-[#475569] mb-1">
+                        Student User ID (UID)
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. mayf-student-1002 or user-abc"
+                        value={grantUserId}
+                        onChange={(e) => setGrantUserId(e.target.value)}
+                        className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#00687A]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-heading font-semibold text-[#475569] mb-1">
+                        Duration (Days)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        required
+                        value={grantDuration}
+                        onChange={(e) => setGrantDuration(Number(e.target.value))}
+                        className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg px-3 py-2 text-xs font-mono font-bold text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#00687A]"
+                      />
+                      <span className="text-[11px] text-[#64748B]">Default configured duration is {durationDays} days.</span>
+                    </div>
+
+                    <div>
+                      <label className="block font-heading font-semibold text-[#475569] mb-1">
+                        Admin Reason / Scholarship Note
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Merit Scholarship Award 2026"
+                        value={grantNotes}
+                        onChange={(e) => setGrantNotes(e.target.value)}
+                        className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#00687A]"
+                      />
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-2 border-t border-[#F1F5F9]">
+                      <Button type="button" variant="outline" size="sm" onClick={() => setShowGrantModal(false)}>
+                        Cancel
+                      </Button>
+                      <Button type="submit" variant="accent" size="sm" isLoading={saving} className="font-bold">
+                        Confirm & Grant Pass
+                      </Button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* MODAL: EXTEND PASS */}
+            {showExtendModal && (
+              <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+                  <div className="flex items-center justify-between border-b border-[#F1F5F9] pb-3">
+                    <h3 className="font-heading font-bold text-base text-[#0F172A] flex items-center gap-2">
+                      <Calendar className="w-5 h-5 text-[#1D4ED8]" />
+                      <span>Extend Annual Pass Validity</span>
+                    </h3>
+                    <button onClick={() => setShowExtendModal(false)} className="text-[#94A3B8] hover:text-[#0F172A]">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleExtendPass} className="space-y-4 text-xs">
+                    <div>
+                      <label className="block font-heading font-semibold text-[#475569] mb-1">
+                        Target Student
+                      </label>
+                      <input
+                        type="text"
+                        disabled
+                        value={targetExtendUserId}
+                        className="w-full bg-[#F1F5F9] border border-[#CBD5E1] rounded-lg px-3 py-2 font-mono text-xs text-[#475569] cursor-not-allowed"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-heading font-semibold text-[#475569] mb-1">
+                        Days to Add
+                      </label>
+                      <div className="flex gap-2 mb-2">
+                        {[30, 90, 180, 365].map((d) => (
+                          <button
+                            key={d}
+                            type="button"
+                            onClick={() => setExtendDays(d)}
+                            className={`flex-1 py-1 rounded text-xs font-bold border transition-colors cursor-pointer ${
+                              extendDays === d
+                                ? 'bg-[#EFF6FF] border-[#1D4ED8] text-[#1D4ED8]'
+                                : 'bg-[#F8FAFC] border-[#CBD5E1] text-[#475569]'
+                            }`}
+                          >
+                            +{d}d
+                          </button>
+                        ))}
+                      </div>
+                      <input
+                        type="number"
+                        min="1"
+                        required
+                        value={extendDays}
+                        onChange={(e) => setExtendDays(Number(e.target.value))}
+                        className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg px-3 py-2 text-xs font-mono font-bold text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-heading font-semibold text-[#475569] mb-1">
+                        Reason for Extension
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Board exam delay / courtesy extension"
+                        value={extendReason}
+                        onChange={(e) => setExtendReason(e.target.value)}
+                        className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]"
+                      />
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-2 border-t border-[#F1F5F9]">
+                      <Button type="button" variant="outline" size="sm" onClick={() => setShowExtendModal(false)}>
+                        Cancel
+                      </Button>
+                      <Button type="submit" variant="primary" size="sm" isLoading={saving} className="font-bold">
+                        Confirm Extension
+                      </Button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* MODAL: REVOKE PASS */}
+            {showRevokeModal && (
+              <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+                  <div className="flex items-center justify-between border-b border-[#F1F5F9] pb-3">
+                    <h3 className="font-heading font-bold text-base text-[#DC2626] flex items-center gap-2">
+                      <AlertTriangle className="w-5 h-5 text-[#DC2626]" />
+                      <span>Revoke Annual Pass Access</span>
+                    </h3>
+                    <button onClick={() => setShowRevokeModal(false)} className="text-[#94A3B8] hover:text-[#0F172A]">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleRevokePass} className="space-y-4 text-xs">
+                    <div className="p-3 bg-[#FEF2F2] border border-[#FECACA] rounded-lg text-[#991B1B] text-xs">
+                      <strong>Immediate Termination Notice:</strong> Revoking will stop the student's premium access immediately. Their past orders and payment records will remain permanently in the ledger.
+                    </div>
+
+                    <div>
+                      <label className="block font-heading font-semibold text-[#475569] mb-1">
+                        Student User ID
+                      </label>
+                      <input
+                        type="text"
+                        disabled
+                        value={targetRevokeUserId}
+                        className="w-full bg-[#F1F5F9] border border-[#CBD5E1] rounded-lg px-3 py-2 font-mono text-xs text-[#475569] cursor-not-allowed"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-heading font-semibold text-[#475569] mb-1">
+                        Revocation Reason
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Refund processed / Account terms violation"
+                        value={revokeReason}
+                        onChange={(e) => setRevokeReason(e.target.value)}
+                        className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg px-3 py-2 text-xs text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#DC2626]"
+                      />
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-2 border-t border-[#F1F5F9]">
+                      <Button type="button" variant="outline" size="sm" onClick={() => setShowRevokeModal(false)}>
+                        Cancel
+                      </Button>
+                      <Button
+                        type="submit"
+                        size="sm"
+                        isLoading={saving}
+                        className="bg-[#DC2626] hover:bg-[#B91C1C] text-white font-bold"
+                      >
+                        Confirm Revoke
+                      </Button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* TAB 1: GATEWAY SETTINGS */}
         {activeTab === 'settings' && (

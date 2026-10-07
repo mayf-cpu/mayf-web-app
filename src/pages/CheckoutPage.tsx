@@ -74,8 +74,29 @@ export const CheckoutPage: React.FC = () => {
   }, []);
 
   // Pricing calculations
+  const [configuredPriceINR, setConfiguredPriceINR] = useState(999);
+  const [configuredPassName, setConfiguredPassName] = useState('Maths at Your Fingertips Annual Pass (Class 5–10)');
+
+  useEffect(() => {
+    async function loadConfig() {
+      try {
+        const res = await fetch('/api/annual-pass/config');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.settings) {
+            if (data.settings.salePrice) setConfiguredPriceINR(data.settings.salePrice);
+            if (data.settings.name) setConfiguredPassName(data.settings.name);
+          }
+        }
+      } catch (err) {
+        console.warn('Could not fetch pass config in checkout:', err);
+      }
+    }
+    loadConfig();
+  }, []);
+
   const isINR = selectedProvider === 'razorpay';
-  const grossPrice = isINR ? 999 : 29;
+  const grossPrice = isINR ? configuredPriceINR : 29;
   const isDiscountActive = appliedCoupon.toUpperCase() === 'BOARD2026';
   const discountAmount = isDiscountActive ? (isINR ? 100 : 5) : 0;
   const netAmount = Math.max(0, grossPrice - discountAmount);

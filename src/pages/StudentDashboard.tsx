@@ -225,6 +225,41 @@ export const StudentDashboard: React.FC = () => {
   const [activeTurnstileItem, setActiveTurnstileItem] = useState<DownloadResource | null>(null);
   const [copiedUid, setCopiedUid] = useState(false);
 
+  // Authoritative Server Entitlement State
+  const [serverEntitlement, setServerEntitlement] = useState<{
+    active: boolean;
+    daysRemaining: number;
+    reason?: string;
+    entitlement?: any;
+    settings?: any;
+  } | null>(null);
+
+  useEffect(() => {
+    async function loadEntitlement() {
+      try {
+        const token = firebaseUser ? await firebaseUser.getIdToken() : (user?.uid || 'student-session-token');
+        const res = await fetch('/api/student/entitlement', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            setServerEntitlement(data);
+          }
+        }
+      } catch (err) {
+        console.warn('Could not fetch server entitlement:', err);
+      }
+    }
+    loadEntitlement();
+  }, [user, firebaseUser]);
+
+  const isPassActive = serverEntitlement !== null ? serverEntitlement.active : isAnnualPassActive;
+  const isPassExpired = Boolean(
+    serverEntitlement?.entitlement?.status === 'expired' ||
+      (serverEntitlement && !serverEntitlement.active && serverEntitlement.entitlement)
+  );
+
   // State: Saved formulas search & filter
   const [savedSearchQuery, setSavedSearchQuery] = useState('');
   const [savedCategoryFilter, setSavedCategoryFilter] = useState('All');
@@ -764,6 +799,28 @@ export const StudentDashboard: React.FC = () => {
           {/* ------------------------------------------------------- */}
           {activeTab === 'annual-pass' && (
             <div className="space-y-6">
+              {/* Expiry Warning Notice if expired */}
+              {isPassExpired && (
+                <div className="p-4 bg-[#FEF3C7] border border-[#F59E0B] rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs text-[#92400E] shadow-xs">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-[#D97706] shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block text-sm text-[#78350F]">
+                        Your Annual Pass Validity Has Expired
+                      </span>
+                      <p className="mt-0.5 text-[#92400E]">
+                        {serverEntitlement?.reason || 'Your pass duration has concluded.'} Premium downloads and AI Teacher quotas have automatically stopped. <strong>All your past order records and invoices remain permanently preserved in your account.</strong>
+                      </p>
+                    </div>
+                  </div>
+                  <Link href="/annual-pass">
+                    <Button size="sm" variant="accent" className="font-bold shrink-0 shadow-sm">
+                      Renew Annual Pass
+                    </Button>
+                  </Link>
+                </div>
+              )}
+
               <div className="bg-gradient-to-r from-[#0037B0] via-[#1D4ED8] to-[#0284C7] rounded-2xl p-6 sm:p-8 text-white shadow-lg relative overflow-hidden">
                 <div className="relative z-10 space-y-4">
                   <div className="flex items-center justify-between flex-wrap gap-2">
@@ -771,12 +828,12 @@ export const StudentDashboard: React.FC = () => {
                       OFFICIAL LEARNER DIGITAL PASS
                     </span>
                     <Badge variant="pro" className="bg-white/20 text-white border-white/40">
-                      ACADEMIC YEAR 2026–2027
+                      {serverEntitlement?.settings?.name || 'ANNUAL PASS'}
                     </Badge>
                   </div>
 
                   <h3 className="font-heading font-extrabold text-2xl sm:text-3xl">
-                    Maths at Your Fingertips Annual Pass
+                    {serverEntitlement?.settings?.name || 'Maths at Your Fingertips Annual Pass'}
                   </h3>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-2 border-t border-white/20 text-xs">
@@ -786,7 +843,15 @@ export const StudentDashboard: React.FC = () => {
                     </div>
                     <div>
                       <span className="text-[#BFDBFE] block text-[11px]">Valid Until</span>
-                      <span className="font-bold text-sm">March 31, 2027</span>
+                      <span className="font-bold text-sm">
+                        {serverEntitlement?.entitlement?.expiresAt
+                          ? new Date(serverEntitlement.entitlement.expiresAt).toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric',
+                            })
+                          : 'March 31, 2027'}
+                      </span>
                     </div>
                     <div>
                       <span className="text-[#BFDBFE] block text-[11px]">Pass Number</span>
@@ -796,8 +861,14 @@ export const StudentDashboard: React.FC = () => {
                     </div>
                     <div>
                       <span className="text-[#BFDBFE] block text-[11px]">Pass Status</span>
-                      <span className="font-bold text-sm text-[#86EFAC]">
-                        {isAnnualPassActive ? 'Active & Verified' : 'Free Preview'}
+                      <span className={`font-bold text-sm ${
+                        isPassActive ? 'text-[#86EFAC]' : isPassExpired ? 'text-[#FDE047]' : 'text-[#BFDBFE]'
+                      }`}>
+                        {isPassActive
+                          ? `Active (${serverEntitlement?.daysRemaining ?? 365}d left)`
+                          : isPassExpired
+                          ? 'Expired (Order Kept)'
+                          : 'Free Preview'}
                       </span>
                     </div>
                   </div>

@@ -1,11 +1,57 @@
-import React from 'react';
-import { Check, Sparkles, ShieldCheck, HelpCircle, ArrowRight, Star } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Check, Sparkles, ShieldCheck, HelpCircle, ArrowRight, Star, Calendar } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Link } from '../context/NavigationContext';
+import { AnnualPassSettings } from '../lib/payments/types';
 
 export const AnnualPassPage: React.FC = () => {
+  const [config, setConfig] = useState<AnnualPassSettings>({
+    enabled: true,
+    name: 'All-Class Annual Pass',
+    regularPrice: 1999,
+    salePrice: 999,
+    currency: 'INR',
+    durationDays: 365,
+    description: 'Complete, unrestricted access to the entire Class 5–10 mathematics curriculum.',
+    benefits: [
+      'All 50+ Chapters across Class 5, 6, 7, 8, 9 & 10',
+      '80+ Formula Flashcards with step derivations',
+      'Unlimited 24/7 AI Teacher Doubt Resolutions',
+      'Printable PDF formula sheets & summary cards',
+      'NCERT Exemplar & Board Exam Past Paper steps',
+      '100% 7-Day Money-Back Guarantee',
+    ],
+    eligibleContent: ['Class 5–10 Math', 'Formula Deck', 'AI Teacher', 'Mock Tests'],
+    promotionalStartDate: '2026-04-01',
+    promotionalEndDate: '2027-03-31',
+  });
+
+  useEffect(() => {
+    async function loadConfig() {
+      try {
+        const res = await fetch('/api/annual-pass/config');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.settings) {
+            setConfig(data.settings);
+          }
+        }
+      } catch (err) {
+        console.warn('Could not load dynamic pass config, using standard defaults:', err);
+      }
+    }
+    loadConfig();
+  }, []);
+
+  const isPromoActive = Boolean(
+    config.promotionalStartDate &&
+    config.promotionalEndDate &&
+    new Date(config.promotionalStartDate) <= new Date() &&
+    new Date(config.promotionalEndDate) >= new Date()
+  );
+
   const faqs = [
     {
       q: 'Does the Annual Pass cover both CBSE and ICSE syllabus?',
@@ -97,59 +143,55 @@ export const AnnualPassPage: React.FC = () => {
           <div className="relative bg-white rounded-xl border-2 border-[#1D4ED8] p-6 sm:p-8 flex flex-col justify-between shadow-[0_10px_25px_-4px_rgba(29,78,216,0.12)] overflow-hidden">
             <div className="absolute top-0 right-0 bg-gradient-to-r from-[#FF6B4A] to-[#F97316] text-white text-[11px] font-heading font-bold px-4 py-1 rounded-bl-lg tracking-wider uppercase flex items-center gap-1 shadow-xs">
               <Star className="w-3 h-3 fill-white stroke-none" />
-              <span>Recommended for Board Prep</span>
+              <span>{isPromoActive ? 'Special Promotional Offer' : 'Recommended for Board Prep'}</span>
             </div>
 
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <span className="font-heading font-bold text-xl text-[#0F172A]">All-Class Annual Pass</span>
+                <span className="font-heading font-bold text-xl text-[#0F172A]">{config.name}</span>
               </div>
               <p className="text-xs text-[#64748B] mb-6">
-                Complete, unrestricted access to the entire Class 5–10 mathematics curriculum.
+                {config.description}
               </p>
 
-              <div className="font-mono tabular-nums text-4xl sm:text-5xl font-extrabold text-[#0037B0] mb-1">
-                ₹999
+              <div className="flex items-baseline gap-2 mb-1">
+                <span className="font-mono tabular-nums text-4xl sm:text-5xl font-extrabold text-[#0037B0]">
+                  ₹{config.salePrice}
+                </span>
+                {config.regularPrice > config.salePrice && (
+                  <span className="font-mono text-base text-[#94A3B8] line-through">
+                    ₹{config.regularPrice}
+                  </span>
+                )}
+                <span className="text-xs text-[#64748B]">/ {config.durationDays} days</span>
               </div>
               <p className="text-xs text-[#059669] font-semibold mb-6">
-                Less than ₹3 per day for a complete academic year.
+                Less than ₹{Math.max(1, Math.round(config.salePrice / config.durationDays))} per day for full access.
               </p>
 
               <div className="space-y-3 text-xs sm:text-sm text-[#0F172A] border-t border-[#F1F5F9] pt-6 font-medium">
-                <div className="flex items-center gap-2.5">
-                  <Check className="w-4 h-4 text-[#1D4ED8] shrink-0" strokeWidth={3} />
-                  <span>All 50+ Chapters across Class 5, 6, 7, 8, 9 & 10</span>
-                </div>
-                <div className="flex items-center gap-2.5">
-                  <Check className="w-4 h-4 text-[#1D4ED8] shrink-0" strokeWidth={3} />
-                  <span>80+ Formula Flashcards with step derivations</span>
-                </div>
-                <div className="flex items-center gap-2.5">
-                  <Check className="w-4 h-4 text-[#1D4ED8] shrink-0" strokeWidth={3} />
-                  <span>Unlimited 24/7 AI Teacher Doubt Resolutions</span>
-                </div>
-                <div className="flex items-center gap-2.5">
-                  <Check className="w-4 h-4 text-[#1D4ED8] shrink-0" strokeWidth={3} />
-                  <span>Printable PDF formula sheets & summary cards</span>
-                </div>
-                <div className="flex items-center gap-2.5">
-                  <Check className="w-4 h-4 text-[#1D4ED8] shrink-0" strokeWidth={3} />
-                  <span>NCERT Exemplar & Board Exam Past Paper steps</span>
-                </div>
-                <div className="flex items-center gap-2.5">
-                  <Check className="w-4 h-4 text-[#1D4ED8] shrink-0" strokeWidth={3} />
-                  <span>100% 7-Day Money-Back Guarantee</span>
-                </div>
+                {config.benefits.map((benefit, idx) => (
+                  <div key={idx} className="flex items-center gap-2.5">
+                    <Check className="w-4 h-4 text-[#1D4ED8] shrink-0" strokeWidth={3} />
+                    <span>{benefit}</span>
+                  </div>
+                ))}
               </div>
             </div>
 
             <div className="pt-8">
-              <Link href="/checkout?plan=annual-pass">
-                <Button variant="accent" fullWidth size="lg" className="font-bold text-base shadow-md">
-                  <span>Get Annual Pass for ₹999</span>
-                  <ArrowRight className="w-4 h-4 ml-1.5" />
+              {config.enabled ? (
+                <Link href="/checkout?plan=annual-pass">
+                  <Button variant="accent" fullWidth size="lg" className="font-bold text-base shadow-md">
+                    <span>Get Annual Pass for ₹{config.salePrice}</span>
+                    <ArrowRight className="w-4 h-4 ml-1.5" />
+                  </Button>
+                </Link>
+              ) : (
+                <Button variant="outline" fullWidth size="lg" disabled className="font-bold text-base">
+                  Enrollment Currently Closed
                 </Button>
-              </Link>
+              )}
             </div>
           </div>
 

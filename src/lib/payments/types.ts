@@ -141,3 +141,72 @@ export interface MaskedPaymentGatewaySettings {
     stripe: string;
   };
 }
+
+export interface AnnualPassSettings {
+  enabled: boolean;
+  name: string;
+  regularPrice: number;
+  salePrice: number;
+  currency: string;
+  durationDays: number; // default: 365
+  description: string;
+  benefits: string[];
+  eligibleContent: string[];
+  promotionalStartDate?: string | null;
+  promotionalEndDate?: string | null;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export type EntitlementStatus = 'active' | 'expired' | 'revoked';
+
+export interface Entitlement {
+  id: string;
+  userId: string;
+  type: 'annual_pass';
+  startsAt: string;
+  expiresAt: string;
+  status: EntitlementStatus;
+  grantedBy: 'payment' | 'admin';
+  orderId?: string;
+  paymentId?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EntitlementHistoryLog {
+  id: string;
+  entitlementId: string;
+  userId: string;
+  action: 'created' | 'granted' | 'extended' | 'revoked' | 'expired';
+  actor: 'system' | 'admin' | 'payment_webhook';
+  actorId?: string;
+  previousExpiresAt?: string;
+  newExpiresAt?: string;
+  previousStatus?: EntitlementStatus;
+  newStatus?: EntitlementStatus;
+  reason?: string;
+  timestamp: string;
+}
+
+export interface GrantAnnualPassRequest {
+  userId: string;
+  durationDays?: number;
+  notes?: string;
+  adminId?: string;
+}
+
+export interface ExtendAnnualPassRequest {
+  userId: string;
+  daysToAdd?: number;
+  newExpiresAt?: string;
+  reason?: string;
+  adminId?: string;
+}
+
+export interface RevokeAnnualPassRequest {
+  userId: string;
+  reason?: string;
+  adminId?: string;
+}

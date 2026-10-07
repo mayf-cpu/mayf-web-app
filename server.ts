@@ -17,6 +17,7 @@ import crypto from 'crypto';
 import { getDownloadableItem } from './src/lib/download/downloadRegistry';
 import { FORMULA_DECK_ITEMS } from './src/data/formulaDeckData';
 import { paymentService } from './src/lib/payments/paymentService';
+import { entitlementService } from './src/lib/payments/entitlementService';
 import { PaymentProvider } from './src/lib/payments/types';
 
 dotenv.config();
@@ -74,11 +75,14 @@ async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextF
     });
   }
 
+  // Check active entitlement authoritatively from server-side store
+  const entitlementCheck = entitlementService.checkActiveEntitlement(tokenVerification.uid);
+
   // Assign verified user identity from token
   req.userAuth = {
     uid: tokenVerification.uid,
     role: tokenVerification.uid.includes('admin') ? 'admin' : 'student',
-    hasAnnualPass: true,
+    hasAnnualPass: entitlementCheck.active,
   };
   next();
 }
@@ -410,8 +414,9 @@ app.post('/api/downloads/authorize', async (req: Request, res: Response) => {
             error: 'Account download rate limit reached. Please wait 60 seconds.',
           });
         }
-        // Verified users have entitlements active in session
-        userHasEntitlement = true;
+        // Check server-side entitlement status
+        const passCheck = entitlementService.checkActiveEntitlement(verifiedUid);
+        userHasEntitlement = passCheck.active;
       }
     }
 
@@ -434,18 +439,20 @@ app.post('/api/downloads/authorize', async (req: Request, res: Response) => {
       }
 
       if (!userHasEntitlement) {
+        const passCheck = entitlementService.checkActiveEntitlement(verifiedUid);
         logDownloadAudit({
           contentId,
           uid: verifiedUid,
           accessType: 'paid',
           status: 'failed',
           action: 'authorize',
-          reason: 'User lacks active Annual Pass or Pro entitlement',
+          reason: passCheck.reason || 'User lacks active Annual Pass or pass has expired',
           req,
         });
         return res.status(403).json({
           success: false,
-          error: 'An active Maths at Your Fingertips Annual Pass or individual order is required to download this asset.',
+          error: passCheck.reason || 'An active Maths at Your Fingertips Annual Pass is required to download this asset.',
+          isExpired: passCheck.entitlement?.status === 'expired',
         });
       }
     }
@@ -688,17 +695,13 @@ async function handleVerifyPayment(req: AuthenticatedRequest, res: Response) {
       });
     }
 
-    const expiryDate = new Date();
-    expiryDate.setFullYear(expiryDate.getFullYear() + 1);
-
-    const entitlementGrant = {
+    // Authoritatively create or renew entitlement upon verified payment
+    // Entitlement contains: userId, type = 'annual_pass', startsAt, expiresAt, status
+    const entitlementGrant = entitlementService.createOrRenewFromPayment({
+      userId,
       orderId: verification.order?.orderId || orderId,
       paymentId: verification.order?.providerPaymentId || `PAY-${Date.now()}`,
-      userId,
-      annualPassGranted: true,
-      expiryDate: expiryDate.toISOString().split('T')[0],
-      message: 'Annual Pass authoritatively verified and provisioned by trusted server.',
-    };
+    });
 
     return res.json({
       success: true,
@@ -728,6 +731,18 @@ app.post('/api/payments/webhook/razorpay', async (req: Request, res: Response) =
       return res.status(400).json({ status: 'invalid_signature', error: result.message });
     }
 
+    // Provision entitlement if order is confirmed paid
+    if (result.success && result.orderId) {
+      const order = paymentService.getAllOrders().find((o) => o.orderId === result.orderId);
+      if (order && order.status === 'paid') {
+        entitlementService.createOrRenewFromPayment({
+          userId: order.userId,
+          orderId: order.orderId,
+          paymentId: order.providerPaymentId,
+        });
+      }
+    }
+
     // Always respond with 200 OK to acknowledged webhooks (even duplicate ones)
     return res.status(200).json({
       status: 'ok',
@@ -753,6 +768,18 @@ app.post('/api/payments/webhook/stripe', async (req: Request, res: Response) => 
     if (!result.success && result.status === 'signature_invalid') {
       console.warn('[MAYF Webhook] Stripe signature invalid');
       return res.status(400).json({ status: 'invalid_signature', error: result.message });
+    }
+
+    // Provision entitlement if order is confirmed paid
+    if (result.success && result.orderId) {
+      const order = paymentService.getAllOrders().find((o) => o.orderId === result.orderId);
+      if (order && order.status === 'paid') {
+        entitlementService.createOrRenewFromPayment({
+          userId: order.userId,
+          orderId: order.orderId,
+          paymentId: order.providerPaymentId,
+        });
+      }
     }
 
     return res.status(200).json({
@@ -858,6 +885,14 @@ app.post('/api/admin/payments/simulate-webhook', requireAuth, requireAdmin, asyn
       simulateDuplicate: Boolean(simulateDuplicate),
     });
 
+    if (simulation.success && simulation.order && simulation.order.status === 'paid') {
+      entitlementService.createOrRenewFromPayment({
+        userId: simulation.order.userId,
+        orderId: simulation.order.orderId,
+        paymentId: simulation.order.providerPaymentId,
+      });
+    }
+
     return res.json({
       success: true,
       simulation,
@@ -865,6 +900,169 @@ app.post('/api/admin/payments/simulate-webhook', requireAuth, requireAdmin, asyn
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error?.message || 'Webhook simulation error' });
   }
+});
+
+// -------------------------------------------------------------
+// Configurable Annual Pass & Entitlement Management API
+// -------------------------------------------------------------
+
+/**
+ * Public Annual Pass Configuration (For pricing & feature cards)
+ */
+app.get('/api/annual-pass/config', (_req: Request, res: Response) => {
+  return res.json({
+    success: true,
+    settings: entitlementService.getSettings(),
+  });
+});
+
+/**
+ * Student Active Entitlement Status & Expiry Check
+ * Automatically reflects expired state without removing order history.
+ */
+app.get('/api/student/entitlement', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.userAuth!.uid;
+  const status = entitlementService.checkActiveEntitlement(userId);
+  return res.json({
+    success: true,
+    active: status.active,
+    daysRemaining: status.daysRemaining,
+    reason: status.reason,
+    entitlement: status.entitlement,
+    settings: entitlementService.getSettings(),
+  });
+});
+
+/**
+ * Admin: Get Annual Pass Settings
+ */
+app.get('/api/admin/annual-pass/settings', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+  return res.json({
+    success: true,
+    settings: entitlementService.getSettings(),
+  });
+});
+
+/**
+ * Admin: Update Annual Pass Settings
+ */
+app.post('/api/admin/annual-pass/settings', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const updated = entitlementService.updateSettings(req.body, req.userAuth?.uid || 'admin');
+    return res.json({
+      success: true,
+      settings: updated,
+      message: 'Annual Pass settings successfully updated.',
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Failed to update Annual Pass settings' });
+  }
+});
+
+/**
+ * Admin: List All Entitlements
+ */
+app.get('/api/admin/annual-pass/entitlements', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+  const entitlements = entitlementService.getAllEntitlements();
+  return res.json({
+    success: true,
+    count: entitlements.length,
+    entitlements,
+  });
+});
+
+/**
+ * Admin: Grant Annual Pass
+ */
+app.post('/api/admin/annual-pass/grant', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { userId, durationDays, notes } = req.body;
+    if (!userId || typeof userId !== 'string') {
+      return res.status(400).json({ success: false, error: 'Student userId is required.' });
+    }
+
+    const entitlement = entitlementService.grantPass({
+      userId: userId.trim(),
+      durationDays: durationDays ? Number(durationDays) : undefined,
+      notes,
+      adminId: req.userAuth?.uid || 'admin',
+    });
+
+    return res.json({
+      success: true,
+      entitlement,
+      message: `Annual Pass granted to ${userId} (${durationDays || 365} days).`,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Failed to grant Annual Pass' });
+  }
+});
+
+/**
+ * Admin: Extend Annual Pass
+ */
+app.post('/api/admin/annual-pass/extend', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { userId, daysToAdd, newExpiresAt, reason } = req.body;
+    if (!userId || typeof userId !== 'string') {
+      return res.status(400).json({ success: false, error: 'Student userId is required.' });
+    }
+
+    const extended = entitlementService.extendPass({
+      userId: userId.trim(),
+      daysToAdd: daysToAdd ? Number(daysToAdd) : undefined,
+      newExpiresAt,
+      reason,
+      adminId: req.userAuth?.uid || 'admin',
+    });
+
+    return res.json({
+      success: true,
+      entitlement: extended,
+      message: `Annual Pass extended for ${userId}. New expiry: ${new Date(extended.expiresAt).toLocaleDateString()}.`,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Failed to extend Annual Pass' });
+  }
+});
+
+/**
+ * Admin: Revoke Annual Pass
+ */
+app.post('/api/admin/annual-pass/revoke', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { userId, reason } = req.body;
+    if (!userId || typeof userId !== 'string') {
+      return res.status(400).json({ success: false, error: 'Student userId is required.' });
+    }
+
+    const revoked = entitlementService.revokePass({
+      userId: userId.trim(),
+      reason,
+      adminId: req.userAuth?.uid || 'admin',
+    });
+
+    return res.json({
+      success: true,
+      entitlement: revoked,
+      message: `Annual Pass revoked for student ${userId}. Premium access terminated immediately.`,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Failed to revoke Annual Pass' });
+  }
+});
+
+/**
+ * Admin: View Audit History Log
+ */
+app.get('/api/admin/annual-pass/history', requireAuth, requireAdmin, (req: Request, res: Response) => {
+  const userId = req.query.userId ? String(req.query.userId) : undefined;
+  const history = entitlementService.getHistory(userId);
+  return res.json({
+    success: true,
+    totalLogs: history.length,
+    history,
+  });
 });
 
 // -------------------------------------------------------------
