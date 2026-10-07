@@ -26,6 +26,7 @@ export type AppRoute =
   | '/dashboard/notifications'
   | '/search'
   | '/admin/import-sync'
+  | '/admin/payments'
   | '/privacy'
   | '/terms'
   | '/refund-policy';
@@ -64,6 +65,7 @@ export function matchCurrentPath(pathname: string): RouteMatch {
     '/dashboard/notifications',
     '/search',
     '/admin/import-sync',
+    '/admin/payments',
     '/privacy',
     '/terms',
     '/refund-policy',

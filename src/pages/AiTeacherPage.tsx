@@ -220,10 +220,18 @@ export const AiTeacherPage: React.FC = () => {
         body: JSON.stringify(payload),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Server error occurred');
+      if (!response.ok || !data.reply) {
+        const noticeText = data?.error || 'Temporary connectivity delay. Please check image clarity or rephrase your question.';
+        const teacherNoticeMsg: ChatMessage = {
+          id: 'msg-notice-' + Date.now(),
+          sender: 'ai_teacher',
+          text: `### Professor Sigma Note\n${noticeText}\n\n* Please ensure equations and signs are readable.\n* You can also type out the question directly in the input box below.`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        };
+        setMessages((prev) => [...prev, teacherNoticeMsg]);
+        return;
       }
 
       if (typeof data.quotaRemaining === 'number') {
@@ -253,11 +261,11 @@ export const AiTeacherPage: React.FC = () => {
         },
       });
     } catch (err: any) {
-      console.error('[MAYF AI Teacher Error]:', err);
+      console.warn('[MAYF AI Teacher Network Notice]:', err?.message || err);
       const errorMsg: ChatMessage = {
         id: 'msg-err-' + Date.now(),
         sender: 'ai_teacher',
-        text: `### Understanding the Question\nI encountered a temporary connection issue: "${err?.message || 'Network request failed'}"\n\n### Step-by-Step Solution\n* Please ensure your mathematics question is clearly stated.\n* If you uploaded a photograph, verify that numbers and signs are legible.\n* Try asking again in a few seconds.`,
+        text: `### Understanding the Question\nI encountered a brief connectivity delay: "${err?.message || 'Network request failed'}"\n\n### Step-by-Step Solution\n* Please ensure your mathematics question is clearly stated.\n* If you uploaded a photograph, verify that numbers and signs are legible.\n* Try asking again in a few seconds.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       setMessages((prev) => [...prev, errorMsg]);

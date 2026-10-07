@@ -26,6 +26,7 @@ import { DashboardSavedPage } from './pages/DashboardSavedPage';
 import { DashboardAiHistoryPage } from './pages/DashboardAiHistoryPage';
 import { SearchPage } from './pages/SearchPage';
 import { AdminImportSyncPage } from './pages/AdminImportSyncPage';
+import { AdminPaymentSettingsPage } from './pages/AdminPaymentSettingsPage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { TermsPage } from './pages/TermsPage';
 import { RefundPolicyPage } from './pages/RefundPolicyPage';
@@ -70,6 +71,8 @@ function AppRouter() {
       return <SearchPage />;
     case '/admin/import-sync':
       return <AdminImportSyncPage />;
+    case '/admin/payments':
+      return <AdminPaymentSettingsPage />;
     case '/privacy':
       return <PrivacyPage />;
     case '/terms':

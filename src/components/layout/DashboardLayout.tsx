@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, ShoppingBag, DownloadCloud, Bookmark, History, Flame, Sparkles, FileSpreadsheet } from 'lucide-react';
+import { LayoutDashboard, ShoppingBag, DownloadCloud, Bookmark, History, Flame, Sparkles, FileSpreadsheet, CreditCard } from 'lucide-react';
 import { SharedLayout } from './SharedLayout';
 import { Link, useNavigation } from '../../context/NavigationContext';
 import { useAuth } from '../../context/AuthContext';
@@ -27,6 +27,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     { label: 'Saved Formulas', href: '/dashboard/saved', icon: Bookmark },
     { label: 'AI Doubt History', href: '/dashboard/ai-history', icon: History },
     { label: 'Admin Import & Sync', href: '/admin/import-sync', icon: FileSpreadsheet },
+    { label: 'Payment Gateway', href: '/admin/payments', icon: CreditCard },
   ];
 
   const classes: StudentClass[] = [

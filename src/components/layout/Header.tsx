@@ -13,6 +13,7 @@ export const Header: React.FC = () => {
     { label: 'Formula Deck', href: '/formula-deck' },
     { label: 'AI Teacher', href: '/ai-teacher' },
     { label: 'Annual Pass', href: '/annual-pass' },
+    { label: 'Payments', href: '/admin/payments' },
     { label: 'Import & Sync', href: '/admin/import-sync' },
   ];
 

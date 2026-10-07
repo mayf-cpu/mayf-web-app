@@ -113,9 +113,10 @@ export interface Category {
 /**
  * 4. Orders Collection (/orders/{orderId})
  */
-export type OrderStatus = 'created' | 'pending' | 'completed' | 'failed' | 'refunded';
+export type OrderStatus = 'created' | 'pending' | 'paid' | 'failed' | 'refunded' | 'cancelled';
 
 export interface OrderItem {
+  id?: string;
   contentItemId?: string;
   annualPass?: boolean;
   title: string;
@@ -124,17 +125,23 @@ export interface OrderItem {
 }
 
 export interface Order {
-  id: string;
+  id?: string;
+  orderId: string;
   userId: string;
-  status: OrderStatus;
-  amount: number;
-  currency: 'INR';
   items: OrderItem[];
-  couponCode?: string;
-  discountAmount?: number;
-  paymentGatewayTransactionId?: string;
+  grossAmount: number;
+  discount: number;
+  coupon?: string;
+  tax?: number;
+  currency: 'INR' | 'USD' | string;
+  provider: 'razorpay' | 'stripe';
+  providerOrderId: string;
+  providerPaymentId?: string;
+  status: OrderStatus;
   createdAt: string;
-  updatedAt: string;
+  paidAt?: string | null;
+  amount?: number; // legacy backward compatibility
+  updatedAt?: string;
 }
 
 /**

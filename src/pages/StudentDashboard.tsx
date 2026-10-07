@@ -1145,48 +1145,53 @@ export const StudentDashboard: React.FC = () => {
                     <thead className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-[#475569] font-semibold">
                       <tr>
                         <th className="py-2.5 px-4">Order ID</th>
-                        <th className="py-2.5 px-4">Plan Description</th>
-                        <th className="py-2.5 px-4">Date</th>
+                        <th className="py-2.5 px-4">Plan / Items</th>
+                        <th className="py-2.5 px-4">Gateway</th>
                         <th className="py-2.5 px-4">Amount</th>
                         <th className="py-2.5 px-4">Status</th>
+                        <th className="py-2.5 px-4">Date</th>
                         <th className="py-2.5 px-4 text-right">Invoice</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#F1F5F9]">
-                      {SAMPLE_PURCHASES.map((p) => (
-                        <tr key={p.orderId} className="hover:bg-[#F8FAFC]">
-                          <td className="py-3 px-4 font-mono font-medium text-[#0F172A]">
-                            {p.orderId}
-                          </td>
-                          <td className="py-3 px-4 font-heading font-semibold text-[#0F172A]">
-                            {p.planName}
-                          </td>
-                          <td className="py-3 px-4 text-[#64748B]">
-                            {p.purchaseDate}
-                          </td>
-                          <td className="py-3 px-4 font-mono font-bold text-[#0F172A]">
-                            ₹{p.amountInr}.00
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className="text-[11px] bg-[#ECFDF5] text-[#059669] font-semibold px-2 py-0.5 rounded">
-                              Completed
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                alert(`Downloading GST Invoice PDF for order ${p.orderId}`);
-                              }}
-                              className="text-xs text-[#1D4ED8]"
-                            >
-                              <Download className="w-3 h-3 mr-1" />
-                              <span>PDF</span>
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
+                      <tr className="hover:bg-[#F8FAFC]">
+                        <td className="py-3 px-4 font-mono font-bold text-[#0F172A]">
+                          MAYF-ORD-2026-1001
+                        </td>
+                        <td className="py-3 px-4 font-heading font-semibold text-[#0F172A]">
+                          Maths at Your Fingertips Annual Pass (Class 5–10)
+                          <span className="text-[10px] text-[#059669] block font-normal">Coupon: BOARD2026 (-₹100)</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-[#E0F2FE] text-[#0284C7]">
+                            Razorpay
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-mono font-bold text-[#0F172A]">
+                          ₹899.00
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="text-[11px] bg-[#ECFDF5] text-[#059669] font-semibold px-2 py-0.5 rounded uppercase">
+                            Paid
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-[#64748B]">
+                          Oct 5, 2026
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              alert('Downloading GST Tax Invoice PDF for order MAYF-ORD-2026-1001');
+                            }}
+                            className="text-xs text-[#00687A]"
+                          >
+                            <Download className="w-3 h-3 mr-1" />
+                            <span>PDF</span>
+                          </Button>
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
