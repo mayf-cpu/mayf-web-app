@@ -16,6 +16,7 @@ import { SeoHead } from '../components/common/SeoHead';
 import { ShareButton } from '../components/ui/ShareButton';
 import { INITIAL_FORMULAS, INITIAL_SOLVED_PROBLEMS } from '../data/curriculumData';
 import { TurnstileModal } from '../components/ui/TurnstileModal';
+import { AdSensePlacement } from '../components/adsense/AdSensePlacement';
 import { logProductEvent } from '../lib/activity/activityService';
 
 export const StudyChapterPage: React.FC = () => {
@@ -319,6 +320,9 @@ export const StudyChapterPage: React.FC = () => {
             </div>
           </section>
         )}
+
+        {/* Reusable Child-Safe AdSense Placement for Content */}
+        <AdSensePlacement zone="content" />
 
         {/* Cloudflare Turnstile Secure Download Modal */}
         {isTurnstileOpen && (

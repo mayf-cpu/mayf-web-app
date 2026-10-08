@@ -10,6 +10,7 @@ import { QueryDocumentSnapshot } from 'firebase/firestore';
 import { SeoHead } from '../components/common/SeoHead';
 import { PromotionalBanner } from '../components/ui/PromotionalBanner';
 import { ShareButton } from '../components/ui/ShareButton';
+import { AdSensePlacement } from '../components/adsense/AdSensePlacement';
 
 export const StudyMaterialPage: React.FC = () => {
   const [selectedClass, setSelectedClass] = useState<StudentClass | 'All'>('All');
@@ -535,6 +536,9 @@ export const StudyMaterialPage: React.FC = () => {
             )}
           </div>
         )}
+
+        {/* Reusable Child-Safe AdSense Placement for Catalogue */}
+        <AdSensePlacement zone="catalogue" />
 
       </div>
     </SharedLayout>

@@ -35,9 +35,12 @@ export type AuditAction =
   | 'SECURITY_CONFIG_UPDATED'
   | 'USER_DISABLED'
   | 'USER_ENABLED'
-  | 'USER_DELETED_POLICY';
+  | 'USER_DELETED_POLICY'
+  | 'BROADCAST_CREATED'
+  | 'BROADCAST_UPDATED'
+  | 'BROADCAST_DELETED';
 
-export type AuditCategory = 'admin' | 'subscription' | 'content' | 'refund' | 'security' | 'user';
+export type AuditCategory = 'admin' | 'subscription' | 'content' | 'refund' | 'security' | 'user' | 'broadcast';
 
 export interface AuditLogEntry {
   id: string;

@@ -25,6 +25,7 @@ import { WatermarkGlyph } from '../components/ui/WatermarkGlyph';
 import { FormulaDiagram } from '../components/ui/FormulaDiagram';
 import { FormulaSeo } from '../components/common/FormulaSeo';
 import { ShareButton } from '../components/ui/ShareButton';
+import { AdSensePlacement } from '../components/adsense/AdSensePlacement';
 import { useAuth } from '../context/AuthContext';
 import { logProductEvent } from '../lib/activity/activityService';
 
@@ -518,6 +519,9 @@ export const FormulaDetailPage: React.FC = () => {
             </Button>
           </Link>
         </div>
+
+        {/* Reusable Child-Safe AdSense Placement for Formula Pages */}
+        <AdSensePlacement zone="formulaPages" />
 
       </div>
     </SharedLayout>

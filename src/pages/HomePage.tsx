@@ -35,6 +35,7 @@ import { INITIAL_FORMULAS, INITIAL_CHAPTERS, INITIAL_SOLVED_PROBLEMS } from '../
 import { StudentClass } from '../lib/firebase/types';
 import { PromotionalBanner } from '../components/ui/PromotionalBanner';
 import { ShareButton } from '../components/ui/ShareButton';
+import { AdSensePlacement } from '../components/adsense/AdSensePlacement';
 import { useHomepageLayout } from '../lib/layout/useHomepageLayout';
 import {
   HomepageBlock,
@@ -959,27 +960,7 @@ export const HomePage: React.FC = () => {
 
   // 15. AdSense Block
   const renderAdSense = (block: HomepageBlock<AdSenseBlockConfig>) => {
-    const config = block.config || {};
-    const minHeight = config.minHeightPx || 90;
-
-    return (
-      <section
-        key={block.id}
-        className="w-full bg-[#F8FAFC] border border-dashed border-[#CBD5E1] rounded-lg p-3 text-center my-4"
-        style={{ minHeight: `${minHeight}px` }}
-      >
-        {config.showDisclaimer !== false && (
-          <div className="text-[10px] uppercase font-mono tracking-wider text-[#94A3B8] mb-1">
-            Advertisement · Partner Sponsor
-          </div>
-        )}
-        <div className="flex items-center justify-center py-4 text-xs text-[#64748B]">
-          <span className="font-mono text-[11px] bg-slate-100 px-3 py-1.5 rounded border border-slate-200">
-            Ad Space ({config.format || 'Responsive'} · Slot: {config.adSlotId || 'default'})
-          </span>
-        </div>
-      </section>
-    );
+    return <AdSensePlacement key={block.id} zone="homepage" />;
   };
 
   // Dispatcher map for all 15 blocks

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Search, BookOpen, Layers, ArrowRight, X, Sparkles } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
 import { Link } from '../context/NavigationContext';
+import { AdSensePlacement } from '../components/adsense/AdSensePlacement';
 import { searchService } from '../lib/search/lightweightSearchService';
 import { SearchResultItem } from '../lib/search/searchInterface';
 
@@ -179,6 +180,9 @@ export const SearchPage: React.FC = () => {
             )}
           </div>
         )}
+
+        {/* Reusable Child-Safe AdSense Placement for Search */}
+        <AdSensePlacement zone="search" />
 
       </div>
     </SharedLayout>

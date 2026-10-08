@@ -8,6 +8,8 @@
 import { auth } from '../lib/firebase/client';
 import { HomepageBlock, HomepageLayoutConfig } from '../lib/layout/homepageLayoutTypes';
 import { SiteSettings } from '../lib/settings/siteSettingsTypes';
+import { AdSenseSettings } from '../lib/adsense/adsenseTypes';
+import { BroadcastItem } from '../lib/broadcasts/broadcastTypes';
 
 export interface AdminMetrics {
   totalStudents: number;
@@ -1147,6 +1149,71 @@ class AdminService {
     return this.getBroadcastNotifications();
   }
 
+  // --- Broadcast & In-App Notification Management ---
+
+  async getAllBroadcasts(): Promise<BroadcastItem[]> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch('/api/admin/broadcasts', { headers });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.items)) {
+          return data.items;
+        }
+      }
+    } catch (e) {
+      console.warn('[AdminService] Broadcasts fetch note:', e);
+    }
+    return [];
+  }
+
+  async createBroadcast(data: Partial<BroadcastItem>): Promise<{ success: boolean; item?: BroadcastItem; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch('/api/admin/broadcasts', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      return { success: true, item: json.item };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Failed to create broadcast' };
+    }
+  }
+
+  async updateBroadcast(id: string, data: Partial<BroadcastItem>): Promise<{ success: boolean; item?: BroadcastItem; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/broadcasts/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      return { success: true, item: json.item };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Failed to update broadcast' };
+    }
+  }
+
+  async deleteBroadcast(id: string): Promise<{ success: boolean; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/broadcasts/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Failed to delete broadcast' };
+    }
+  }
+
   async sendBroadcastNotification(data: {
     title: string;
     message: string;
@@ -1237,6 +1304,49 @@ class AdminService {
       const data = await res.json();
       if (!res.ok) return { success: false, error: data.error || 'Failed to reset site settings' };
       return { success: true, settings: data.settings };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async getAdminAdSenseConfig(): Promise<{ success: boolean; config?: AdSenseSettings; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch('/api/admin/adsense/config', { headers });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to fetch AdSense config' };
+      return { success: true, config: data.config };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async updateAdminAdSenseConfig(config: Partial<AdSenseSettings>): Promise<{ success: boolean; config?: AdSenseSettings; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch('/api/admin/adsense/config', {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(config),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to update AdSense config' };
+      return { success: true, config: data.config };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async resetAdminAdSenseConfig(): Promise<{ success: boolean; config?: AdSenseSettings; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch('/api/admin/adsense/reset', {
+        method: 'POST',
+        headers,
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to reset AdSense config' };
+      return { success: true, config: data.config };
     } catch (e: any) {
       return { success: false, error: e?.message || 'Network error' };
     }

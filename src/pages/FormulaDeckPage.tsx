@@ -20,6 +20,7 @@ import { SharedLayout } from '../components/layout/SharedLayout';
 import { FormulaCard } from '../components/ui/FormulaCard';
 import { ShareButton } from '../components/ui/ShareButton';
 import { SeoHead } from '../components/common/SeoHead';
+import { AdSensePlacement } from '../components/adsense/AdSensePlacement';
 import { FORMULA_DECK_ITEMS, FORMULA_CATEGORIES } from '../data/formulaDeckData';
 import { StudentClass, FormulaCategory } from '../lib/firebase/types';
 import { Button } from '../components/ui/Button';
@@ -538,6 +539,9 @@ export const FormulaDeckPage: React.FC = () => {
             })}
           </div>
         </div>
+
+        {/* Reusable Child-Safe AdSense Placement for Formula Pages */}
+        <AdSensePlacement zone="formulaPages" />
 
       </div>
     </SharedLayout>

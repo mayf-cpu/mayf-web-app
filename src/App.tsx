@@ -7,6 +7,9 @@ import React, { Suspense } from 'react';
 import { NavigationProvider, useNavigation } from './context/NavigationContext';
 import { AuthProvider } from './context/AuthContext';
 import { SiteSettingsProvider } from './context/SiteSettingsContext';
+import { AdSenseProvider } from './context/AdSenseContext';
+import { BroadcastProvider } from './context/BroadcastContext';
+import { AdConsentBanner } from './components/adsense/AdConsentBanner';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { LoadingSpinner } from './components/ui/LoadingState';
 
@@ -94,11 +97,16 @@ export default function App() {
     <ErrorBoundary>
       <AuthProvider>
         <SiteSettingsProvider>
-          <NavigationProvider>
-            <Suspense fallback={<LoadingSpinner message="Loading Maths at Your Fingertips..." />}>
-              <AppRouter />
-            </Suspense>
-          </NavigationProvider>
+          <AdSenseProvider>
+            <BroadcastProvider>
+              <NavigationProvider>
+                <Suspense fallback={<LoadingSpinner message="Loading Maths at Your Fingertips..." />}>
+                  <AppRouter />
+                  <AdConsentBanner />
+                </Suspense>
+              </NavigationProvider>
+            </BroadcastProvider>
+          </AdSenseProvider>
         </SiteSettingsProvider>
       </AuthProvider>
     </ErrorBoundary>

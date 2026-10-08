@@ -26,6 +26,8 @@ import { contentCmsManager } from './src/lib/cms/contentManager';
 import { categoryManager } from './src/lib/categories/categoryManager';
 import { homepageLayoutService } from './src/lib/layout/homepageLayoutService';
 import { siteSettingsService } from './src/lib/settings/siteSettingsService';
+import { adSenseService } from './src/lib/adsense/adsenseService';
+import { broadcastService } from './src/lib/broadcasts/broadcastService';
 
 dotenv.config();
 
@@ -2568,6 +2570,214 @@ app.post('/api/admin/site-settings/reset', requireAuth, requireAdmin, async (req
     });
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to reset site settings' });
+  }
+});
+
+// -------------------------------------------------------------
+// Reusable AdSense & Minor Protection Management Endpoints
+// Strict COPPA, TFCD, TFUA, and G-rating compliance for school minors.
+// Persisted in Firestore /siteSettings/adsense
+// -------------------------------------------------------------
+
+/**
+ * 51. Public AdSense Configuration Endpoint (Cached with SWR)
+ */
+app.get('/api/adsense/config', (_req: Request, res: Response) => {
+  try {
+    const config = adSenseService.getPublicConfig();
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+    return res.json({
+      success: true,
+      config,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to fetch AdSense configuration' });
+  }
+});
+
+/**
+ * 52. Admin Get Full AdSense Configuration
+ */
+app.get('/api/admin/adsense/config', requireAuth, requireAdmin, (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const config = adSenseService.getAdminConfig();
+    return res.json({
+      success: true,
+      config,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to fetch admin AdSense configuration' });
+  }
+});
+
+/**
+ * 53. Admin Update AdSense & Minor Protection Configuration
+ */
+app.put('/api/admin/adsense/config', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const updated = await adSenseService.updateSettings(req.body, actor);
+    return res.json({
+      success: true,
+      config: updated,
+      message: 'AdSense configuration and minor protection settings successfully updated.',
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to update AdSense configuration' });
+  }
+});
+
+/**
+ * 54. Admin Reset AdSense Configuration to Defaults
+ */
+app.post('/api/admin/adsense/reset', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const resetConfig = await adSenseService.resetToDefaults(actor);
+    return res.json({
+      success: true,
+      config: resetConfig,
+      message: 'AdSense configuration reset to safe child-compliant defaults.',
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to reset AdSense configuration' });
+  }
+});
+
+// -------------------------------------------------------------
+// Internal Website Notifications & Broadcasts Endpoints
+// Categories: site announcement, dashboard notification, promotional notification, maintenance message
+// Audiences: all, free users, Pro users, Annual Pass, selected users
+// -------------------------------------------------------------
+
+/**
+ * 55. Active Broadcasts for Public / Student Session
+ */
+app.get('/api/broadcasts/active', async (req: Request, res: Response) => {
+  try {
+    let email: string | undefined;
+    let hasAnnualPass = false;
+    let isPro = false;
+
+    // Optional user token inspection if authenticated
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const verified = await verifyStudentSessionToken(authHeader);
+      if (verified && verified.uid) {
+        email = verified.email;
+        const passCheck = entitlementService.checkActiveEntitlement(verified.uid);
+        hasAnnualPass = Boolean(passCheck.active);
+        isPro = Boolean(passCheck.active || verified.admin || verified.superAdmin);
+      }
+    }
+
+    const items = broadcastService.getActiveBroadcastsForUser({
+      hasAnnualPass,
+      isPro,
+      email,
+    });
+
+    res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
+    return res.json({
+      success: true,
+      count: items.length,
+      items,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to fetch active broadcasts' });
+  }
+});
+
+/**
+ * 56. Admin List All Broadcasts
+ */
+app.get('/api/admin/broadcasts', requireAuth, requireAdmin, (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const items = broadcastService.getAllBroadcasts();
+    return res.json({
+      success: true,
+      count: items.length,
+      items,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to fetch broadcasts' });
+  }
+});
+
+/**
+ * 57. Admin Create Broadcast
+ */
+app.post('/api/admin/broadcasts', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const created = await broadcastService.createBroadcast(req.body, actor);
+    return res.json({
+      success: true,
+      item: created,
+      message: `Broadcast "${created.title}" successfully created.`,
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to create broadcast' });
+  }
+});
+
+/**
+ * 58. Admin Update Broadcast
+ */
+app.put('/api/admin/broadcasts/:id', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const updated = await broadcastService.updateBroadcast(id, req.body, actor);
+    return res.json({
+      success: true,
+      item: updated,
+      message: `Broadcast "${updated.title}" successfully updated.`,
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to update broadcast' });
+  }
+});
+
+/**
+ * 59. Admin Delete Broadcast
+ */
+app.delete('/api/admin/broadcasts/:id', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const deleted = await broadcastService.deleteBroadcast(id, actor);
+    return res.json({
+      success: deleted,
+      message: deleted ? 'Broadcast deleted.' : 'Broadcast not found.',
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to delete broadcast' });
   }
 });
 

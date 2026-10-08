@@ -3,6 +3,7 @@ import { Search, Sparkles, User, ShieldCheck } from 'lucide-react';
 import { Link, useNavigation } from '../../context/NavigationContext';
 import { useAuth } from '../../context/AuthContext';
 import { useSiteSettings } from '../../context/SiteSettingsContext';
+import { NotificationBellDropdown } from '../notifications/NotificationBellDropdown';
 import { Button } from '../ui/Button';
 
 export const Header: React.FC = () => {
@@ -93,6 +94,9 @@ export const Header: React.FC = () => {
           >
             <Search className="w-4 h-4" />
           </Link>
+
+          {/* Internal Student Notification Bell Dropdown */}
+          <NotificationBellDropdown />
 
           {user ? (
             <Link

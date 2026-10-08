@@ -49,6 +49,7 @@ import {
   ThumbsDown,
   Camera,
   Image as ImageIcon,
+  X,
 } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
 import { useAuth } from '../context/AuthContext';
@@ -78,6 +79,7 @@ import {
   markNotificationAsRead,
   markAllNotificationsAsRead,
 } from '../lib/notifications/notificationService';
+import { useBroadcasts } from '../context/BroadcastContext';
 import { FORMULA_DECK_ITEMS } from '../data/formulaDeckData';
 import { STUDENT_COURSES } from '../data/coursesData';
 import { SAMPLE_PURCHASES } from '../data/curriculumData';
@@ -156,6 +158,7 @@ const DOWNLOAD_RESOURCES: DownloadResource[] = [
 export const StudentDashboard: React.FC = () => {
   const { user, firebaseUser, entitlements, updateClass, logout, savedItemIds, toggleSavedItem, isAnnualPassActive } = useAuth();
   const { currentRoute, navigate } = useNavigation();
+  const { dashboardNotifications, dismissBroadcast } = useBroadcasts();
 
   // Determine active tab from route or query params
   const getInitialTab = (): DashboardTab => {
@@ -1536,86 +1539,144 @@ export const StudentDashboard: React.FC = () => {
           {/* 11. NOTIFICATIONS SECTION (Real-Time Synchronized)      */}
           {/* ------------------------------------------------------- */}
           {activeTab === 'notifications' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-heading font-bold text-base text-[#0F172A] flex items-center gap-2">
-                    <Bell className="w-4 h-4 text-[#1D4ED8]" />
-                    <span>Real-Time Student Notifications</span>
-                  </h3>
-                  <p className="text-xs text-[#64748B]">
-                    Direct syllabus alerts, new formula deck releases, and doubt solver updates.
-                  </p>
+            <div className="space-y-6">
+              {/* Broadcast Announcements (Targeted to Student) */}
+              {dashboardNotifications.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-emerald-600" />
+                    <h3 className="font-heading font-bold text-sm text-[#0F172A]">
+                      Official Announcements & Broadcasts
+                    </h3>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {dashboardNotifications.map((bc) => (
+                      <div
+                        key={bc.id}
+                        className="p-4 bg-white rounded-xl border border-emerald-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 uppercase tracking-wide">
+                              Announcement
+                            </span>
+                            <h4 className="font-heading font-bold text-xs sm:text-sm text-[#0F172A]">
+                              {bc.title}
+                            </h4>
+                          </div>
+                          <p className="text-xs text-[#475569] leading-relaxed max-w-2xl">
+                            {bc.message}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {bc.link && (
+                            <Link href={bc.link}>
+                              <Button size="sm" variant="outline" className="text-xs text-emerald-700 border-emerald-300 hover:bg-emerald-50">
+                                <span>{bc.linkText || 'Learn More'}</span>
+                                <ArrowRight className="w-3 h-3 ml-1" />
+                              </Button>
+                            </Link>
+                          )}
+                          {bc.dismissible && (
+                            <button
+                              onClick={() => dismissBroadcast(bc.id)}
+                              className="text-[11px] text-[#94A3B8] hover:text-[#475569] p-1.5 rounded hover:bg-slate-100 cursor-pointer"
+                              title="Dismiss announcement"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Personal Notifications */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-heading font-bold text-base text-[#0F172A] flex items-center gap-2">
+                      <Bell className="w-4 h-4 text-[#1D4ED8]" />
+                      <span>Activity Notifications</span>
+                    </h3>
+                    <p className="text-xs text-[#64748B]">
+                      Direct syllabus alerts, new formula deck releases, and doubt solver updates.
+                    </p>
+                  </div>
+
+                  {unreadCount > 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        if (user?.uid) markAllNotificationsAsRead(user.uid);
+                      }}
+                      className="text-xs"
+                    >
+                      Mark All as Read
+                    </Button>
+                  )}
                 </div>
 
-                {unreadCount > 0 && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      if (user?.uid) markAllNotificationsAsRead(user.uid);
-                    }}
-                    className="text-xs"
-                  >
-                    Mark All as Read
-                  </Button>
-                )}
-              </div>
-
-              <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-xs divide-y divide-[#F1F5F9] overflow-hidden">
-                {notifications.length === 0 ? (
-                  <div className="p-8 text-center text-xs text-[#64748B]">
-                    No notifications right now. You are fully caught up!
-                  </div>
-                ) : (
-                  notifications.map((notif) => (
-                    <div
-                      key={notif.id}
-                      className={`p-4 transition-colors flex items-start justify-between gap-4 ${
-                        !notif.read ? 'bg-[#EFF6FF]/40' : 'hover:bg-[#F8FAFC]'
-                      }`}
-                    >
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          {!notif.read && (
-                            <span className="w-2 h-2 rounded-full bg-[#1D4ED8] shrink-0" title="Unread" />
-                          )}
-                          <h4 className="font-heading font-bold text-xs sm:text-sm text-[#0F172A]">
-                            {notif.title}
-                          </h4>
-                          <span className="text-[11px] text-[#94A3B8]">
-                            {formatRelativeTime(notif.createdAt)}
-                          </span>
-                        </div>
-                        <p className="text-xs text-[#475569] leading-relaxed">
-                          {notif.message}
-                        </p>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        {notif.linkUrl && (
-                          <Link href={notif.linkUrl}>
-                            <Button size="sm" variant="ghost" className="text-xs text-[#1D4ED8]">
-                              <span>View</span>
-                              <ArrowRight className="w-3 h-3 ml-1" />
-                            </Button>
-                          </Link>
-                        )}
-                        {!notif.read && (
-                          <button
-                            onClick={() => {
-                              if (user?.uid) markNotificationAsRead(user.uid, notif.id);
-                            }}
-                            className="text-[11px] text-[#64748B] hover:text-[#0F172A] p-1 cursor-pointer"
-                            title="Mark as read"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
+                <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-xs divide-y divide-[#F1F5F9] overflow-hidden">
+                  {notifications.length === 0 ? (
+                    <div className="p-8 text-center text-xs text-[#64748B]">
+                      No notifications right now. You are fully caught up!
                     </div>
-                  ))
-                )}
+                  ) : (
+                    notifications.map((notif) => (
+                      <div
+                        key={notif.id}
+                        className={`p-4 transition-colors flex items-start justify-between gap-4 ${
+                          !notif.read ? 'bg-[#EFF6FF]/40' : 'hover:bg-[#F8FAFC]'
+                        }`}
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            {!notif.read && (
+                              <span className="w-2 h-2 rounded-full bg-[#1D4ED8] shrink-0" title="Unread" />
+                            )}
+                            <h4 className="font-heading font-bold text-xs sm:text-sm text-[#0F172A]">
+                              {notif.title}
+                            </h4>
+                            <span className="text-[11px] text-[#94A3B8]">
+                              {formatRelativeTime(notif.createdAt)}
+                            </span>
+                          </div>
+                          <p className="text-xs text-[#475569] leading-relaxed">
+                            {notif.message}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {notif.linkUrl && (
+                            <Link href={notif.linkUrl}>
+                              <Button size="sm" variant="ghost" className="text-xs text-[#1D4ED8]">
+                                <span>View</span>
+                                <ArrowRight className="w-3 h-3 ml-1" />
+                              </Button>
+                            </Link>
+                          )}
+                          {!notif.read && (
+                            <button
+                              onClick={() => {
+                                if (user?.uid) markNotificationAsRead(user.uid, notif.id);
+                              }}
+                              className="text-[11px] text-[#64748B] hover:text-[#0F172A] p-1 cursor-pointer"
+                              title="Mark as read"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           )}
