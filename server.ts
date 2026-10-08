@@ -24,6 +24,7 @@ import { adminUserManager } from './src/lib/admin/adminUserManager';
 import { auditLogService } from './src/lib/audit/auditLogger';
 import { contentCmsManager } from './src/lib/cms/contentManager';
 import { categoryManager } from './src/lib/categories/categoryManager';
+import { homepageLayoutService } from './src/lib/layout/homepageLayoutService';
 
 dotenv.config();
 
@@ -2371,6 +2372,118 @@ app.delete('/api/admin/categories/:id', requireAuth, requireAdmin, (req: Authent
     });
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to delete category' });
+  }
+});
+
+// -------------------------------------------------------------
+// Controlled Homepage Block Manager Endpoints
+// Predefined 15 performant blocks (Hero, Search, Trending, Categories, etc.)
+// Persisted in Firestore /siteSettings/homepageLayout
+// -------------------------------------------------------------
+
+/**
+ * 42. Public Homepage Layout Endpoint (Cached with SWR)
+ */
+app.get('/api/homepage/layout', (_req: Request, res: Response) => {
+  try {
+    const layout = homepageLayoutService.getPublicLayout();
+    // Cache for 60 seconds at edge/browser, allow serving stale up to 5 minutes while revalidating
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+    return res.json({
+      success: true,
+      ...layout,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to fetch homepage layout' });
+  }
+});
+
+/**
+ * 43. Admin Get Full Homepage Layout (All 15 blocks)
+ */
+app.get('/api/admin/layout/homepage', requireAuth, requireAdmin, (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const layout = homepageLayoutService.getAdminLayout();
+    return res.json({
+      success: true,
+      ...layout,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to fetch admin layout' });
+  }
+});
+
+/**
+ * 44. Admin Save Full Homepage Layout (Drag-and-drop reordered blocks + configs)
+ */
+app.put('/api/admin/layout/homepage', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const { blocks } = req.body;
+    if (!blocks || !Array.isArray(blocks)) {
+      return res.status(400).json({ success: false, error: 'blocks array is required' });
+    }
+
+    const updated = await homepageLayoutService.updateLayout(blocks, actor);
+    return res.json({
+      success: true,
+      ...updated,
+      message: 'Homepage block layout successfully updated and synced with site settings.',
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to update layout' });
+  }
+});
+
+/**
+ * 45. Admin Update Single Homepage Block
+ */
+app.patch('/api/admin/layout/homepage/blocks/:id', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const { id } = req.params;
+    const { enabled, config } = req.body;
+
+    const updatedBlock = await homepageLayoutService.updateBlock(id as any, { enabled, config }, actor);
+    return res.json({
+      success: true,
+      block: updatedBlock,
+      message: `Block "${updatedBlock.name}" updated.`,
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to update block' });
+  }
+});
+
+/**
+ * 46. Admin Reset Homepage Layout to Defaults
+ */
+app.post('/api/admin/layout/homepage/reset', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const resetLayout = await homepageLayoutService.resetToDefault(actor);
+    return res.json({
+      success: true,
+      ...resetLayout,
+      message: 'Homepage block layout reset to default canonical order and configuration.',
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to reset layout' });
   }
 });
 

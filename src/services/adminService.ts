@@ -6,6 +6,7 @@
  */
 
 import { auth } from '../lib/firebase/client';
+import { HomepageBlock, HomepageLayoutConfig } from '../lib/layout/homepageLayoutTypes';
 
 export interface AdminMetrics {
   totalStudents: number;
@@ -1012,6 +1013,69 @@ class AdminService {
       const data = await res.json();
       if (!res.ok) return { success: false, error: data.error || 'Failed to delete category' };
       return { success: true, reassignedCount: data.reassignedCount, deletedName: data.deletedName };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  // Homepage Block Layout Methods
+  async getAdminHomepageLayout(): Promise<HomepageLayoutConfig> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch('/api/admin/layout/homepage', { headers });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (e) {
+      console.error('[AdminService] getAdminHomepageLayout error:', e);
+      throw e;
+    }
+  }
+
+  async saveAdminHomepageLayout(blocks: HomepageBlock[]): Promise<{ success: boolean; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch('/api/admin/layout/homepage', {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ blocks }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to save homepage layout' };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async updateHomepageBlock(
+    blockId: string,
+    patch: { enabled?: boolean; config?: any }
+  ): Promise<{ success: boolean; block?: HomepageBlock; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/layout/homepage/blocks/${blockId}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify(patch),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to update block' };
+      return { success: true, block: data.block };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async resetAdminHomepageLayout(): Promise<{ success: boolean; layout?: HomepageLayoutConfig; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch('/api/admin/layout/homepage/reset', {
+        method: 'POST',
+        headers,
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to reset layout' };
+      return { success: true, layout: data };
     } catch (e: any) {
       return { success: false, error: e?.message || 'Network error' };
     }

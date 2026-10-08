@@ -10,6 +10,8 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import type { App } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import type { Auth, UserRecord } from 'firebase-admin/auth';
+import { getFirestore } from 'firebase-admin/firestore';
+import type { Firestore } from 'firebase-admin/firestore';
 
 export interface FirebaseAdminConfig {
   projectId: string;
@@ -33,6 +35,7 @@ export function getFirebaseAdminConfig(): FirebaseAdminConfig {
 
 let adminAppInstance: App | null = null;
 let adminAuthInstance: Auth | null = null;
+let adminFirestoreInstance: Firestore | null = null;
 
 function formatPrivateKey(rawKey?: string): string | undefined {
   if (!rawKey) return undefined;
@@ -105,6 +108,24 @@ export function getAdminAuth(): Auth | null {
     return adminAuthInstance;
   } catch (error: any) {
     console.warn('[Firebase Admin] getAuth warning:', error?.message);
+    return null;
+  }
+}
+
+/**
+ * Returns the Firebase Admin Firestore client.
+ */
+export function getAdminFirestore(): Firestore | null {
+  if (adminFirestoreInstance) {
+    return adminFirestoreInstance;
+  }
+  const app = getFirebaseAdminApp();
+  if (!app) return null;
+  try {
+    adminFirestoreInstance = getFirestore(app);
+    return adminFirestoreInstance;
+  } catch (error: any) {
+    console.warn('[Firebase Admin] getFirestore warning:', error?.message);
     return null;
   }
 }
