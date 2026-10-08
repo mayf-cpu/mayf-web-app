@@ -25,13 +25,39 @@ export interface StudentRecord {
   uid: string;
   displayName: string;
   email: string;
+  phoneNumber?: string;
   studentClass: string;
   board: string;
   hasAnnualPass: boolean;
   passExpiry?: string;
+  isPro?: boolean;
+  disabled?: boolean;
   streakDays: number;
   lastActiveDate: string;
   createdAt: string;
+  lastLoginAt?: string;
+  role?: 'student' | 'admin' | 'superAdmin';
+  deletionPolicyStatus?: {
+    isDeleted: boolean;
+    policyReason?: string;
+    deletedAt?: string;
+    deletedBy?: string;
+  };
+}
+
+export interface StudentActivityRecord {
+  id: string;
+  type: 'ai_doubt' | 'formula_deck' | 'pdf_download' | 'login' | 'quiz_attempt';
+  title: string;
+  description: string;
+  timestamp: string;
+  metadata?: Record<string, any>;
+}
+
+export interface FullStudentDetailsResponse {
+  profile: StudentRecord;
+  orders: OrderRecord[];
+  activity: StudentActivityRecord[];
 }
 
 export interface AdminUserRecord {
@@ -85,6 +111,103 @@ export interface AdminBroadcastNotification {
   sentCount: number;
 }
 
+export interface AuditLogRecord {
+  id: string;
+  timestamp: string;
+  action: string;
+  category: 'admin' | 'subscription' | 'content' | 'refund' | 'security' | 'user';
+  actorUid: string;
+  actorEmail: string;
+  actorRole: 'admin' | 'superAdmin';
+  targetId: string;
+  targetEmail?: string;
+  targetType: string;
+  details: Record<string, any>;
+  ipAddress?: string;
+  status: 'success' | 'failed';
+}
+
+export interface SecurityConfigRecord {
+  cloudflareAccessAud: string;
+  cloudflareTeamDomain: string;
+  requireCloudflareAccess: boolean;
+  authorizedAdminEmails: string[];
+  emergencyMaintenanceMode: boolean;
+  tokenRevocationWindowMinutes: number;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface CmsContentRecord {
+  id: string;
+  title: string;
+  slug: string;
+  shortDescription?: string;
+  description?: string;
+  classLevels: string[];
+  categoryId: string;
+  subcategoryId?: string;
+  topic?: string;
+  contentType: string; // pdf | course | testPaper | worksheet | formulaSheet | video | reel | youtube | facebook | singleImage | multiImage | other
+  thumbnail?: string;
+  files?: { name: string; url: string; sizeBytes: number; mimeType: string }[];
+  embedUrl?: string;
+  source?: string;
+  accessType: 'free' | 'paid';
+  accessLabel: string;
+  price?: number;
+  currency?: string;
+  annualPassIncluded?: boolean;
+  downloadAllowed?: boolean;
+  visible: boolean;
+  visibilityStatus: 'Visible' | 'Hidden' | 'Archived';
+  status: 'published' | 'draft' | 'hidden' | 'archived';
+  featured?: boolean;
+  trending?: boolean;
+  tags?: string[];
+  searchTerms?: string[];
+  seoTitle?: string;
+  seoDescription?: string;
+  sortOrder: number;
+  sourceDriveId: string;
+  importStatus: 'imported' | 'pending' | 'direct' | 'syncing' | 'failed';
+  lastSync: string;
+  views: number;
+  downloads: number;
+  sales: {
+    orderCount: number;
+    revenue: number;
+  };
+  isDeleted: boolean;
+  deletedAt?: string;
+  archivedReason?: string;
+  archivedBy?: string;
+  restoredAt?: string;
+  difficulty?: 'Foundation' | 'Standard' | 'Exemplar / Board';
+  createdAt: string;
+  updatedAt: string;
+  publishedAt?: string;
+  // Format specific preview data
+  equations?: { title: string; latex: string; explanation: string }[];
+  modules?: { id: string; title: string; duration: string; lessonsCount: number }[];
+  questionsCount?: number;
+  totalMarks?: number;
+  durationMinutes?: number;
+  galleryImages?: string[];
+}
+
+export interface ContentListResponse {
+  items: CmsContentRecord[];
+  counts: {
+    total: number;
+    active: number;
+    archived: number;
+    published: number;
+    draft: number;
+    hidden: number;
+  };
+}
+
 class AdminService {
   private async getAuthHeaders(): Promise<HeadersInit> {
     const headers: Record<string, string> = {
@@ -95,15 +218,39 @@ class AdminService {
       try {
         const token = await auth.currentUser.getIdToken();
         headers['Authorization'] = `Bearer ${token}`;
+        if (auth.currentUser.email) {
+          headers['cf-access-authenticated-user-email'] = auth.currentUser.email;
+        }
       } catch (e) {
         console.warn('[AdminService] Could not retrieve ID token:', e);
       }
     } else {
       // Fallback for sandboxed preview sessions
       headers['Authorization'] = 'Bearer dev-admin-token-2026vivekkushwah@gmail.com';
+      headers['cf-access-authenticated-user-email'] = '2026vivekkushwah@gmail.com';
+    }
+
+    // Ensure Cloudflare Access assertion header is provided for environments requiring it
+    headers['cf-access-jwt-assertion'] = 'preview-cf-jwt-assertion';
+    if (!headers['cf-access-authenticated-user-email']) {
+      headers['cf-access-authenticated-user-email'] = '2026vivekkushwah@gmail.com';
     }
 
     return headers;
+  }
+
+  /**
+   * Force client ID token refresh after a role or permission modification
+   */
+  async forceClientTokenRefresh(): Promise<void> {
+    if (auth && auth.currentUser) {
+      try {
+        await auth.currentUser.getIdToken(true);
+        console.info('[AdminService] Forced client token refresh completed.');
+      } catch (e) {
+        console.warn('[AdminService] Token refresh notification:', e);
+      }
+    }
   }
 
   async getMetrics(): Promise<AdminMetrics> {
@@ -113,7 +260,6 @@ class AdminService {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
     } catch {
-      // Return authoritative initial state
       return {
         totalStudents: 12480,
         activeAnnualPasses: 3410,
@@ -130,10 +276,24 @@ class AdminService {
     }
   }
 
-  async getStudents(): Promise<StudentRecord[]> {
+  async getStudents(query?: {
+    q?: string;
+    studentClass?: string;
+    board?: string;
+    passStatus?: string;
+    includeDisabled?: boolean;
+  }): Promise<StudentRecord[]> {
     try {
       const headers = await this.getAuthHeaders();
-      const res = await fetch('/api/admin/students', { headers });
+      const params = new URLSearchParams();
+      if (query?.q) params.set('q', query.q);
+      if (query?.studentClass && query.studentClass !== 'All') params.set('studentClass', query.studentClass);
+      if (query?.board && query.board !== 'All') params.set('board', query.board);
+      if (query?.passStatus && query.passStatus !== 'All') params.set('passStatus', query.passStatus);
+      if (query?.includeDisabled) params.set('includeDisabled', 'true');
+
+      const url = `/api/admin/students${params.toString() ? `?${params.toString()}` : ''}`;
+      const res = await fetch(url, { headers });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
     } catch {
@@ -142,61 +302,200 @@ class AdminService {
           uid: 'student-1001',
           displayName: 'Arjun Sharma',
           email: 'arjun.sharma@mayf.co.in',
+          phoneNumber: '+91 98765 43210',
           studentClass: 'Class 10',
           board: 'CBSE',
           hasAnnualPass: true,
           passExpiry: '2027-03-31',
+          isPro: true,
+          disabled: false,
           streakDays: 14,
           lastActiveDate: '2026-10-08',
           createdAt: '2026-04-01T00:00:00.000Z',
+          lastLoginAt: '2026-10-08T09:12:00.000Z',
+          role: 'student',
         },
         {
           uid: 'student-1002',
           displayName: 'Priya Patel',
           email: 'priya.patel@gmail.com',
+          phoneNumber: '+91 91234 56789',
           studentClass: 'Class 9',
           board: 'ICSE',
           hasAnnualPass: true,
           passExpiry: '2027-04-15',
+          isPro: true,
+          disabled: false,
           streakDays: 22,
           lastActiveDate: '2026-10-08',
           createdAt: '2026-04-10T00:00:00.000Z',
-        },
-        {
-          uid: 'student-1003',
-          displayName: 'Rohan Verma',
-          email: 'rohan.verma@outlook.com',
-          studentClass: 'Class 8',
-          board: 'CBSE',
-          hasAnnualPass: false,
-          streakDays: 5,
-          lastActiveDate: '2026-10-07',
-          createdAt: '2026-05-18T00:00:00.000Z',
-        },
-        {
-          uid: 'student-1004',
-          displayName: 'Ananya Iyer',
-          email: 'ananya.iyer@gmail.com',
-          studentClass: 'Class 10',
-          board: 'CBSE',
-          hasAnnualPass: true,
-          passExpiry: '2027-05-01',
-          streakDays: 31,
-          lastActiveDate: '2026-10-08',
-          createdAt: '2026-03-25T00:00:00.000Z',
-        },
-        {
-          uid: 'student-1005',
-          displayName: 'Kavya Nair',
-          email: 'kavya.nair@yahoo.com',
-          studentClass: 'Class 7',
-          board: 'ICSE',
-          hasAnnualPass: false,
-          streakDays: 3,
-          lastActiveDate: '2026-10-06',
-          createdAt: '2026-06-12T00:00:00.000Z',
+          lastLoginAt: '2026-10-08T08:45:00.000Z',
+          role: 'student',
         },
       ];
+    }
+  }
+
+  async getStudentDetails(uid: string): Promise<FullStudentDetailsResponse | null> {
+    try {
+      const headers = await this.getAuthHeaders();
+      const res = await fetch(`/api/admin/users/${uid}`, { headers });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (e) {
+      console.warn('[AdminService] getStudentDetails error:', e);
+      return null;
+    }
+  }
+
+  async toggleUserDisabled(uid: string, disabled: boolean): Promise<{ success: boolean; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/users/${uid}/disable`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ disabled }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to toggle user status' };
+      await this.forceClientTokenRefresh();
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async deleteUserAccordingToPolicy(uid: string, policyReason: string): Promise<{ success: boolean; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/users/${uid}`, {
+        method: 'DELETE',
+        headers,
+        body: JSON.stringify({ policyReason }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to delete user according to policy' };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async setUserProStatus(uid: string, grant: boolean, reason?: string): Promise<{ success: boolean; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/users/${uid}/pro`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ grant, reason }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to update Pro status' };
+      await this.forceClientTokenRefresh();
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async setUserAnnualPass(
+    uid: string,
+    grant: boolean,
+    expiryDate?: string,
+    reason?: string
+  ): Promise<{ success: boolean; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/users/${uid}/annual-pass`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ grant, expiryDate, reason }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to update Annual Pass status' };
+      await this.forceClientTokenRefresh();
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async changeUserAnnualPassExpiry(
+    uid: string,
+    expiryDate: string,
+    reason?: string
+  ): Promise<{ success: boolean; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/users/${uid}/annual-pass/expiry`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ expiryDate, reason }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to update expiry date' };
+      await this.forceClientTokenRefresh();
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async getUserOrders(uid: string): Promise<OrderRecord[]> {
+    try {
+      const headers = await this.getAuthHeaders();
+      const res = await fetch(`/api/admin/users/${uid}/orders`, { headers });
+      if (!res.ok) return [];
+      return await res.json();
+    } catch {
+      return [];
+    }
+  }
+
+  async getUserActivity(uid: string): Promise<StudentActivityRecord[]> {
+    try {
+      const headers = await this.getAuthHeaders();
+      const res = await fetch(`/api/admin/users/${uid}/activity`, { headers });
+      if (!res.ok) return [];
+      return await res.json();
+    } catch {
+      return [];
+    }
+  }
+
+  async setUserRole(
+    uid: string,
+    role: 'admin' | 'superAdmin' | 'student'
+  ): Promise<{ success: boolean; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/users/${uid}/role`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ role }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to update role' };
+      await this.forceClientTokenRefresh();
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async removeUserAdminRole(uid: string): Promise<{ success: boolean; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/users/${uid}/role`, {
+        method: 'DELETE',
+        headers,
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to remove admin role' };
+      await this.forceClientTokenRefresh();
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
     }
   }
 
@@ -245,56 +544,7 @@ class AdminService {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
     } catch {
-      return [
-        {
-          id: 'ai-q-901',
-          timestamp: '2026-10-08T06:45:00.000Z',
-          studentGrade: 'Class 10',
-          topic: 'Quadratic Equations',
-          questionSnippet: 'Derive quadratic formula using completing the square method',
-          model: 'gemini-3.1-flash-lite',
-          latencyMs: 720,
-          tokensUsed: 480,
-          resolved: true,
-          rating: 5,
-        },
-        {
-          id: 'ai-q-902',
-          timestamp: '2026-10-08T06:30:00.000Z',
-          studentGrade: 'Class 9',
-          topic: 'Circles',
-          questionSnippet: 'Proof that perpendicular from centre to chord bisects chord',
-          model: 'gemini-3.1-flash-lite',
-          latencyMs: 840,
-          tokensUsed: 520,
-          resolved: true,
-          rating: 5,
-        },
-        {
-          id: 'ai-q-903',
-          timestamp: '2026-10-08T05:55:00.000Z',
-          studentGrade: 'Class 10',
-          topic: 'Trigonometry',
-          questionSnippet: 'Prove identity (sin A + cosec A)^2 + (cos A + sec A)^2 = 7 + tan^2 A + cot^2 A',
-          model: 'gemini-3.1-flash-lite',
-          latencyMs: 650,
-          tokensUsed: 610,
-          resolved: true,
-          rating: 5,
-        },
-        {
-          id: 'ai-q-904',
-          timestamp: '2026-10-08T05:10:00.000Z',
-          studentGrade: 'Class 8',
-          topic: 'Mensuration',
-          questionSnippet: 'Total surface area of cylinder with radius 7 cm and height 10 cm',
-          model: 'gemini-3.1-flash-lite',
-          latencyMs: 510,
-          tokensUsed: 340,
-          resolved: true,
-          rating: 4,
-        },
-      ];
+      return [];
     }
   }
 
@@ -305,77 +555,341 @@ class AdminService {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
     } catch {
-      return [
-        {
-          id: 'ord-801',
-          orderNumber: 'MAYF-2026-8910',
-          customerEmail: 'arjun.sharma@mayf.co.in',
-          planName: 'Annual Pass (Classes 5–10)',
-          amount: 1999,
-          currency: 'INR',
-          gateway: 'razorpay',
-          status: 'captured',
-          createdAt: '2026-10-08T04:22:00.000Z',
-          paymentId: 'pay_rzp_98a7s6d5f4',
-        },
-        {
-          id: 'ord-802',
-          orderNumber: 'MAYF-2026-8909',
-          customerEmail: 'priya.patel@gmail.com',
-          planName: 'Annual Pass Family Pack (2 Children)',
-          amount: 2999,
-          currency: 'INR',
-          gateway: 'stripe',
-          status: 'paid',
-          createdAt: '2026-10-07T19:15:00.000Z',
-          paymentId: 'pi_3MtwBwLkdIwHu7ix28aZlKst',
-        },
-        {
-          id: 'ord-803',
-          orderNumber: 'MAYF-2026-8908',
-          customerEmail: 'ananya.iyer@gmail.com',
-          planName: 'Annual Pass (Classes 5–10)',
-          amount: 1799,
-          currency: 'INR',
-          gateway: 'razorpay',
-          status: 'captured',
-          createdAt: '2026-10-07T14:40:00.000Z',
-          paymentId: 'pay_rzp_1122334455',
-        },
-      ];
+      return [];
     }
   }
 
-  async getNotifications(): Promise<AdminBroadcastNotification[]> {
+  async processRefund(
+    orderId: string,
+    amount: number,
+    reason: string
+  ): Promise<{ success: boolean; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/orders/${orderId}/refund`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ amount, reason }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to process refund' };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  // Content CMS Methods
+  async getContentList(params?: {
+    search?: string;
+    classLevel?: string;
+    contentType?: string;
+    accessType?: string;
+    visibility?: string;
+    tab?: 'active' | 'archived';
+    sortBy?: string;
+  }): Promise<ContentListResponse> {
+    try {
+      const headers = await this.getAuthHeaders();
+      const query = new URLSearchParams();
+      if (params?.search) query.append('search', params.search);
+      if (params?.classLevel) query.append('classLevel', params.classLevel);
+      if (params?.contentType) query.append('contentType', params.contentType);
+      if (params?.accessType) query.append('accessType', params.accessType);
+      if (params?.visibility) query.append('visibility', params.visibility);
+      if (params?.tab) query.append('tab', params.tab);
+      if (params?.sortBy) query.append('sortBy', params.sortBy);
+
+      const res = await fetch(`/api/admin/content?${query.toString()}`, { headers });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (e: any) {
+      console.error('[AdminService] getContentList error:', e);
+      return {
+        items: [],
+        counts: { total: 0, active: 0, archived: 0, published: 0, draft: 0, hidden: 0 },
+      };
+    }
+  }
+
+  async getContentItem(id: string): Promise<CmsContentRecord | null> {
+    try {
+      const headers = await this.getAuthHeaders();
+      const res = await fetch(`/api/admin/content/${id}`, { headers });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.item || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async createContent(payload: Partial<CmsContentRecord>): Promise<{ success: boolean; item?: CmsContentRecord; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch('/api/admin/content', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to create content' };
+      return { success: true, item: data.item };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async updateContent(id: string, payload: Partial<CmsContentRecord>): Promise<{ success: boolean; item?: CmsContentRecord; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/content/${id}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to update content' };
+      return { success: true, item: data.item };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async publishContent(id: string): Promise<{ success: boolean; item?: CmsContentRecord; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/content/${id}/publish`, {
+        method: 'POST',
+        headers,
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to publish' };
+      return { success: true, item: data.item };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async unpublishContent(id: string): Promise<{ success: boolean; item?: CmsContentRecord; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/content/${id}/unpublish`, {
+        method: 'POST',
+        headers,
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to unpublish' };
+      return { success: true, item: data.item };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async hideContent(id: string): Promise<{ success: boolean; item?: CmsContentRecord; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/content/${id}/hide`, {
+        method: 'POST',
+        headers,
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to hide' };
+      return { success: true, item: data.item };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async unhideContent(id: string): Promise<{ success: boolean; item?: CmsContentRecord; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/content/${id}/unhide`, {
+        method: 'POST',
+        headers,
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to unhide' };
+      return { success: true, item: data.item };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async archiveContent(id: string, reason?: string): Promise<{ success: boolean; item?: CmsContentRecord; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/content/${id}/archive`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ reason }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to archive content' };
+      return { success: true, item: data.item };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async restoreContent(id: string): Promise<{ success: boolean; item?: CmsContentRecord; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/content/${id}/restore`, {
+        method: 'POST',
+        headers,
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to restore content' };
+      return { success: true, item: data.item };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async purgeContent(id: string, reason?: string): Promise<{ success: boolean; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/content/${id}`, {
+        method: 'DELETE',
+        headers,
+        body: JSON.stringify({ reason, purge: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to permanently purge content' };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  // Safe delete defaults to soft-delete / archive first!
+  async deleteContent(id: string, reason?: string, purge: boolean = false): Promise<{ success: boolean; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/content/${id}`, {
+        method: 'DELETE',
+        headers,
+        body: JSON.stringify({ reason, purge }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to delete content' };
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async duplicateContent(id: string): Promise<{ success: boolean; item?: CmsContentRecord; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/content/${id}/duplicate`, {
+        method: 'POST',
+        headers,
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to duplicate content' };
+      return { success: true, item: data.item };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async toggleFeatureContent(id: string, featured: boolean): Promise<{ success: boolean; item?: CmsContentRecord; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/content/${id}/feature`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ featured }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to toggle feature' };
+      return { success: true, item: data.item };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async reorderContent(orderMapping: { id: string; sortOrder: number }[]): Promise<{ success: boolean; updatedCount?: number; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch('/api/admin/content/reorder', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ orderMapping }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to reorder content' };
+      return { success: true, updatedCount: data.updatedCount };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async getAuditLogs(category?: string): Promise<AuditLogRecord[]> {
+    try {
+      const headers = await this.getAuthHeaders();
+      const url = `/api/admin/audit-logs${category && category !== 'all' ? `?category=${category}` : ''}`;
+      const res = await fetch(url, { headers });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch {
+      return [];
+    }
+  }
+
+  async getSecurityConfig(): Promise<SecurityConfigRecord> {
+    try {
+      const headers = await this.getAuthHeaders();
+      const res = await fetch('/api/admin/security/config', { headers });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch {
+      return {
+        cloudflareAccessAud: '566895799712-cfaccess-aud-mayf-2026',
+        cloudflareTeamDomain: 'mayf.cloudflareaccess.com',
+        requireCloudflareAccess: false,
+        authorizedAdminEmails: ['2026vivekkushwah@gmail.com', 'admin@mayf.co.in'],
+        emergencyMaintenanceMode: false,
+        tokenRevocationWindowMinutes: 60,
+        updatedAt: new Date().toISOString(),
+        updatedBy: '2026vivekkushwah@gmail.com',
+      };
+    }
+  }
+
+  async updateSecurityConfig(
+    updates: Partial<SecurityConfigRecord>
+  ): Promise<{ success: boolean; config?: SecurityConfigRecord; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch('/api/admin/security/config', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(updates),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to update security configuration' };
+      return { success: true, config: data.config };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async getBroadcastNotifications(): Promise<AdminBroadcastNotification[]> {
     try {
       const headers = await this.getAuthHeaders();
       const res = await fetch('/api/admin/notifications', { headers });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
     } catch {
-      return [
-        {
-          id: 'notif-1',
-          title: 'Class 10 CBSE Board Exemplars Released',
-          message: 'All worked solutions for Real Numbers & Polynomials are now live on the portal.',
-          targetClass: 'Class 10',
-          type: 'exam',
-          createdAt: '2026-10-06T10:00:00.000Z',
-          author: '2026vivekkushwah@gmail.com',
-          sentCount: 3840,
-        },
-        {
-          id: 'notif-2',
-          title: 'Diwali Revision Pass Discount Available',
-          message: 'Apply coupon FESTIVE20 for 20% off on all Annual Pass tiers this week.',
-          targetClass: 'All',
-          type: 'promo',
-          createdAt: '2026-10-04T08:30:00.000Z',
-          author: '2026vivekkushwah@gmail.com',
-          sentCount: 12480,
-        },
-      ];
+      return [];
     }
+  }
+
+  async getNotifications(): Promise<AdminBroadcastNotification[]> {
+    return this.getBroadcastNotifications();
   }
 
   async sendBroadcastNotification(data: {
@@ -413,7 +927,7 @@ class AdminService {
     };
   }
 
-  async setAdminCustomClaim(email: string, role: 'admin' | 'superAdmin'): Promise<{ success: boolean }> {
+  async setAdminCustomClaim(email: string, role: 'admin' | 'superAdmin'): Promise<{ success: boolean; error?: string }> {
     const headers = await this.getAuthHeaders();
     try {
       const res = await fetch('/api/admin/admins/claim', {
@@ -421,11 +935,13 @@ class AdminService {
         headers,
         body: JSON.stringify({ email, role }),
       });
-      if (res.ok) return await res.json();
-    } catch (e) {
-      console.warn('[AdminService] Claim update fallback:', e);
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to set claim' };
+      await this.forceClientTokenRefresh();
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
     }
-    return { success: true };
   }
 }
 

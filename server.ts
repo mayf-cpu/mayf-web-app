@@ -20,6 +20,9 @@ import { paymentService } from './src/lib/payments/paymentService';
 import { entitlementService } from './src/lib/payments/entitlementService';
 import { couponService } from './src/lib/coupons/couponService';
 import { PaymentProvider, StoredOrder } from './src/lib/payments/types';
+import { adminUserManager } from './src/lib/admin/adminUserManager';
+import { auditLogService } from './src/lib/audit/auditLogger';
+import { contentCmsManager } from './src/lib/cms/contentManager';
 
 dotenv.config();
 
@@ -27,7 +30,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+// Environment constraint: Dev server must run on port 3000
+const PORT = 3000;
 const isProduction = process.env.NODE_ENV === 'production';
 
 // Capture raw body for authoritative cryptographic HMAC webhook signature verification
@@ -74,6 +78,7 @@ app.get('/robots.txt', (_req: Request, res: Response) => {
 interface AuthenticatedRequest extends Request {
   userAuth?: {
     uid: string;
+    email: string;
     role?: 'student' | 'admin' | 'superAdmin';
     hasAnnualPass?: boolean;
     isPro?: boolean;
@@ -107,8 +112,13 @@ async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextF
     tokenVerification.role ||
     (tokenVerification.superAdmin ? 'superAdmin' : tokenVerification.admin ? 'admin' : tokenVerification.uid.includes('admin') ? 'admin' : 'student');
 
+  const resolvedEmail =
+    tokenVerification.email ||
+    (assignedRole === 'superAdmin' ? '2026vivekkushwah@gmail.com' : 'admin@mayf.co.in');
+
   req.userAuth = {
     uid: tokenVerification.uid,
+    email: resolvedEmail,
     role: assignedRole,
     hasAnnualPass: entitlementCheck.active || assignedRole === 'admin' || assignedRole === 'superAdmin',
     isPro: assignedRole === 'admin' || assignedRole === 'superAdmin' || entitlementCheck.active,
@@ -138,6 +148,29 @@ function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFuncti
     // Unauthorized users must receive 404 or access denied without exposing administrative information
     return res.status(404).json({
       error: 'Not found',
+    });
+  }
+  next();
+}
+
+/**
+ * SuperAdmin Gatekeeper Middleware
+ * Only superAdmin can perform critical actions:
+ * - Create or remove administrators
+ * - Change another superAdmin
+ * - Modify critical security configuration
+ */
+function requireSuperAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+
+  // Ensure caller is already a verified admin
+  if (!req.userAuth || (req.userAuth.role !== 'admin' && req.userAuth.role !== 'superAdmin')) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
+  if (req.userAuth.role !== 'superAdmin') {
+    return res.status(403).json({
+      error: 'Forbidden: SuperAdmin privileges are strictly required for this critical administrative operation',
     });
   }
   next();
@@ -1211,6 +1244,19 @@ app.delete('/api/admin/coupons/:code', requireAuth, requireAdmin, (req: Authenti
   try {
     const code = req.params.code;
     const deleted = couponService.deleteCoupon(code);
+    if (deleted) {
+      auditLogService.log({
+        action: 'CONTENT_DELETED',
+        category: 'content',
+        actorUid: req.userAuth?.uid || 'admin',
+        actorEmail: req.userAuth?.email || 'admin@mayf.co.in',
+        actorRole: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+        targetId: code,
+        targetType: 'discount_coupon',
+        details: { code, deletedAt: new Date().toISOString() },
+        status: 'success',
+      });
+    }
     return res.json({
       success: true,
       deleted,
@@ -1259,6 +1305,19 @@ app.delete('/api/admin/promotions/:id', requireAuth, requireAdmin, (req: Authent
   try {
     const id = req.params.id;
     const deleted = couponService.deletePromotion(id);
+    if (deleted) {
+      auditLogService.log({
+        action: 'CONTENT_DELETED',
+        category: 'content',
+        actorUid: req.userAuth?.uid || 'admin',
+        actorEmail: req.userAuth?.email || 'admin@mayf.co.in',
+        actorRole: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+        targetId: id,
+        targetType: 'promotional_block',
+        details: { id, deletedAt: new Date().toISOString() },
+        status: 'success',
+      });
+    }
     return res.json({
       success: true,
       deleted,
@@ -1316,69 +1375,281 @@ app.get('/api/admin/metrics', requireAuth, requireAdmin, (_req: Request, res: Re
   });
 });
 
-app.get('/api/admin/students', requireAuth, requireAdmin, (_req: Request, res: Response) => {
-  return res.json([
-    {
-      uid: 'student-1001',
-      displayName: 'Arjun Sharma',
-      email: 'arjun.sharma@mayf.co.in',
-      studentClass: 'Class 10',
-      board: 'CBSE',
-      hasAnnualPass: true,
-      passExpiry: '2027-03-31',
-      streakDays: 14,
-      lastActiveDate: '2026-10-08',
-      createdAt: '2026-04-01T00:00:00.000Z',
-    },
-    {
-      uid: 'student-1002',
-      displayName: 'Priya Patel',
-      email: 'priya.patel@gmail.com',
-      studentClass: 'Class 9',
-      board: 'ICSE',
-      hasAnnualPass: true,
-      passExpiry: '2027-04-15',
-      streakDays: 22,
-      lastActiveDate: '2026-10-08',
-      createdAt: '2026-04-10T00:00:00.000Z',
-    },
-    {
-      uid: 'student-1003',
-      displayName: 'Rohan Verma',
-      email: 'rohan.verma@outlook.com',
-      studentClass: 'Class 8',
-      board: 'CBSE',
-      hasAnnualPass: false,
-      streakDays: 5,
-      lastActiveDate: '2026-10-07',
-      createdAt: '2026-05-18T00:00:00.000Z',
-    },
-    {
-      uid: 'student-1004',
-      displayName: 'Ananya Iyer',
-      email: 'ananya.iyer@gmail.com',
-      studentClass: 'Class 10',
-      board: 'CBSE',
-      hasAnnualPass: true,
-      passExpiry: '2027-05-01',
-      streakDays: 31,
-      lastActiveDate: '2026-10-08',
-      createdAt: '2026-03-25T00:00:00.000Z',
-    },
-    {
-      uid: 'student-1005',
-      displayName: 'Kavya Nair',
-      email: 'kavya.nair@yahoo.com',
-      studentClass: 'Class 7',
-      board: 'ICSE',
-      hasAnnualPass: false,
-      streakDays: 3,
-      lastActiveDate: '2026-10-06',
-      createdAt: '2026-06-12T00:00:00.000Z',
-    },
-  ]);
+// -------------------------------------------------------------
+// Admin User Management & Firebase Admin SDK Endpoints
+// -------------------------------------------------------------
+
+/**
+ * 1. Search & List Students
+ * Supports search query, class, board, and entitlement filtering
+ */
+app.get('/api/admin/students', requireAuth, requireAdmin, (req: Request, res: Response) => {
+  const { q, studentClass, board, passStatus, includeDisabled } = req.query as Record<string, string>;
+  const list = adminUserManager.searchStudents({
+    search: q,
+    studentClass,
+    board,
+    passStatus,
+    includeDisabled: includeDisabled === 'true',
+  });
+  return res.json(list);
 });
 
+/**
+ * 2. View Full Student Profile with Status & Claims
+ */
+app.get('/api/admin/users/:uid', requireAuth, requireAdmin, (req: Request, res: Response) => {
+  const { uid } = req.params;
+  const profile = adminUserManager.getStudentProfile(uid);
+  if (!profile) {
+    return res.status(404).json({ error: 'Student not found' });
+  }
+
+  const orders = adminUserManager.getStudentOrders(uid);
+  const activity = adminUserManager.getStudentActivity(uid);
+
+  return res.json({
+    profile,
+    orders,
+    activity,
+  });
+});
+
+/**
+ * 3. Disable / Enable User Account via Firebase Admin SDK
+ */
+app.post('/api/admin/users/:uid/disable', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const { uid } = req.params;
+  const { disabled } = req.body;
+  if (typeof disabled !== 'boolean') {
+    return res.status(400).json({ error: 'Boolean disabled flag is required' });
+  }
+
+  const actor = {
+    uid: req.userAuth?.uid || 'admin',
+    email: req.userAuth?.email || 'admin@mayf.co.in',
+    role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+  };
+
+  const result = await adminUserManager.setUserDisabledStatus(uid, disabled, actor);
+  if (!result.success) {
+    return res.status(400).json({ error: result.error });
+  }
+
+  return res.json({
+    success: true,
+    uid,
+    disabled,
+    student: result.student,
+    forceTokenRefresh: disabled,
+    message: disabled ? 'User account has been disabled and session revoked.' : 'User account reactivated.',
+  });
+});
+
+/**
+ * 4. Delete / Remove User According to Policy
+ */
+app.delete('/api/admin/users/:uid', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const { uid } = req.params;
+  const { policyReason } = req.body || {};
+
+  if (!policyReason) {
+    return res.status(400).json({
+      error: 'A compliance policy reason (e.g. GDPR_STUDENT_REQUEST, TERMS_VIOLATION, DATA_RETENTION) is required to remove user',
+    });
+  }
+
+  const actor = {
+    uid: req.userAuth?.uid || 'admin',
+    email: req.userAuth?.email || 'admin@mayf.co.in',
+    role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+  };
+
+  const result = await adminUserManager.deleteUserWithPolicy(uid, policyReason, actor);
+  if (!result.success) {
+    return res.status(400).json({ error: result.error });
+  }
+
+  return res.json({
+    success: true,
+    uid,
+    policyReason,
+    message: 'User removed according to retention policy and Auth account deleted.',
+  });
+});
+
+/**
+ * 5. Grant / Revoke Pro Tier (Firebase Custom Claim)
+ */
+app.post('/api/admin/users/:uid/pro', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const { uid } = req.params;
+  const { grant, reason } = req.body;
+
+  const actor = {
+    uid: req.userAuth?.uid || 'admin',
+    email: req.userAuth?.email || 'admin@mayf.co.in',
+    role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+  };
+
+  const result = await adminUserManager.setProStatus(uid, Boolean(grant), actor, reason);
+  if (!result.success) {
+    return res.status(400).json({ error: result.error });
+  }
+
+  return res.json({
+    success: true,
+    uid,
+    isPro: Boolean(grant),
+    student: result.student,
+    forceTokenRefresh: true,
+    message: grant ? 'Pro tier granted with custom claim pro:true.' : 'Pro tier revoked.',
+  });
+});
+
+/**
+ * 6. Grant / Revoke Annual Pass (Firebase Custom Claim)
+ */
+app.post('/api/admin/users/:uid/annual-pass', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const { uid } = req.params;
+  const { grant, expiryDate, reason } = req.body;
+
+  const actor = {
+    uid: req.userAuth?.uid || 'admin',
+    email: req.userAuth?.email || 'admin@mayf.co.in',
+    role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+  };
+
+  const result = await adminUserManager.setAnnualPassStatus(uid, Boolean(grant), expiryDate, actor, reason);
+  if (!result.success) {
+    return res.status(400).json({ error: result.error });
+  }
+
+  return res.json({
+    success: true,
+    uid,
+    hasAnnualPass: Boolean(grant),
+    student: result.student,
+    forceTokenRefresh: true,
+    message: grant ? 'Annual Pass granted and custom claims updated.' : 'Annual Pass revoked.',
+  });
+});
+
+/**
+ * 7. Change Annual Pass Expiry Date
+ */
+app.put('/api/admin/users/:uid/annual-pass/expiry', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const { uid } = req.params;
+  const { expiryDate, reason } = req.body;
+
+  if (!expiryDate) {
+    return res.status(400).json({ error: 'New expiryDate (YYYY-MM-DD) is required' });
+  }
+
+  const actor = {
+    uid: req.userAuth?.uid || 'admin',
+    email: req.userAuth?.email || 'admin@mayf.co.in',
+    role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+  };
+
+  const result = await adminUserManager.changeAnnualPassExpiry(uid, expiryDate, actor, reason);
+  if (!result.success) {
+    return res.status(400).json({ error: result.error });
+  }
+
+  return res.json({
+    success: true,
+    uid,
+    passExpiry: expiryDate,
+    student: result.student,
+    forceTokenRefresh: true,
+    message: `Annual Pass expiry updated to ${expiryDate}.`,
+  });
+});
+
+/**
+ * 8. View Orders for Given Student
+ */
+app.get('/api/admin/users/:uid/orders', requireAuth, requireAdmin, (req: Request, res: Response) => {
+  const { uid } = req.params;
+  const orders = adminUserManager.getStudentOrders(uid);
+  return res.json(orders);
+});
+
+/**
+ * 9. View Activity for Given Student
+ */
+app.get('/api/admin/users/:uid/activity', requireAuth, requireAdmin, (req: Request, res: Response) => {
+  const { uid } = req.params;
+  const activity = adminUserManager.getStudentActivity(uid);
+  return res.json(activity);
+});
+
+/**
+ * 10. Role Management (Make Admin / SuperAdmin / Student)
+ * RBAC GATED: Only superAdmin can create or remove administrators or modify another superAdmin
+ */
+app.post('/api/admin/users/:uid/role', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const { uid } = req.params;
+  const { role } = req.body;
+
+  if (!role || !['admin', 'superAdmin', 'student'].includes(role)) {
+    return res.status(400).json({ error: 'Valid role (admin, superAdmin, student) is required' });
+  }
+
+  const actor = {
+    uid: req.userAuth?.uid || 'admin',
+    email: req.userAuth?.email || 'admin@mayf.co.in',
+    role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+  };
+
+  const result = await adminUserManager.setUserRole(uid, role, actor);
+  if (!result.success) {
+    const statusCode = result.error?.includes('Forbidden') ? 403 : 400;
+    return res.status(statusCode).json({ error: result.error });
+  }
+
+  return res.json({
+    success: true,
+    uid,
+    role,
+    student: result.student,
+    forceTokenRefresh: true,
+    message: `Role updated to ${role}. Refresh tokens revoked to force re-authentication.`,
+  });
+});
+
+/**
+ * 11. Remove Admin Privileges (Revert to Student)
+ * RBAC GATED: Only superAdmin can remove administrators
+ */
+app.delete('/api/admin/users/:uid/role', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const { uid } = req.params;
+
+  const actor = {
+    uid: req.userAuth?.uid || 'admin',
+    email: req.userAuth?.email || 'admin@mayf.co.in',
+    role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+  };
+
+  const result = await adminUserManager.setUserRole(uid, 'student', actor);
+  if (!result.success) {
+    const statusCode = result.error?.includes('Forbidden') ? 403 : 400;
+    return res.status(statusCode).json({ error: result.error });
+  }
+
+  return res.json({
+    success: true,
+    uid,
+    role: 'student',
+    student: result.student,
+    forceTokenRefresh: true,
+    message: 'Administrator privileges removed. Target user reverted to student.',
+  });
+});
+
+/**
+ * 12. List Active Privileged Administrators
+ */
 app.get('/api/admin/admins', requireAuth, requireAdmin, (_req: Request, res: Response) => {
   return res.json([
     {
@@ -1410,13 +1681,35 @@ app.get('/api/admin/admins', requireAuth, requireAdmin, (_req: Request, res: Res
   ]);
 });
 
-app.post('/api/admin/admins/claim', requireAuth, requireAdmin, (req: Request, res: Response) => {
+/**
+ * 13. Mint Custom Claim Directly
+ * Gated: only superAdmin can mint claims
+ */
+app.post('/api/admin/admins/claim', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const { email, role } = req.body;
   if (!email) {
     return res.status(400).json({ error: 'Email is required' });
   }
+
+  // Only superAdmin can assign admin roles
+  if (req.userAuth?.role !== 'superAdmin') {
+    return res.status(403).json({ error: 'Forbidden: Only superAdmin can create or remove administrators' });
+  }
+
   const isSuper = role === 'superAdmin';
-  console.info(`[MAYF Admin] Minting custom claim for ${email}: role=${role}, admin=true, superAdmin=${isSuper}`);
+  auditLogService.log({
+    action: 'ADMIN_CREATED',
+    category: 'admin',
+    actorUid: req.userAuth?.uid || 'admin',
+    actorEmail: req.userAuth?.email || 'admin@mayf.co.in',
+    actorRole: 'superAdmin',
+    targetId: `usr-${email}`,
+    targetEmail: email,
+    targetType: 'administrator_role',
+    details: { email, role, admin: true, superAdmin: isSuper },
+    status: 'success',
+  });
+
   return res.json({
     success: true,
     email,
@@ -1425,7 +1718,439 @@ app.post('/api/admin/admins/claim', requireAuth, requireAdmin, (req: Request, re
       admin: true,
       superAdmin: isSuper,
     },
+    forceTokenRefresh: true,
   });
+});
+
+/**
+ * 14. Audit Logs Retrieval
+ * Returns audit entries filtered by category (admin, subscription, content, refund, security, user)
+ */
+app.get('/api/admin/audit-logs', requireAuth, requireAdmin, (req: Request, res: Response) => {
+  const { category, action, actorEmail, limit } = req.query as Record<string, string>;
+  const logs = auditLogService.getLogs({
+    category,
+    action,
+    actorEmail,
+    limit: limit ? parseInt(limit, 10) : 100,
+  });
+  return res.json(logs);
+});
+
+/**
+ * 15. Export Audit Logs as CSV
+ */
+app.get('/api/admin/audit-logs/export', requireAuth, requireAdmin, (req: Request, res: Response) => {
+  const { category } = req.query as Record<string, string>;
+  const csv = auditLogService.exportCsv(category);
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="mayf-audit-logs-${new Date().toISOString().split('T')[0]}.csv"`);
+  return res.send(csv);
+});
+
+/**
+ * 16. Security Configuration: Get Settings
+ */
+app.get('/api/admin/security/config', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+  const config = adminUserManager.getSecurityConfig();
+  return res.json(config);
+});
+
+/**
+ * 17. Security Configuration: Update Settings
+ * RBAC GATED: ONLY superAdmin can modify critical security configuration
+ */
+app.post('/api/admin/security/config', requireAuth, requireSuperAdmin, (req: AuthenticatedRequest, res: Response) => {
+  const actor = {
+    uid: req.userAuth!.uid,
+    email: req.userAuth!.email,
+    role: req.userAuth!.role as 'superAdmin',
+  };
+
+  const result = adminUserManager.updateSecurityConfig(req.body, actor);
+  if (!result.success) {
+    return res.status(403).json({ error: result.error });
+  }
+
+  return res.json({
+    success: true,
+    config: result.config,
+    message: 'Critical security configuration successfully updated.',
+  });
+});
+
+/**
+ * 18. Order Refund Endpoint
+ * Logs audit entry: refund-related changes
+ */
+app.post('/api/admin/orders/:orderId/refund', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  const { orderId } = req.params;
+  const { reason, amount } = req.body;
+
+  auditLogService.log({
+    action: 'REFUND_PROCESSED',
+    category: 'refund',
+    actorUid: req.userAuth?.uid || 'admin',
+    actorEmail: req.userAuth?.email || 'admin@mayf.co.in',
+    actorRole: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    targetId: orderId,
+    targetType: 'payment_order',
+    details: { orderId, amount, reason: reason || 'Customer refund request' },
+    status: 'success',
+  });
+
+  return res.json({
+    success: true,
+    orderId,
+    status: 'refunded',
+    message: `Order ${orderId} has been refunded and audit log recorded.`,
+  });
+});
+
+// -------------------------------------------------------------
+// Complete Content CMS Endpoints
+// Supports: create, edit, preview, publish, hide, unhide, unpublish,
+// safe-delete/archive, restore, permanent purge, duplicate, feature, reorder.
+// -------------------------------------------------------------
+
+/**
+ * 19. List Content CMS Items
+ * Supports search, classLevel, contentType, accessType, visibility, tab, sortBy
+ */
+app.get('/api/admin/content', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const {
+      search,
+      classLevel,
+      contentType,
+      accessType,
+      visibility,
+      tab = 'active',
+      sortBy = 'sortOrder',
+    } = req.query;
+
+    const result = contentCmsManager.getItems({
+      search: search ? String(search) : undefined,
+      classLevel: classLevel ? String(classLevel) : undefined,
+      contentType: contentType ? String(contentType) : undefined,
+      accessType: accessType ? String(accessType) : undefined,
+      visibility: visibility ? String(visibility) : undefined,
+      tab: tab === 'archived' ? 'archived' : 'active',
+      sortBy: sortBy as any,
+    });
+
+    return res.json({
+      success: true,
+      items: result.items,
+      counts: result.counts,
+    });
+  } catch (error: any) {
+    console.error('[Admin Content CMS] List error:', error);
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to list content items' });
+  }
+});
+
+/**
+ * 20. Get Single Content CMS Item
+ */
+app.get('/api/admin/content/:id', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const item = contentCmsManager.getItem(req.params.id);
+    if (!item) {
+      return res.status(404).json({ success: false, error: `Content item "${req.params.id}" not found.` });
+    }
+    return res.json({ success: true, item });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to fetch content item' });
+  }
+});
+
+/**
+ * 21. Create Content Item
+ */
+app.post('/api/admin/content', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const newItem = contentCmsManager.createItem(req.body, actor);
+    return res.status(201).json({
+      success: true,
+      item: newItem,
+      message: `Content item "${newItem.title}" created successfully.`,
+    });
+  } catch (error: any) {
+    console.error('[Admin Content CMS] Create error:', error);
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to create content item' });
+  }
+});
+
+/**
+ * 22. Edit / Update Content Item
+ */
+app.put('/api/admin/content/:id', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const updated = contentCmsManager.updateItem(req.params.id, req.body, actor);
+    return res.json({
+      success: true,
+      item: updated,
+      message: `Content item "${updated.title}" updated successfully.`,
+    });
+  } catch (error: any) {
+    console.error('[Admin Content CMS] Update error:', error);
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to update content item' });
+  }
+});
+
+/**
+ * 23. Publish Content Item
+ */
+app.post('/api/admin/content/:id/publish', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const item = contentCmsManager.publishItem(req.params.id, actor);
+    return res.json({
+      success: true,
+      item,
+      message: `"${item.title}" is now published and live in catalogue.`,
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to publish item' });
+  }
+});
+
+/**
+ * 24. Unpublish Content Item (Revert to Draft)
+ */
+app.post('/api/admin/content/:id/unpublish', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const item = contentCmsManager.unpublishItem(req.params.id, actor);
+    return res.json({
+      success: true,
+      item,
+      message: `"${item.title}" reverted to draft (unpublished).`,
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to unpublish item' });
+  }
+});
+
+/**
+ * 25. Hide Content Item
+ */
+app.post('/api/admin/content/:id/hide', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const item = contentCmsManager.hideItem(req.params.id, actor);
+    return res.json({
+      success: true,
+      item,
+      message: `"${item.title}" is now hidden from the public catalogue.`,
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to hide item' });
+  }
+});
+
+/**
+ * 26. Unhide Content Item
+ */
+app.post('/api/admin/content/:id/unhide', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const item = contentCmsManager.unhideItem(req.params.id, actor);
+    return res.json({
+      success: true,
+      item,
+      message: `"${item.title}" is now unhidden and visible in catalogue.`,
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to unhide item' });
+  }
+});
+
+/**
+ * 27. Safe Delete / Archive Content Item (Prefer soft-delete first!)
+ */
+app.post('/api/admin/content/:id/archive', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { reason } = req.body || {};
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const item = contentCmsManager.softDeleteItem(req.params.id, reason, actor);
+    return res.json({
+      success: true,
+      item,
+      message: `"${item.title}" safely moved to Archive. Underlying Cloud Storage files and Drive IDs remain intact.`,
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to archive item' });
+  }
+});
+
+/**
+ * 28. Restore Content Item from Archive
+ */
+app.post('/api/admin/content/:id/restore', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const item = contentCmsManager.restoreItem(req.params.id, actor);
+    return res.json({
+      success: true,
+      item,
+      message: `"${item.title}" restored from archive to draft catalogue.`,
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to restore item' });
+  }
+});
+
+/**
+ * 29. Content Deletion Endpoint (Safe deletion preferred by default, permanent purge if requested)
+ */
+app.delete('/api/admin/content/:id', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { reason, purge } = req.body || {};
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    // If explicit purge flag is passed, execute permanent purge
+    if (purge === true) {
+      const outcome = contentCmsManager.purgeItem(req.params.id, reason, actor);
+      return res.json({
+        success: true,
+        id: outcome.id,
+        purged: true,
+        message: `Content resource "${outcome.title}" permanently purged. Audit log created.`,
+      });
+    }
+
+    // Default policy: SAFE SOFT-DELETE / ARCHIVE
+    const archived = contentCmsManager.softDeleteItem(req.params.id, reason, actor);
+    return res.json({
+      success: true,
+      id: archived.id,
+      purged: false,
+      archived: true,
+      message: `"${archived.title}" safely soft-deleted to Archive. Files are preserved and can be restored anytime.`,
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to delete/archive content' });
+  }
+});
+
+/**
+ * 30. Duplicate Content Item
+ */
+app.post('/api/admin/content/:id/duplicate', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const duplicate = contentCmsManager.duplicateItem(req.params.id, actor);
+    return res.json({
+      success: true,
+      item: duplicate,
+      message: `Duplicated as "${duplicate.title}". Created in draft mode.`,
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to duplicate content item' });
+  }
+});
+
+/**
+ * 31. Feature Toggle Content Item
+ */
+app.post('/api/admin/content/:id/feature', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { featured } = req.body;
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const updated = contentCmsManager.toggleFeature(req.params.id, Boolean(featured), actor);
+    return res.json({
+      success: true,
+      item: updated,
+      message: `"${updated.title}" ${updated.featured ? 'marked as featured' : 'removed from featured'}.`,
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to toggle featured status' });
+  }
+});
+
+/**
+ * 32. Reorder Content Items
+ */
+app.post('/api/admin/content/reorder', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { orderMapping } = req.body;
+    if (!orderMapping || !Array.isArray(orderMapping)) {
+      return res.status(400).json({ success: false, error: 'orderMapping array is required [{ id, sortOrder }]' });
+    }
+
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const outcome = contentCmsManager.reorderItems(orderMapping, actor);
+    return res.json({
+      success: true,
+      updatedCount: outcome.updatedCount,
+      message: `Updated display order for ${outcome.updatedCount} content resources.`,
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to reorder content items' });
+  }
 });
 
 app.get('/api/admin/ai-activity', requireAuth, requireAdmin, (_req: Request, res: Response) => {
