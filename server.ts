@@ -23,6 +23,7 @@ import { PaymentProvider, StoredOrder } from './src/lib/payments/types';
 import { adminUserManager } from './src/lib/admin/adminUserManager';
 import { auditLogService } from './src/lib/audit/auditLogger';
 import { contentCmsManager } from './src/lib/cms/contentManager';
+import { categoryManager } from './src/lib/categories/categoryManager';
 
 dotenv.config();
 
@@ -2150,6 +2151,226 @@ app.post('/api/admin/content/reorder', requireAuth, requireAdmin, (req: Authenti
     });
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to reorder content items' });
+  }
+});
+
+// -------------------------------------------------------------
+// Hierarchical Categories Management Endpoints
+// Arbitrary parent-child nested structure (e.g. Class 8 -> Maths -> Algebra -> Linear Equations)
+// Safe deletion guard: prevents deleting categories with content unless reassigned
+// -------------------------------------------------------------
+
+/**
+ * 33. List Hierarchical Categories
+ * Query: ?format=tree|flat, ?includeDisabled=true|false
+ */
+app.get('/api/admin/categories', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { format = 'tree', includeDisabled = 'true' } = req.query;
+    const includeDisabledBool = includeDisabled !== 'false';
+
+    const flat = categoryManager.getAllFlat(includeDisabledBool);
+    const tree = categoryManager.getTree(includeDisabledBool);
+
+    return res.json({
+      success: true,
+      categories: format === 'flat' ? flat : tree,
+      flat,
+      totalCount: flat.length,
+    });
+  } catch (error: any) {
+    console.error('[Admin Categories] List error:', error);
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to list categories' });
+  }
+});
+
+/**
+ * 34. Get Single Category Details
+ */
+app.get('/api/admin/categories/:id', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const category = categoryManager.getById(req.params.id);
+    if (!category) {
+      return res.status(404).json({ success: false, error: `Category "${req.params.id}" not found.` });
+    }
+    const ancestors = categoryManager.getAncestors(req.params.id);
+    return res.json({ success: true, category, ancestors });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to get category' });
+  }
+});
+
+/**
+ * 35. Can-Delete Safety Pre-check
+ */
+app.get('/api/admin/categories/:id/can-delete', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const result = categoryManager.canDelete(req.params.id);
+    return res.json({ success: true, ...result });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to evaluate delete safety' });
+  }
+});
+
+/**
+ * 36. Create Hierarchical Category
+ */
+app.post('/api/admin/categories', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const newCat = categoryManager.create(req.body, actor);
+    return res.status(201).json({
+      success: true,
+      category: newCat,
+      message: `Category "${newCat.name}" created successfully.`,
+    });
+  } catch (error: any) {
+    console.error('[Admin Categories] Create error:', error);
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to create category' });
+  }
+});
+
+/**
+ * 37. Rename / Update Category
+ */
+app.put('/api/admin/categories/:id', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const { name, parentId, description, sortOrder, disabled, applicableGrades } = req.body;
+    let cat = categoryManager.getById(req.params.id);
+    if (!cat) return res.status(404).json({ success: false, error: 'Category not found' });
+
+    if (name && name !== cat.name) {
+      cat = categoryManager.rename(req.params.id, name, actor);
+    }
+
+    if (parentId !== undefined && parentId !== cat.parentId) {
+      cat = categoryManager.move(req.params.id, parentId, actor);
+    }
+
+    if (sortOrder !== undefined) {
+      cat = categoryManager.reorder(req.params.id, sortOrder, actor);
+    }
+
+    if (disabled !== undefined && disabled !== cat.disabled) {
+      cat = categoryManager.toggleDisable(req.params.id, disabled, actor);
+    }
+
+    return res.json({
+      success: true,
+      category: cat,
+      message: `Category "${cat.name}" updated successfully.`,
+    });
+  } catch (error: any) {
+    console.error('[Admin Categories] Update error:', error);
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to update category' });
+  }
+});
+
+/**
+ * 38. Move Category (Change Parent)
+ */
+app.post('/api/admin/categories/:id/move', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const { newParentId } = req.body;
+    const moved = categoryManager.move(req.params.id, newParentId, actor);
+    return res.json({
+      success: true,
+      category: moved,
+      message: `Category "${moved.name}" moved to ${newParentId ? 'new parent' : 'root level'}.`,
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to move category' });
+  }
+});
+
+/**
+ * 39. Reorder Category
+ */
+app.post('/api/admin/categories/:id/reorder', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const { sortOrder } = req.body;
+    if (sortOrder === undefined) return res.status(400).json({ success: false, error: 'sortOrder is required' });
+
+    const reordered = categoryManager.reorder(req.params.id, Number(sortOrder), actor);
+    return res.json({
+      success: true,
+      category: reordered,
+      message: `Category order updated to ${sortOrder}.`,
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to reorder category' });
+  }
+});
+
+/**
+ * 40. Disable / Enable Category
+ */
+app.post('/api/admin/categories/:id/toggle-disable', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const { disabled } = req.body;
+    const updated = categoryManager.toggleDisable(req.params.id, Boolean(disabled), actor);
+    return res.json({
+      success: true,
+      category: updated,
+      message: `Category "${updated.name}" is now ${updated.disabled ? 'disabled' : 'enabled'}.`,
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to toggle category disabled status' });
+  }
+});
+
+/**
+ * 41. Delete Category Where Safe
+ * PREVENTS deleting categories containing content unless content is reassigned!
+ */
+app.delete('/api/admin/categories/:id', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const { reassignToId, reason } = req.body || {};
+    const outcome = categoryManager.delete(req.params.id, { reassignToId, reason }, actor);
+
+    return res.json({
+      ...outcome,
+      message: outcome.reassignedCount > 0
+        ? `Category "${outcome.deletedName}" safely deleted. Reassigned ${outcome.reassignedCount} content items to target category.`
+        : `Category "${outcome.deletedName}" safely deleted.`,
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to delete category' });
   }
 });
 

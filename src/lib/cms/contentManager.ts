@@ -832,6 +832,74 @@ class ContentCmsManager {
 
     return { success: true, updatedCount };
   }
+
+  /**
+   * COUNT CONTENT ITEMS LINKED TO A CATEGORY
+   */
+  public countItemsWithCategory(categoryIdentifier: string): number {
+    const term = categoryIdentifier.toLowerCase().trim();
+    let count = 0;
+    for (const item of this.itemsStore.values()) {
+      if (
+        item.categoryId?.toLowerCase() === term ||
+        item.subcategoryId?.toLowerCase() === term ||
+        item.topic?.toLowerCase() === term ||
+        item.id === categoryIdentifier
+      ) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /**
+   * REASSIGN CATEGORY ACROSS ALL LINKED CONTENT ITEMS
+   */
+  public reassignCategory(
+    oldCategoryTerm: string,
+    newCategoryName: string,
+    actor: { uid: string; email: string; role: 'admin' | 'superAdmin' }
+  ): { reassignedCount: number } {
+    const oldTerm = oldCategoryTerm.toLowerCase().trim();
+    let reassignedCount = 0;
+    const now = new Date().toISOString();
+
+    for (const item of this.itemsStore.values()) {
+      let modified = false;
+      if (item.categoryId?.toLowerCase() === oldTerm) {
+        item.categoryId = newCategoryName;
+        modified = true;
+      }
+      if (item.subcategoryId?.toLowerCase() === oldTerm) {
+        item.subcategoryId = newCategoryName;
+        modified = true;
+      }
+      if (item.topic?.toLowerCase() === oldTerm) {
+        item.topic = newCategoryName;
+        modified = true;
+      }
+
+      if (modified) {
+        item.updatedAt = now;
+        this.itemsStore.set(item.id, item);
+        reassignedCount++;
+      }
+    }
+
+    auditLogService.log({
+      action: 'CONTENT_UPDATED',
+      category: 'content',
+      actorUid: actor.uid,
+      actorEmail: actor.email,
+      actorRole: actor.role,
+      targetId: 'category_reassign_batch',
+      targetType: 'curriculum_content',
+      details: { oldCategory: oldCategoryTerm, newCategory: newCategoryName, reassignedCount },
+      status: 'success',
+    });
+
+    return { reassignedCount };
+  }
 }
 
 export const contentCmsManager = new ContentCmsManager();

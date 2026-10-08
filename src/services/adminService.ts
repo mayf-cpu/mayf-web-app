@@ -208,6 +208,32 @@ export interface ContentListResponse {
   };
 }
 
+export interface HierarchicalCategoryRecord {
+  id: string;
+  parentId: string | null;
+  name: string;
+  slug: string;
+  description?: string;
+  sortOrder: number;
+  disabled: boolean;
+  applicableGrades?: string[];
+  createdAt: string;
+  updatedAt: string;
+  level?: number;
+  path?: string;
+  ancestorIds?: string[];
+  childrenCount?: number;
+  contentCount?: number;
+  children?: HierarchicalCategoryRecord[];
+}
+
+export interface CanDeleteCategoryResponse {
+  canDelete: boolean;
+  contentCount: number;
+  descendantCount: number;
+  reason?: string;
+}
+
 class AdminService {
   private async getAuthHeaders(): Promise<HeadersInit> {
     const headers: Record<string, string> = {
@@ -822,6 +848,170 @@ class AdminService {
       const data = await res.json();
       if (!res.ok) return { success: false, error: data.error || 'Failed to reorder content' };
       return { success: true, updatedCount: data.updatedCount };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  // Hierarchical Categories Management
+  async getCategories(format: 'tree' | 'flat' = 'tree', includeDisabled: boolean = true): Promise<{
+    categories: HierarchicalCategoryRecord[];
+    flat: HierarchicalCategoryRecord[];
+    totalCount: number;
+  }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/categories?format=${format}&includeDisabled=${includeDisabled}`, { headers });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      return {
+        categories: data.categories || [],
+        flat: data.flat || [],
+        totalCount: data.totalCount || 0,
+      };
+    } catch (e) {
+      console.error('[AdminService] getCategories error:', e);
+      return { categories: [], flat: [], totalCount: 0 };
+    }
+  }
+
+  async getCategory(id: string): Promise<{ category: HierarchicalCategoryRecord; ancestors: HierarchicalCategoryRecord[] } | null> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/categories/${id}`, { headers });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  }
+
+  async canDeleteCategory(id: string): Promise<CanDeleteCategoryResponse> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/categories/${id}/can-delete`, { headers });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (e: any) {
+      return { canDelete: false, contentCount: 0, descendantCount: 0, reason: e?.message || 'Check failed' };
+    }
+  }
+
+  async createCategory(payload: {
+    name: string;
+    parentId?: string | null;
+    description?: string;
+    sortOrder?: number;
+    disabled?: boolean;
+    applicableGrades?: string[];
+  }): Promise<{ success: boolean; category?: HierarchicalCategoryRecord; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch('/api/admin/categories', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to create category' };
+      return { success: true, category: data.category };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async updateCategory(
+    id: string,
+    payload: {
+      name?: string;
+      parentId?: string | null;
+      description?: string;
+      sortOrder?: number;
+      disabled?: boolean;
+      applicableGrades?: string[];
+    }
+  ): Promise<{ success: boolean; category?: HierarchicalCategoryRecord; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/categories/${id}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to update category' };
+      return { success: true, category: data.category };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async renameCategory(id: string, name: string): Promise<{ success: boolean; category?: HierarchicalCategoryRecord; error?: string }> {
+    return this.updateCategory(id, { name });
+  }
+
+  async moveCategory(id: string, newParentId: string | null): Promise<{ success: boolean; category?: HierarchicalCategoryRecord; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/categories/${id}/move`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ newParentId }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to move category' };
+      return { success: true, category: data.category };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async reorderCategory(id: string, sortOrder: number): Promise<{ success: boolean; category?: HierarchicalCategoryRecord; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/categories/${id}/reorder`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ sortOrder }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to reorder category' };
+      return { success: true, category: data.category };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async toggleDisableCategory(id: string, disabled: boolean): Promise<{ success: boolean; category?: HierarchicalCategoryRecord; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/categories/${id}/toggle-disable`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ disabled }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to toggle category disabled state' };
+      return { success: true, category: data.category };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async deleteCategory(
+    id: string,
+    options?: { reassignToId?: string; reason?: string }
+  ): Promise<{ success: boolean; reassignedCount?: number; deletedName?: string; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/categories/${id}`, {
+        method: 'DELETE',
+        headers,
+        body: JSON.stringify(options || {}),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to delete category' };
+      return { success: true, reassignedCount: data.reassignedCount, deletedName: data.deletedName };
     } catch (e: any) {
       return { success: false, error: e?.message || 'Network error' };
     }
