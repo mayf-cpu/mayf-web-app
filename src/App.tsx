@@ -6,6 +6,7 @@
 import React, { Suspense } from 'react';
 import { NavigationProvider, useNavigation } from './context/NavigationContext';
 import { AuthProvider } from './context/AuthContext';
+import { SiteSettingsProvider } from './context/SiteSettingsContext';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { LoadingSpinner } from './components/ui/LoadingState';
 
@@ -92,11 +93,13 @@ export default function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <NavigationProvider>
-          <Suspense fallback={<LoadingSpinner message="Loading Maths at Your Fingertips..." />}>
-            <AppRouter />
-          </Suspense>
-        </NavigationProvider>
+        <SiteSettingsProvider>
+          <NavigationProvider>
+            <Suspense fallback={<LoadingSpinner message="Loading Maths at Your Fingertips..." />}>
+              <AppRouter />
+            </Suspense>
+          </NavigationProvider>
+        </SiteSettingsProvider>
       </AuthProvider>
     </ErrorBoundary>
   );

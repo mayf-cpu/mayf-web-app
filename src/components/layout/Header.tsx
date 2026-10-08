@@ -2,11 +2,18 @@ import React from 'react';
 import { Search, Sparkles, User, ShieldCheck } from 'lucide-react';
 import { Link, useNavigation } from '../../context/NavigationContext';
 import { useAuth } from '../../context/AuthContext';
+import { useSiteSettings } from '../../context/SiteSettingsContext';
 import { Button } from '../ui/Button';
 
 export const Header: React.FC = () => {
   const { currentRoute } = useNavigation();
   const { user } = useAuth();
+  const { settings } = useSiteSettings();
+
+  const siteName = settings?.brand?.siteName || 'Maths at Your Fingertips';
+  const logoUrl = settings?.brand?.logoUrl;
+  const wordmarkGlyph = settings?.brand?.wordmarkGlyph || 'Σ';
+  const primaryColor = settings?.colors?.primaryColor || '#1D4ED8';
 
   const navLinks = [
     { label: 'Study Material', href: '/study-material' },
@@ -25,13 +32,25 @@ export const Header: React.FC = () => {
         <Link
           href="/"
           className="flex items-center gap-2.5 shrink-0 group focus:outline-none"
-          title="Maths at Your Fingertips Home"
+          title={`${siteName} Home`}
         >
-          <div className="w-9 h-9 rounded-lg bg-[#1D4ED8] flex items-center justify-center text-white font-heading font-extrabold text-lg shadow-xs group-hover:bg-[#1E40AF] transition-colors">
-            Σ
-          </div>
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt={siteName}
+              className="w-9 h-9 rounded-lg object-contain"
+              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+            />
+          ) : (
+            <div
+              className="w-9 h-9 rounded-lg flex items-center justify-center text-white font-heading font-extrabold text-lg shadow-xs transition-colors"
+              style={{ backgroundColor: primaryColor }}
+            >
+              {wordmarkGlyph}
+            </div>
+          )}
           <span className="font-heading font-extrabold text-lg tracking-tight text-[#0F172A] group-hover:text-[#1D4ED8] transition-colors whitespace-nowrap">
-            Maths at Your Fingertips
+            {siteName}
           </span>
         </Link>
 

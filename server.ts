@@ -25,6 +25,7 @@ import { auditLogService } from './src/lib/audit/auditLogger';
 import { contentCmsManager } from './src/lib/cms/contentManager';
 import { categoryManager } from './src/lib/categories/categoryManager';
 import { homepageLayoutService } from './src/lib/layout/homepageLayoutService';
+import { siteSettingsService } from './src/lib/settings/siteSettingsService';
 
 dotenv.config();
 
@@ -2484,6 +2485,89 @@ app.post('/api/admin/layout/homepage/reset', requireAuth, requireAdmin, async (r
     });
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to reset layout' });
+  }
+});
+
+// -------------------------------------------------------------
+// Site Settings & Branding Management Endpoints
+// Manages logo, alt logo, favicon, site name, tagline, footer text,
+// colors, social links, contact links, and controlled homepage copy.
+// Strictly disallows arbitrary executable HTML or JavaScript.
+// Persisted in Firestore /siteSettings/general
+// -------------------------------------------------------------
+
+/**
+ * 47. Public Site Settings Endpoint (Cached with SWR)
+ */
+app.get('/api/site-settings', (_req: Request, res: Response) => {
+  try {
+    const settings = siteSettingsService.getPublicSettings();
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+    return res.json({
+      success: true,
+      settings,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to fetch site settings' });
+  }
+});
+
+/**
+ * 48. Admin Get Site Settings
+ */
+app.get('/api/admin/site-settings', requireAuth, requireAdmin, (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const settings = siteSettingsService.getAdminSettings();
+    return res.json({
+      success: true,
+      settings,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to fetch admin site settings' });
+  }
+});
+
+/**
+ * 49. Admin Update Site Settings (Strictly sanitizes and blocks arbitrary HTML/JS)
+ */
+app.put('/api/admin/site-settings', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const updated = await siteSettingsService.updateSettings(req.body, actor);
+    return res.json({
+      success: true,
+      settings: updated,
+      message: 'Site settings and branding successfully updated. Prohibited code was neutralized.',
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to update site settings' });
+  }
+});
+
+/**
+ * 50. Admin Reset Site Settings to Defaults
+ */
+app.post('/api/admin/site-settings/reset', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const actor = {
+      uid: req.userAuth?.uid || 'admin',
+      email: req.userAuth?.email || 'admin@mayf.co.in',
+      role: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
+    };
+
+    const resetSettings = await siteSettingsService.resetToDefaults(actor);
+    return res.json({
+      success: true,
+      settings: resetSettings,
+      message: 'Site settings and branding reset to default values.',
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error?.message || 'Failed to reset site settings' });
   }
 });
 

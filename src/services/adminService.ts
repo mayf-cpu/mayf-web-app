@@ -7,6 +7,7 @@
 
 import { auth } from '../lib/firebase/client';
 import { HomepageBlock, HomepageLayoutConfig } from '../lib/layout/homepageLayoutTypes';
+import { SiteSettings } from '../lib/settings/siteSettingsTypes';
 
 export interface AdminMetrics {
   totalStudents: number;
@@ -1193,6 +1194,49 @@ class AdminService {
       if (!res.ok) return { success: false, error: data.error || 'Failed to set claim' };
       await this.forceClientTokenRefresh();
       return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async getAdminSiteSettings(): Promise<{ success: boolean; settings?: SiteSettings; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch('/api/admin/site-settings', { headers });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to fetch site settings' };
+      return { success: true, settings: data.settings };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async updateAdminSiteSettings(settings: Partial<SiteSettings>): Promise<{ success: boolean; settings?: SiteSettings; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch('/api/admin/site-settings', {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(settings),
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to update site settings' };
+      return { success: true, settings: data.settings };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async resetAdminSiteSettings(): Promise<{ success: boolean; settings?: SiteSettings; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch('/api/admin/site-settings/reset', {
+        method: 'POST',
+        headers,
+      });
+      const data = await res.json();
+      if (!res.ok) return { success: false, error: data.error || 'Failed to reset site settings' };
+      return { success: true, settings: data.settings };
     } catch (e: any) {
       return { success: false, error: e?.message || 'Network error' };
     }
