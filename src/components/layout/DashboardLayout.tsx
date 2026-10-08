@@ -26,8 +26,6 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     { label: 'Downloads', href: '/dashboard/downloads', icon: DownloadCloud },
     { label: 'Saved Formulas', href: '/dashboard/saved', icon: Bookmark },
     { label: 'AI Doubt History', href: '/dashboard/ai-history', icon: History },
-    { label: 'Admin Import & Sync', href: '/admin/import-sync', icon: FileSpreadsheet },
-    { label: 'Payment Gateway', href: '/admin/payments', icon: CreditCard },
   ];
 
   const classes: StudentClass[] = [

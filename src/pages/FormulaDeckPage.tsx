@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
 import { FormulaCard } from '../components/ui/FormulaCard';
+import { ShareButton } from '../components/ui/ShareButton';
+import { SeoHead } from '../components/common/SeoHead';
 import { FORMULA_DECK_ITEMS, FORMULA_CATEGORIES } from '../data/formulaDeckData';
 import { StudentClass, FormulaCategory } from '../lib/firebase/types';
 import { Button } from '../components/ui/Button';
@@ -34,6 +36,11 @@ export const FormulaDeckPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'swipe'>('grid');
+  const [openInNewTab, setOpenInNewTab] = useState(true);
+
+  const canonicalUrl = 'https://mayf.co.in/formula-deck';
+  const pageTitle = 'Interactive Formula Deck (Classes 5–10)';
+  const pageDesc = 'Master all mathematical identities from Arithmetic to Trigonometry. Standalone indexable formula cards with KaTeX typesetting and NCERT step exemplars.';
 
   // Swipe Deck / Flashcard Index
   const [swipeIndex, setSwipeIndex] = useState(0);
@@ -161,6 +168,12 @@ export const FormulaDeckPage: React.FC = () => {
 
   return (
     <SharedLayout>
+      <SeoHead
+        title={pageTitle}
+        description={pageDesc}
+        canonicalUrl={canonicalUrl}
+      />
+
       <div className="space-y-6 max-w-7xl mx-auto">
         
         {/* Header Banner */}
@@ -171,9 +184,19 @@ export const FormulaDeckPage: React.FC = () => {
           </div>
 
           <div className="relative z-10 max-w-3xl space-y-2">
-            <div className="inline-flex items-center gap-2 bg-blue-500/20 text-cyan-300 border border-cyan-400/30 px-3 py-1 rounded-full text-xs font-semibold backdrop-blur-xs">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Interactive Formula Deck · Classes 5–10 NCERT Curriculum</span>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="inline-flex items-center gap-2 bg-blue-500/20 text-cyan-300 border border-cyan-400/30 px-3 py-1 rounded-full text-xs font-semibold backdrop-blur-xs">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Interactive Formula Deck · Classes 5–10 NCERT Curriculum</span>
+              </div>
+
+              <ShareButton
+                canonicalUrl={canonicalUrl}
+                title={pageTitle}
+                description={pageDesc}
+                buttonText="Share Deck"
+                buttonSize="xs"
+              />
             </div>
 
             <h1 className="font-heading font-extrabold text-2xl sm:text-3xl md:text-4xl tracking-tight text-white">
@@ -220,7 +243,18 @@ export const FormulaDeckPage: React.FC = () => {
             </div>
 
             {/* Quick Actions Bar */}
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+              {/* Open in new tab config */}
+              <label className="flex items-center gap-1.5 text-xs text-slate-600 font-medium cursor-pointer select-none px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-white">
+                <input
+                  type="checkbox"
+                  checked={openInNewTab}
+                  onChange={(e) => setOpenInNewTab(e.target.checked)}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-600 w-3.5 h-3.5"
+                />
+                <span>Open cards in new tab</span>
+              </label>
+
               {/* Favorites toggle */}
               <button
                 onClick={() => setFavoritesOnly(!favoritesOnly)}
@@ -450,7 +484,7 @@ export const FormulaDeckPage: React.FC = () => {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredFormulas.map((formula) => (
-                  <FormulaCard key={formula.id} formula={formula} />
+                  <FormulaCard key={formula.id} formula={formula} openInNewTab={openInNewTab} />
                 ))}
               </div>
             )}

@@ -98,3 +98,11 @@ export const STUDENT_COURSES: StudentCourse[] = [
     bannerGradient: 'from-rose-600 to-pink-700',
   },
 ];
+
+export function getCourseBySlug(slug: string): StudentCourse | undefined {
+  return STUDENT_COURSES.find((c) => c.slug === slug || c.id === slug);
+}
+
+export function getCourseById(id: string): StudentCourse | undefined {
+  return STUDENT_COURSES.find((c) => c.id === id);
+}

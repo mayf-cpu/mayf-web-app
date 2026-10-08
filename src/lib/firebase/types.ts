@@ -11,7 +11,9 @@ export type UserRole = 'student' | 'admin' | 'superAdmin';
  * Access Control Custom Claims (Stored in Firebase Auth token, NOT trusted from client payload)
  */
 export interface AuthCustomClaims {
-  role: UserRole;
+  role?: UserRole;
+  admin?: boolean;
+  superAdmin?: boolean;
   pro?: boolean;
   annualPass?: boolean;
   annualPassExpiry?: string;

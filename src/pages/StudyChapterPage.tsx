@@ -13,6 +13,7 @@ import { fetchContentItemBySlug, checkUserCanAccessItem, SEED_CONTENT_ITEMS } fr
 import { ContentItem } from '../lib/firebase/types';
 import { ViewerContainer } from '../components/viewers/ViewerContainer';
 import { SeoHead } from '../components/common/SeoHead';
+import { ShareButton } from '../components/ui/ShareButton';
 import { INITIAL_FORMULAS, INITIAL_SOLVED_PROBLEMS } from '../data/curriculumData';
 import { TurnstileModal } from '../components/ui/TurnstileModal';
 import { logProductEvent } from '../lib/activity/activityService';
@@ -171,14 +172,14 @@ export const StudyChapterPage: React.FC = () => {
             <span aria-hidden="true" className="hidden sm:inline">·</span>
             <span className="text-[#00687A] font-semibold">{activeItem.categoryId}</span>
 
-            <button
-              onClick={handleShare}
-              className="ml-2 inline-flex items-center gap-1.5 px-2.5 py-1 bg-white hover:bg-[#F8FAFC] border border-[#CBD5E1] rounded-md text-[#0F172A] font-semibold text-xs cursor-pointer transition-colors"
-              title="Share this public URL"
-            >
-              {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Share2 className="w-3.5 h-3.5 text-[#1D4ED8]" />}
-              <span>{copiedLink ? 'Copied Link' : 'Share'}</span>
-            </button>
+            <ShareButton
+              canonicalUrl={canonicalUrl}
+              title={activeItem.title}
+              description={activeItem.shortDescription || activeItem.description}
+              buttonText="Share"
+              buttonSize="xs"
+              className="ml-2"
+            />
           </div>
         </div>
 

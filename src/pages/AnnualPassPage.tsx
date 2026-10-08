@@ -4,6 +4,9 @@ import { SharedLayout } from '../components/layout/SharedLayout';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Link } from '../context/NavigationContext';
+import { SeoHead } from '../components/common/SeoHead';
+import { ShareButton } from '../components/ui/ShareButton';
+import { PromotionalBanner } from '../components/ui/PromotionalBanner';
 import { AnnualPassSettings } from '../lib/payments/types';
 
 export const AnnualPassPage: React.FC = () => {
@@ -71,15 +74,36 @@ export const AnnualPassPage: React.FC = () => {
     },
   ];
 
+  const canonicalUrl = 'https://mayf.co.in/annual-pass';
+  const pageTitle = 'All-Class Annual Pass (Classes 5–10)';
+  const pageDesc = 'Unrestricted access to all Class 5 to 10 mathematics courses, 80+ formula decks, printable summaries, and 24/7 AI tutor guidance with coupon discount support.';
+
   return (
     <SharedLayout>
-      <div className="space-y-12 max-w-4xl mx-auto">
-        
+      <SeoHead
+        title={pageTitle}
+        description={pageDesc}
+        canonicalUrl={canonicalUrl}
+      />
+
+      <div className="space-y-10 max-w-4xl mx-auto">
+        {/* Promotional Banner with Coupon Codes */}
+        <PromotionalBanner placement="homepage" />
+
         {/* Header */}
         <div className="text-center space-y-3">
-          <Badge variant="pro" size="md">
-            ANNUAL PASS 2026–2027
-          </Badge>
+          <div className="flex items-center justify-center gap-2">
+            <Badge variant="pro" size="md">
+              ANNUAL PASS 2026–2027
+            </Badge>
+            <ShareButton
+              canonicalUrl={canonicalUrl}
+              title={pageTitle}
+              description={pageDesc}
+              buttonText="Share Pass"
+              buttonSize="xs"
+            />
+          </div>
           <h1 className="font-heading font-extrabold text-3xl sm:text-4xl md:text-5xl text-[#0F172A] tracking-tight">
             One Pass. Every Class. Complete Math Mastery.
           </h1>

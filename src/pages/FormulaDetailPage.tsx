@@ -24,6 +24,7 @@ import { Badge } from '../components/ui/Badge';
 import { WatermarkGlyph } from '../components/ui/WatermarkGlyph';
 import { FormulaDiagram } from '../components/ui/FormulaDiagram';
 import { FormulaSeo } from '../components/common/FormulaSeo';
+import { ShareButton } from '../components/ui/ShareButton';
 import { useAuth } from '../context/AuthContext';
 import { logProductEvent } from '../lib/activity/activityService';
 
@@ -32,8 +33,6 @@ export const FormulaDetailPage: React.FC = () => {
   const { user, savedItemIds, toggleSavedItem } = useAuth();
 
   const [copiedFormula, setCopiedFormula] = useState(false);
-  const [copiedLink, setCopiedLink] = useState(false);
-  const [shareDropdownOpen, setShareDropdownOpen] = useState(false);
 
   const slug = currentRoute.params.slug;
   const currentIndex = FORMULA_DECK_ITEMS.findIndex((f) => f.slug === slug);
@@ -141,34 +140,6 @@ export const FormulaDetailPage: React.FC = () => {
     navigator.clipboard.writeText(formula.plainTextFormula);
     setCopiedFormula(true);
     setTimeout(() => setCopiedFormula(false), 2000);
-  };
-
-  // Copy Direct Share Link
-  const handleCopyLink = () => {
-    const shareUrl = typeof window !== 'undefined' ? window.location.href : `https://mayf.co.in/formula/${formula.slug}`;
-    navigator.clipboard.writeText(shareUrl);
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2200);
-  };
-
-  // Native Web Share or WhatsApp Share
-  const handleNativeShare = async () => {
-    const shareUrl = typeof window !== 'undefined' ? window.location.href : `https://mayf.co.in/formula/${formula.slug}`;
-    const shareData = {
-      title: `${formula.title} | Maths at Your Fingertips`,
-      text: `Check out the formula for ${formula.title} with step-by-step NCERT worked derivation:`,
-      url: shareUrl,
-    };
-
-    if (navigator.share) {
-      try {
-        await navigator.share(shareData);
-      } catch (err) {
-        // User dismissed share
-      }
-    } else {
-      setShareDropdownOpen(true);
-    }
   };
 
   // Related formulas resolution
@@ -280,57 +251,14 @@ export const FormulaDetailPage: React.FC = () => {
                   <span>{copiedFormula ? 'Copied!' : 'Copy Formula'}</span>
                 </Button>
 
-                {/* Share Button */}
-                <div className="relative">
-                  <Button size="sm" variant="outline" onClick={handleNativeShare} className="gap-1.5 cursor-pointer">
-                    <Share2 className="w-3.5 h-3.5" />
-                    <span>Share</span>
-                  </Button>
-
-                  {/* Share popup fallback */}
-                  {shareDropdownOpen && (
-                    <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-200 p-2 z-50 text-xs space-y-1">
-                      <button
-                        onClick={handleCopyLink}
-                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100 flex items-center justify-between font-medium cursor-pointer"
-                      >
-                        <span>{copiedLink ? 'Link Copied!' : 'Copy Shareable Link'}</span>
-                        {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
-
-                      <a
-                        href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
-                          `Study ${formula.title} on Maths at Your Fingertips: ${window.location.href}`
-                        )}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-emerald-50 text-emerald-800 flex items-center gap-2 font-medium"
-                      >
-                        <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Share on WhatsApp</span>
-                      </a>
-
-                      <a
-                        href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(
-                          `Mastering ${formula.title} (${formula.plainTextFormula}) via Maths at Your Fingertips: ${window.location.href}`
-                        )}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-sky-50 text-sky-800 flex items-center gap-2 font-medium"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5 text-sky-600" />
-                        <span>Share on X / Twitter</span>
-                      </a>
-
-                      <button
-                        onClick={() => setShareDropdownOpen(false)}
-                        className="w-full text-center py-1 text-slate-400 hover:text-slate-600 font-medium"
-                      >
-                        Close
-                      </button>
-                    </div>
-                  )}
-                </div>
+                {/* Reusable Share Component */}
+                <ShareButton
+                  canonicalUrl={`https://mayf.co.in/formula/${formula.slug}`}
+                  title={`${formula.title} (${formula.plainTextFormula})`}
+                  description={formula.explanation}
+                  buttonText="Share"
+                  buttonSize="sm"
+                />
               </div>
             </div>
 

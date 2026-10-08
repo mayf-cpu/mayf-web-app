@@ -22,6 +22,8 @@ import { useAuth } from '../context/AuthContext';
 import { StudentClass } from '../lib/firebase/types';
 import { useNavigation, Link } from '../context/NavigationContext';
 import { MathRenderer } from '../components/ui/MathRenderer';
+import { SeoHead } from '../components/common/SeoHead';
+import { ShareButton } from '../components/ui/ShareButton';
 import { logProductEvent } from '../lib/activity/activityService';
 
 interface ChatMessage {
@@ -304,8 +306,18 @@ export const AiTeacherPage: React.FC = () => {
     'Class 10',
   ];
 
+  const canonicalUrl = 'https://mayf.co.in/ai-teacher';
+  const pageTitle = 'AI Teacher Doubt Solver & Mathematical Reasoning';
+  const pageDesc = 'Multimodal AI Mathematics Teacher for Classes 5 to 10 CBSE & ICSE. Step-by-step problem solver for textbook photos, KaTeX formulas, and exam questions.';
+
   return (
     <SharedLayout>
+      <SeoHead
+        title={pageTitle}
+        description={pageDesc}
+        canonicalUrl={canonicalUrl}
+      />
+
       <div className="max-w-4xl mx-auto space-y-5">
         
         {/* Header & Classroom Controls */}
@@ -323,8 +335,16 @@ export const AiTeacherPage: React.FC = () => {
             </p>
           </div>
 
-          {/* Model & Grade Badges */}
+          {/* Model, Grade Badges, and Share */}
           <div className="flex items-center gap-3 flex-wrap">
+            <ShareButton
+              canonicalUrl={canonicalUrl}
+              title={pageTitle}
+              description={pageDesc}
+              buttonText="Share"
+              buttonSize="sm"
+            />
+
             <div className="text-xs">
               <label htmlFor="grade-select" className="text-slate-500 font-medium block mb-1">
                 Student Grade:

@@ -43,6 +43,7 @@ export interface CouponValidationRequest {
     title?: string;
     annualPass?: boolean;
     unitPrice?: number;
+    price?: number;
     quantity?: number;
   }>;
 }

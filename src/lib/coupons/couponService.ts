@@ -272,7 +272,11 @@ export class CouponService {
             (i.title && i.title.toLowerCase().includes('annual pass')) ||
             (i.id && i.id.includes('pass'))
         );
-        eligibleSubtotal = passItems.reduce((sum, item) => sum + (item.unitPrice || 0) * (item.quantity || 1), 0);
+        const calcSubtotal = passItems.reduce(
+          (sum, item) => sum + (Number(item.unitPrice ?? item.price ?? 0)) * (Number(item.quantity) || 1),
+          0
+        );
+        eligibleSubtotal = calcSubtotal > 0 ? calcSubtotal : grossAmount;
       }
     } else if (coupon.scope === 'selected_products') {
       const selectedIds = coupon.selectedProductIds || [];
@@ -289,10 +293,11 @@ export class CouponService {
         };
       }
 
-      eligibleSubtotal = eligibleItems.reduce(
-        (sum, item) => sum + (item.unitPrice || 0) * (item.quantity || 1),
+      const calcSubtotal = eligibleItems.reduce(
+        (sum, item) => sum + (Number(item.unitPrice ?? item.price ?? 0)) * (Number(item.quantity) || 1),
         0
       );
+      eligibleSubtotal = calcSubtotal > 0 ? calcSubtotal : grossAmount;
     }
 
     // 7. Calculate authoritative discount

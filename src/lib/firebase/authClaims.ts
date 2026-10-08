@@ -42,12 +42,10 @@ export async function getVerifiedClaims(
     const tokenResult: IdTokenResult = await user.getIdTokenResult(forceRefresh);
     const claims = (tokenResult.claims || {}) as Partial<AuthCustomClaims>;
 
-    const role: UserRole =
-      claims.role === 'superAdmin'
-        ? 'superAdmin'
-        : claims.role === 'admin'
-        ? 'admin'
-        : 'student';
+    // Support both boolean claims (admin: true, superAdmin: true) and role claims
+    const isSuperAdmin = claims.superAdmin === true || claims.role === 'superAdmin';
+    const isAdmin = isSuperAdmin || claims.admin === true || claims.role === 'admin';
+    const role: UserRole = isSuperAdmin ? 'superAdmin' : isAdmin ? 'admin' : 'student';
 
     const hasAnnualPass = Boolean(claims.annualPass);
     const isPro = Boolean(claims.pro) || hasAnnualPass;
@@ -57,8 +55,8 @@ export async function getVerifiedClaims(
       isPro,
       hasAnnualPass,
       annualPassExpiry: claims.annualPassExpiry,
-      isAdmin: role === 'admin' || role === 'superAdmin',
-      isSuperAdmin: role === 'superAdmin',
+      isAdmin,
+      isSuperAdmin,
     };
   } catch (error) {
     console.error('[MAYF AuthClaims] Error reading ID token claims:', error);

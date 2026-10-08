@@ -1506,7 +1506,8 @@ export const StudentDashboard: React.FC = () => {
                           {course.totalFormulas} key formulas
                         </span>
                         <Link
-                          href="/study-material"
+                          href={`/course/${course.slug}`}
+                          openInNewTab={true}
                           onClick={() => {
                             logProductEvent({
                               userId: user?.uid || 'anonymous-student',
@@ -1519,7 +1520,7 @@ export const StudentDashboard: React.FC = () => {
                           }}
                         >
                           <Button size="sm" variant="primary">
-                            <span>Resume Course</span>
+                            <span>Open Course Syllabus</span>
                             <ArrowRight className="w-3.5 h-3.5 ml-1" />
                           </Button>
                         </Link>

@@ -68,6 +68,11 @@ export const Footer: React.FC = () => {
             </div>
             <ul className="space-y-2 text-xs">
               <li>
+                <Link href="/courses" className="hover:text-[#1D4ED8] transition-colors">
+                  Structured Curriculum Courses
+                </Link>
+              </li>
+              <li>
                 <Link href="/formula-deck" className="hover:text-[#1D4ED8] transition-colors">
                   Interactive Formula Flashcards
                 </Link>

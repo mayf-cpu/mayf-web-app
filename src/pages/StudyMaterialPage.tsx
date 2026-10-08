@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Filter, BookOpen, ArrowUpRight, Sparkles, FileText, Download, CheckCircle2, Eye, X, ArrowUpDown } from 'lucide-react';
+import { Search, Filter, BookOpen, ArrowUpRight, ArrowRight, Sparkles, FileText, Download, CheckCircle2, Eye, X, ArrowUpDown } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
 import { StudentClass, MathSubjectCategory, ContentItem, ContentType, ContentAccessType } from '../lib/firebase/types';
 import { Badge } from '../components/ui/Badge';
@@ -9,6 +9,7 @@ import { searchService } from '../lib/search/lightweightSearchService';
 import { QueryDocumentSnapshot } from 'firebase/firestore';
 import { SeoHead } from '../components/common/SeoHead';
 import { PromotionalBanner } from '../components/ui/PromotionalBanner';
+import { ShareButton } from '../components/ui/ShareButton';
 
 export const StudyMaterialPage: React.FC = () => {
   const [selectedClass, setSelectedClass] = useState<StudentClass | 'All'>('All');
@@ -18,6 +19,7 @@ export const StudyMaterialPage: React.FC = () => {
   const [selectedContentType, setSelectedContentType] = useState<ContentType | 'All'>('All');
   const [selectedDifficulty, setSelectedDifficulty] = useState<DifficultyLevel | 'All'>('All');
   const [sortBy, setSortBy] = useState<CatalogueSortOption>('latest');
+  const [openInNewTab, setOpenInNewTab] = useState<boolean>(true);
 
   // Debounced search state
   const [searchInput, setSearchInput] = useState('');
@@ -200,21 +202,43 @@ export const StudyMaterialPage: React.FC = () => {
             </p>
           </div>
 
-          {/* Sort Control */}
-          <div className="flex items-center gap-2 bg-white border border-[#CBD5E1] rounded-lg px-3 py-1.5 shadow-xs shrink-0 text-xs">
-            <ArrowUpDown className="w-3.5 h-3.5 text-[#1D4ED8]" />
-            <span className="text-[#64748B] font-semibold">Sort by:</span>
-            <select
-              aria-label="Sort Catalogue"
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as CatalogueSortOption)}
-              className="font-heading font-semibold text-[#0F172A] bg-transparent focus:outline-none cursor-pointer"
-            >
-              <option value="latest">Latest Published</option>
-              <option value="popular">Most Popular (Downloads)</option>
-              <option value="most_viewed">Most Viewed</option>
-              <option value="alpha">Alphabetical (A–Z)</option>
-            </select>
+          {/* Actions: Share & Sort Controls */}
+          <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+            <ShareButton
+              canonicalUrl="https://mayf.co.in/study-material"
+              title="Curriculum Study Materials (Classes 5–10)"
+              description="Indexed educational resources with direct shareable URLs for CBSE & ICSE mathematics."
+              buttonText="Share Catalogue"
+              buttonSize="sm"
+            />
+
+            {/* Sort Control */}
+            <div className="flex items-center gap-2 bg-white border border-[#CBD5E1] rounded-lg px-3 py-1.5 shadow-xs shrink-0 text-xs">
+              <ArrowUpDown className="w-3.5 h-3.5 text-[#1D4ED8]" />
+              <span className="text-[#64748B] font-semibold">Sort by:</span>
+              <select
+                aria-label="Sort Catalogue"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as CatalogueSortOption)}
+                className="font-heading font-semibold text-[#0F172A] bg-transparent focus:outline-none cursor-pointer"
+              >
+                <option value="latest">Latest Published</option>
+                <option value="popular">Most Popular (Downloads)</option>
+                <option value="most_viewed">Most Viewed</option>
+                <option value="alpha">Alphabetical (A–Z)</option>
+              </select>
+            </div>
+
+            {/* Config: Open cards in new tab */}
+            <label className="flex items-center gap-1.5 text-xs text-[#475569] font-medium cursor-pointer select-none px-2.5 py-1.5 rounded-lg border border-[#CBD5E1] bg-white hover:bg-[#F8FAFC] shadow-xs shrink-0">
+              <input
+                type="checkbox"
+                checked={openInNewTab}
+                onChange={(e) => setOpenInNewTab(e.target.checked)}
+                className="rounded border-[#CBD5E1] text-[#1D4ED8] focus:ring-[#1D4ED8] w-3.5 h-3.5 cursor-pointer"
+              />
+              <span>Open in new tab</span>
+            </label>
           </div>
         </div>
 
@@ -433,12 +457,12 @@ export const StudyMaterialPage: React.FC = () => {
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {displayedItems.map((item) => (
-                /* REAL ANCHOR TAG OPENING IN NEW TAB (target="_blank" rel="noopener noreferrer") */
+                /* Content card with configurable openInNewTab */
                 <a
                   key={item.id}
                   href={`/study/${item.slug}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  target={openInNewTab ? '_blank' : undefined}
+                  rel={openInNewTab ? 'noopener noreferrer' : undefined}
                   className="bg-white rounded-xl border border-[#E2E8F0] shadow-[0_4px_14px_-2px_rgba(29,78,216,0.05)] hover:shadow-[0_10px_25px_-2px_rgba(29,78,216,0.12)] transition-all duration-200 flex flex-col justify-between overflow-hidden group block focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]"
                 >
                   <div className="p-5">
@@ -483,8 +507,8 @@ export const StudyMaterialPage: React.FC = () => {
                       {item.accessType === 'free' ? 'Public Access' : 'Annual Pass'}
                     </span>
                     <span className="font-heading font-semibold text-[#1D4ED8] flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
-                      <span>Open in New Tab</span>
-                      <ArrowUpRight className="w-3.5 h-3.5" />
+                      <span>{openInNewTab ? 'Open in New Tab' : 'Study Resource'}</span>
+                      {openInNewTab ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowRight className="w-3.5 h-3.5" />}
                     </span>
                   </div>
                 </a>

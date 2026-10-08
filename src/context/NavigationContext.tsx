@@ -63,6 +63,7 @@ export function useNavigation() {
 
 /**
  * Reusable accessible Link component that triggers client-side routing
+ * or opens in a new tab when specifically configured.
  */
 export function Link({
   href,
@@ -70,6 +71,9 @@ export function Link({
   className = '',
   title,
   onClick,
+  target,
+  rel,
+  openInNewTab,
   'aria-label': ariaLabel,
 }: {
   href: string;
@@ -77,15 +81,31 @@ export function Link({
   className?: string;
   title?: string;
   onClick?: (e: React.MouseEvent<HTMLAnchorElement>) => void;
+  target?: string;
+  rel?: string;
+  openInNewTab?: boolean;
   'aria-label'?: string;
 }) {
   const { navigate } = useNavigation();
+
+  const isBlank = target === '_blank' || openInNewTab === true;
+  const computedTarget = isBlank ? '_blank' : target;
+  const computedRel = isBlank ? (rel || 'noopener noreferrer') : rel;
 
   const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     if (onClick) {
       onClick(e);
     }
-    if (!e.defaultPrevented && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && href.startsWith('/')) {
+    // Only perform SPA routing if NOT opening in a new tab and no modifier keys pressed
+    if (
+      !isBlank &&
+      !e.defaultPrevented &&
+      !e.metaKey &&
+      !e.ctrlKey &&
+      !e.shiftKey &&
+      !e.altKey &&
+      href.startsWith('/')
+    ) {
       e.preventDefault();
       navigate(href);
     }
@@ -94,6 +114,8 @@ export function Link({
   return (
     <a
       href={href}
+      target={computedTarget}
+      rel={computedRel}
       onClick={handleClick}
       className={className}
       title={title}

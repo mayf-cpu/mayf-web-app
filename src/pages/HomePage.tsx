@@ -10,6 +10,7 @@ import { Link, useNavigation } from '../context/NavigationContext';
 import { INITIAL_FORMULAS, INITIAL_CHAPTERS, INITIAL_SOLVED_PROBLEMS } from '../data/curriculumData';
 import { StudentClass } from '../lib/firebase/types';
 import { PromotionalBanner } from '../components/ui/PromotionalBanner';
+import { ShareButton } from '../components/ui/ShareButton';
 
 export const HomePage: React.FC = () => {
   const { navigate } = useNavigation();
@@ -78,6 +79,14 @@ export const HomePage: React.FC = () => {
                   <span>Ask AI Teacher a Doubt</span>
                 </Button>
               </Link>
+
+              <ShareButton
+                canonicalUrl="https://mayf.co.in"
+                title="Maths at Your Fingertips | School Mathematics (Classes 5 to 10)"
+                description="Master school mathematics with visual intuition, formula flashcards, step derivations, and AI teacher support."
+                buttonText="Share Platform"
+                buttonSize="md"
+              />
             </div>
 
             {/* Adjacent Proof Point */}

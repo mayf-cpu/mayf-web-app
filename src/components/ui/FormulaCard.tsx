@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Bookmark, Check, Copy, ArrowRight, Tag, BookOpen } from 'lucide-react';
+import { Bookmark, Check, Copy, ArrowRight, ArrowUpRight, Tag, BookOpen } from 'lucide-react';
 import katex from 'katex';
 import { FormulaItem } from '../../lib/firebase/types';
 import { Badge } from './Badge';
@@ -10,16 +10,19 @@ import { useAuth } from '../../context/AuthContext';
 export interface FormulaCardProps {
   formula: FormulaItem;
   showDetailsLink?: boolean;
+  openInNewTab?: boolean;
 }
 
 export const FormulaCard: React.FC<FormulaCardProps> = ({
   formula,
   showDetailsLink = true,
+  openInNewTab = false,
 }) => {
   const { savedItemIds, toggleSavedItem } = useAuth();
   const { navigate } = useNavigation();
   const [copied, setCopied] = useState(false);
   const isSaved = savedItemIds.includes(formula.id);
+  const targetUrl = `/formula/${formula.slug}`;
 
   const renderedLatex = useMemo(() => {
     if (!formula.latexFormula) return null;
@@ -53,7 +56,11 @@ export const FormulaCard: React.FC<FormulaCardProps> = ({
     if (target.closest('button') || target.closest('a')) {
       return;
     }
-    navigate(`/formula/${formula.slug}`);
+    if (openInNewTab) {
+      window.open(targetUrl, '_blank', 'noopener,noreferrer');
+    } else {
+      navigate(targetUrl);
+    }
   };
 
   return (
@@ -104,7 +111,8 @@ export const FormulaCard: React.FC<FormulaCardProps> = ({
         {/* Formula Title */}
         <h3 className="font-heading font-bold text-base text-slate-900 mb-2 group-hover:text-blue-700 transition-colors leading-snug">
           <Link
-            href={`/formula/${formula.slug}`}
+            href={targetUrl}
+            openInNewTab={openInNewTab}
             className="hover:underline focus:outline-hidden"
           >
             {formula.title}
@@ -170,8 +178,8 @@ export const FormulaCard: React.FC<FormulaCardProps> = ({
       {showDetailsLink && (
         <div className="border-t border-slate-100 px-6 py-2.5 bg-slate-50/70 flex items-center justify-between text-xs font-semibold text-blue-700 group-hover:bg-blue-50/40 transition-colors">
           <span className="inline-flex items-center gap-1.5 group-hover:translate-x-0.5 transition-transform">
-            <span>Explore formula document & derivation</span>
-            <ArrowRight className="w-3.5 h-3.5" />
+            <span>{openInNewTab ? 'Explore in new tab' : 'Explore formula document & derivation'}</span>
+            {openInNewTab ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowRight className="w-3.5 h-3.5" />}
           </span>
           <span className="text-[10px] uppercase font-bold text-slate-400 group-hover:text-blue-600">
             /formula/{formula.slug}

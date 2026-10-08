@@ -15,6 +15,8 @@ import { StudyMaterialPage } from './pages/StudyMaterialPage';
 import { StudyChapterPage } from './pages/StudyChapterPage';
 import { FormulaDeckPage } from './pages/FormulaDeckPage';
 import { FormulaDetailPage } from './pages/FormulaDetailPage';
+import { CoursesCatalogPage } from './pages/CoursesCatalogPage';
+import { CourseDetailPage } from './pages/CourseDetailPage';
 import { AiTeacherPage } from './pages/AiTeacherPage';
 import { AnnualPassPage } from './pages/AnnualPassPage';
 import { CheckoutPage } from './pages/CheckoutPage';
@@ -25,8 +27,7 @@ import { DashboardDownloadsPage } from './pages/DashboardDownloadsPage';
 import { DashboardSavedPage } from './pages/DashboardSavedPage';
 import { DashboardAiHistoryPage } from './pages/DashboardAiHistoryPage';
 import { SearchPage } from './pages/SearchPage';
-import { AdminImportSyncPage } from './pages/AdminImportSyncPage';
-import { AdminPaymentSettingsPage } from './pages/AdminPaymentSettingsPage';
+import { AdminPortalPage } from './pages/AdminPortalPage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { TermsPage } from './pages/TermsPage';
 import { RefundPolicyPage } from './pages/RefundPolicyPage';
@@ -46,6 +47,10 @@ function AppRouter() {
       return <FormulaDeckPage />;
     case '/formula/:slug':
       return <FormulaDetailPage />;
+    case '/courses':
+      return <CoursesCatalogPage />;
+    case '/course/:slug':
+      return <CourseDetailPage />;
     case '/ai-teacher':
       return <AiTeacherPage />;
     case '/annual-pass':
@@ -69,10 +74,8 @@ function AppRouter() {
       return <DashboardOverviewPage />;
     case '/search':
       return <SearchPage />;
-    case '/admin/import-sync':
-      return <AdminImportSyncPage />;
-    case '/admin/payments':
-      return <AdminPaymentSettingsPage />;
+    case '/admin-portal':
+      return <AdminPortalPage />;
     case '/privacy':
       return <PrivacyPage />;
     case '/terms':

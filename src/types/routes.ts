@@ -1,3 +1,5 @@
+import { isAdminPath, getAdminSectionFromPath } from '../config/adminConfig';
+
 /**
  * Route definitions and parameter types for Maths at Your Fingertips (MAYF).
  */
@@ -8,6 +10,8 @@ export type AppRoute =
   | '/study/:slug'
   | '/formula-deck'
   | '/formula/:slug'
+  | '/courses'
+  | '/course/:slug'
   | '/ai-teacher'
   | '/annual-pass'
   | '/checkout'
@@ -25,11 +29,10 @@ export type AppRoute =
   | '/dashboard/courses'
   | '/dashboard/notifications'
   | '/search'
-  | '/admin/import-sync'
-  | '/admin/payments'
   | '/privacy'
   | '/terms'
-  | '/refund-policy';
+  | '/refund-policy'
+  | '/admin-portal';
 
 export interface RouteMatch {
   route: AppRoute | 'not-found';
@@ -42,11 +45,23 @@ export function matchCurrentPath(pathname: string): RouteMatch {
   const cleanPath = pathname.replace(/\/+$/, '') || '/';
   const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
 
-  // Exact static routes
+  // Secret Admin Portal Entry Path (Configured via ADMIN_ENTRY_PATH env var)
+  if (isAdminPath(cleanPath)) {
+    const section = getAdminSectionFromPath(cleanPath);
+    return {
+      route: '/admin-portal',
+      path: cleanPath,
+      params: { section },
+      searchParams,
+    };
+  }
+
+  // Exact static routes (Public routes ONLY - no admin paths)
   const staticRoutes: AppRoute[] = [
     '/',
     '/study-material',
     '/formula-deck',
+    '/courses',
     '/ai-teacher',
     '/annual-pass',
     '/checkout',
@@ -64,8 +79,6 @@ export function matchCurrentPath(pathname: string): RouteMatch {
     '/dashboard/courses',
     '/dashboard/notifications',
     '/search',
-    '/admin/import-sync',
-    '/admin/payments',
     '/privacy',
     '/terms',
     '/refund-policy',
@@ -98,6 +111,17 @@ export function matchCurrentPath(pathname: string): RouteMatch {
       route: '/formula/:slug',
       path: cleanPath,
       params: { slug: decodeURIComponent(formulaMatch[1]) },
+      searchParams,
+    };
+  }
+
+  // Dynamic /course/:slug
+  const courseMatch = cleanPath.match(/^\/course\/([^/]+)$/);
+  if (courseMatch) {
+    return {
+      route: '/course/:slug',
+      path: cleanPath,
+      params: { slug: decodeURIComponent(courseMatch[1]) },
       searchParams,
     };
   }

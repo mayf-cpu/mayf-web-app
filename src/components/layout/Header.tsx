@@ -11,10 +11,9 @@ export const Header: React.FC = () => {
   const navLinks = [
     { label: 'Study Material', href: '/study-material' },
     { label: 'Formula Deck', href: '/formula-deck' },
+    { label: 'Courses', href: '/courses' },
     { label: 'AI Teacher', href: '/ai-teacher' },
     { label: 'Annual Pass', href: '/annual-pass' },
-    { label: 'Payments', href: '/admin/payments' },
-    { label: 'Import & Sync', href: '/admin/import-sync' },
   ];
 
   return (
