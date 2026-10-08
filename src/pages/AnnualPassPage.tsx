@@ -83,7 +83,24 @@ export const AnnualPassPage: React.FC = () => {
       <SeoHead
         title={pageTitle}
         description={pageDesc}
-        canonicalUrl={canonicalUrl}
+        canonicalUrl="/annual-pass"
+        breadcrumbs={[
+          { name: 'Home', item: '/' },
+          { name: 'Annual Pass', item: '/annual-pass' },
+        ]}
+        structuredData={{
+          '@context': 'https://schema.org',
+          '@type': 'Product',
+          name: 'MAYF All-Class Annual Pass',
+          description: pageDesc,
+          offers: {
+            '@type': 'Offer',
+            price: '999',
+            priceCurrency: 'INR',
+            availability: 'https://schema.org/InStock',
+            url: 'https://mayf.co.in/annual-pass',
+          },
+        }}
       />
 
       <div className="space-y-10 max-w-4xl mx-auto">

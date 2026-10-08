@@ -28,6 +28,7 @@ import { homepageLayoutService } from './src/lib/layout/homepageLayoutService';
 import { siteSettingsService } from './src/lib/settings/siteSettingsService';
 import { adSenseService } from './src/lib/adsense/adsenseService';
 import { broadcastService } from './src/lib/broadcasts/broadcastService';
+import { sitemapService } from './src/lib/seo/sitemapService';
 
 dotenv.config();
 
@@ -71,12 +72,24 @@ app.use((req, res, next) => {
   next();
 });
 
-// Explicit robots.txt exclusion for crawlers
-app.get('/robots.txt', (_req: Request, res: Response) => {
+// Authoritative robots.txt directives (excludes dashboard, checkout, account, admin, private APIs, downloads)
+app.get('/robots.txt', (req: Request, res: Response) => {
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'mayf.co.in';
+  const baseUrl = process.env.PUBLIC_APP_URL || `${protocol}://${host}`;
   res.type('text/plain');
-  res.send(
-    `User-agent: *\nDisallow: ${ADMIN_ENTRY_PATH}/\nDisallow: /api/admin/\nDisallow: /*?*preview_iab=\n\n# Public Sitemaps\nSitemap: https://mayf.co.in/sitemap.xml\n`
-  );
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.send(sitemapService.generateRobotsTxt(baseUrl, ADMIN_ENTRY_PATH));
+});
+
+// Dynamic XML Sitemap for public study materials, formula pages, courses, categories, and hubs
+app.get('/sitemap.xml', (req: Request, res: Response) => {
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'mayf.co.in';
+  const baseUrl = process.env.PUBLIC_APP_URL || `${protocol}://${host}`;
+  res.type('application/xml');
+  res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+  res.send(sitemapService.generateSitemapXml(baseUrl));
 });
 
 // Extend Express Request type for authenticated context

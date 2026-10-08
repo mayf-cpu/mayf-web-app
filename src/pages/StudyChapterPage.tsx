@@ -73,7 +73,7 @@ export const StudyChapterPage: React.FC = () => {
         <SeoHead
           title="Resource Not Found | Maths at Your Fingertips"
           description="The requested mathematics study module was not found in our catalogue."
-          canonicalUrl="https://mayf.co.in/study-material"
+          noindex={true}
         />
         <div className="max-w-md mx-auto py-20 text-center space-y-4">
           <div className="w-14 h-14 rounded-full bg-[#EFF6FF] text-[#1D4ED8] flex items-center justify-center mx-auto">
@@ -153,6 +153,12 @@ export const StudyChapterPage: React.FC = () => {
         canonicalUrl={canonicalUrl}
         ogType="article"
         ogImage={activeItem.socialImage || activeItem.thumbnail}
+        breadcrumbs={[
+          { name: 'Home', item: '/' },
+          { name: 'Study Material', item: '/study-material' },
+          { name: activeItem.categoryId || 'Curriculum', item: `/study-material?category=${encodeURIComponent(activeItem.categoryId || '')}` },
+          { name: activeItem.title, item: `/study/${activeItem.slug}` },
+        ]}
         structuredData={structuredData}
       />
 

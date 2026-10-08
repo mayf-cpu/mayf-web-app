@@ -3,10 +3,20 @@ import { RotateCcw, ShieldCheck, CheckCircle2, Clock, Mail } from 'lucide-react'
 import { SharedLayout } from '../components/layout/SharedLayout';
 import { Button } from '../components/ui/Button';
 import { Link } from '../context/NavigationContext';
+import { SeoHead } from '../components/common/SeoHead';
 
 export const RefundPolicyPage: React.FC = () => {
   return (
     <SharedLayout>
+      <SeoHead
+        title="100% Refund Policy & Guarantee"
+        description="Maths at Your Fingertips 7-day unconditional refund policy for Annual Passes and digital courses."
+        canonicalUrl="/refund-policy"
+        breadcrumbs={[
+          { name: 'Home', item: '/' },
+          { name: 'Refund Policy', item: '/refund-policy' },
+        ]}
+      />
       <div className="max-w-3xl mx-auto space-y-6">
         <div>
           <div className="flex items-center gap-2 text-xs font-heading font-semibold text-[#00687A] mb-1">

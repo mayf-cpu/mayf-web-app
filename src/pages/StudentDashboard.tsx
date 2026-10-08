@@ -52,6 +52,7 @@ import {
   X,
 } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
+import { SeoHead } from '../components/common/SeoHead';
 import { useAuth } from '../context/AuthContext';
 import { useNavigation, Link } from '../context/NavigationContext';
 import { Button } from '../components/ui/Button';
@@ -433,6 +434,11 @@ export const StudentDashboard: React.FC = () => {
 
   return (
     <SharedLayout>
+      <SeoHead
+        title="Student Learning Dashboard"
+        description="Private student dashboard and learning activity tracker."
+        noindex={true}
+      />
       <div className="space-y-6 max-w-7xl mx-auto pb-16">
         
         {/* ========================================================= */}

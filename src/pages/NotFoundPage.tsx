@@ -1,6 +1,7 @@
 import React from 'react';
 import { HelpCircle, ArrowLeft, Home, Search, Layers } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
+import { SeoHead } from '../components/common/SeoHead';
 import { Button } from '../components/ui/Button';
 import { Link, useNavigation } from '../context/NavigationContext';
 
@@ -9,6 +10,11 @@ export const NotFoundPage: React.FC = () => {
 
   return (
     <SharedLayout>
+      <SeoHead
+        title="Page Not Found (404)"
+        description="The requested mathematics educational resource could not be found in our syllabus."
+        noindex={true}
+      />
       <div className="max-w-md mx-auto text-center py-12 sm:py-20 space-y-6">
         
         {/* Mathematical Glyph Graphic */}

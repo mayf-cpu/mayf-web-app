@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Lock, Mail, Smartphone, ArrowRight, ShieldCheck, CheckCircle2, BookOpen } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
+import { SeoHead } from '../components/common/SeoHead';
 import { Button } from '../components/ui/Button';
 import { useAuth } from '../context/AuthContext';
 import { useNavigation, Link } from '../context/NavigationContext';
@@ -21,6 +22,11 @@ export const LoginPage: React.FC = () => {
   if (user) {
     return (
       <SharedLayout>
+        <SeoHead
+          title="Account Sign In"
+          description="Student and parent authentication portal"
+          noindex={true}
+        />
         <div className="max-w-md mx-auto text-center bg-white rounded-xl border border-[#E2E8F0] p-8 shadow-xs space-y-4 my-8">
           <div className="w-12 h-12 rounded-full bg-[#EFF6FF] text-[#1D4ED8] font-bold text-xl flex items-center justify-center mx-auto">
             {user.displayName.charAt(0)}
@@ -91,6 +97,11 @@ export const LoginPage: React.FC = () => {
 
   return (
     <SharedLayout>
+      <SeoHead
+        title="Account Sign In & Student Access"
+        description="Secure authentication portal for students and parents."
+        noindex={true}
+      />
       <div className="max-w-md mx-auto my-6 sm:my-10 space-y-4">
         
         {/* IMPORTANT LOGIN RULE BANNER */}

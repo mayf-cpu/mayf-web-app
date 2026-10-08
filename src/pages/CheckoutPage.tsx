@@ -24,6 +24,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
+import { SeoHead } from '../components/common/SeoHead';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { useAuth } from '../context/AuthContext';
@@ -396,6 +397,11 @@ export const CheckoutPage: React.FC = () => {
 
   return (
     <SharedLayout>
+      <SeoHead
+        title="Secure Checkout & Annual Pass Activation"
+        description="Encrypted and PCI-DSS compliant checkout for student Annual Pass."
+        noindex={true}
+      />
       <div className="max-w-4xl mx-auto space-y-8">
         
         {/* Title & Security Header */}

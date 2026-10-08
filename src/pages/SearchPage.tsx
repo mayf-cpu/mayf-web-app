@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, BookOpen, Layers, ArrowRight, X, Sparkles } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
+import { SeoHead } from '../components/common/SeoHead';
 import { Link } from '../context/NavigationContext';
 import { AdSensePlacement } from '../components/adsense/AdSensePlacement';
 import { searchService } from '../lib/search/lightweightSearchService';
@@ -47,6 +48,16 @@ export const SearchPage: React.FC = () => {
 
   return (
     <SharedLayout>
+      <SeoHead
+        title="Search Mathematical Syllabus & Formulas"
+        description="Search Class 5–10 math formulas, geometry theorems, and solved exemplars."
+        canonicalUrl="/search"
+        noindex={Boolean(query.trim())}
+        breadcrumbs={[
+          { name: 'Home', item: '/' },
+          { name: 'Search', item: '/search' },
+        ]}
+      />
       <div className="max-w-3xl mx-auto space-y-8">
         
         {/* Title */}

@@ -175,10 +175,25 @@ export const StudyMaterialPage: React.FC = () => {
   return (
     <SharedLayout>
       <SeoHead
-        title="Class 5–10 Mathematics Public Catalogue"
+        title="Class 5–10 Mathematics Public Catalogue | Maths at Your Fingertips"
         description="Browse worksheets, PDF formula sheets, chapter courses, mock test papers, and video breakdowns for CBSE & ICSE mathematics."
-        canonicalUrl="https://mayf.co.in/study-material"
+        canonicalUrl="/study-material"
         ogType="website"
+        breadcrumbs={[
+          { name: 'Home', item: '/' },
+          { name: 'Study Material', item: '/study-material' },
+        ]}
+        structuredData={{
+          '@context': 'https://schema.org',
+          '@type': 'CollectionPage',
+          name: 'Class 5–10 Mathematics Study Material & Resources',
+          description: 'Official catalogue of CBSE & ICSE math formulas, worksheets, and chapter blueprints.',
+          publisher: {
+            '@type': 'Organization',
+            name: 'Maths at Your Fingertips',
+            url: 'https://mayf.co.in',
+          },
+        }}
       />
 
       <div className="space-y-8">

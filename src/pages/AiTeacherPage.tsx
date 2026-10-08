@@ -316,6 +316,23 @@ export const AiTeacherPage: React.FC = () => {
         title={pageTitle}
         description={pageDesc}
         canonicalUrl={canonicalUrl}
+        breadcrumbs={[
+          { name: 'Home', item: '/' },
+          { name: 'AI Teacher', item: '/ai-teacher' },
+        ]}
+        structuredData={{
+          '@context': 'https://schema.org',
+          '@type': 'WebApplication',
+          name: 'MAYF AI Mathematics Teacher',
+          applicationCategory: 'EducationalApplication',
+          operatingSystem: 'All',
+          description: pageDesc,
+          offers: {
+            '@type': 'Offer',
+            price: '0',
+            priceCurrency: 'INR',
+          },
+        }}
       />
 
       <div className="max-w-4xl mx-auto space-y-5">

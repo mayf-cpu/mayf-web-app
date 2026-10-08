@@ -173,6 +173,21 @@ export const FormulaDeckPage: React.FC = () => {
         title={pageTitle}
         description={pageDesc}
         canonicalUrl={canonicalUrl}
+        breadcrumbs={[
+          { name: 'Home', item: '/' },
+          { name: 'Formula Deck', item: '/formula-deck' },
+        ]}
+        structuredData={{
+          '@context': 'https://schema.org',
+          '@type': 'CollectionPage',
+          name: 'Class 5–10 Mathematics Formula Deck & Cheat Sheets',
+          description: pageDesc,
+          publisher: {
+            '@type': 'Organization',
+            name: 'Maths at Your Fingertips',
+            url: 'https://mayf.co.in',
+          },
+        }}
       />
 
       <div className="space-y-6 max-w-7xl mx-auto">

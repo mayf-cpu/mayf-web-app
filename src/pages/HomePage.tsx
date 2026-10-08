@@ -35,6 +35,7 @@ import { INITIAL_FORMULAS, INITIAL_CHAPTERS, INITIAL_SOLVED_PROBLEMS } from '../
 import { StudentClass } from '../lib/firebase/types';
 import { PromotionalBanner } from '../components/ui/PromotionalBanner';
 import { ShareButton } from '../components/ui/ShareButton';
+import { SeoHead } from '../components/common/SeoHead';
 import { AdSensePlacement } from '../components/adsense/AdSensePlacement';
 import { useHomepageLayout } from '../lib/layout/useHomepageLayout';
 import {
@@ -1005,6 +1006,26 @@ export const HomePage: React.FC = () => {
 
   return (
     <SharedLayout>
+      <SeoHead
+        title="Maths at Your Fingertips | Class 5–10 CBSE & ICSE Math"
+        description="The authoritative digital math companion for Class 5–10 students. Master formulas, chapter materials, and get step-by-step guidance from the AI Teacher."
+        canonicalUrl="/"
+        ogType="website"
+        breadcrumbs={[{ name: 'Home', item: '/' }]}
+        structuredData={{
+          '@context': 'https://schema.org',
+          '@type': 'EducationalOrganization',
+          name: 'Maths at Your Fingertips',
+          url: 'https://mayf.co.in',
+          description: 'The authoritative digital math companion for Class 5–10 students.',
+          offers: {
+            '@type': 'Offer',
+            price: '999',
+            priceCurrency: 'INR',
+            name: 'Annual Pass',
+          },
+        }}
+      />
       <div className="space-y-12 md:space-y-20">
         {/* Authoritative Admin Promotional Banner for Homepage */}
         <PromotionalBanner placement="homepage" />

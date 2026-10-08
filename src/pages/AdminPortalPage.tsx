@@ -27,6 +27,7 @@ import { AdminSettingsSection } from '../components/admin/sections/AdminSettings
 
 import { Key, ShieldAlert, ArrowLeft, Lock } from 'lucide-react';
 import { Button } from '../components/ui/Button';
+import { SeoHead } from '../components/common/SeoHead';
 
 export const AdminPortalPage: React.FC = () => {
   const { user, entitlements, signInWithGoogle, loading: authLoading } = useAuth();
@@ -63,6 +64,11 @@ export const AdminPortalPage: React.FC = () => {
   if (!isAuthorized) {
     return (
       <div className="min-h-screen bg-[#F7F9FB] flex flex-col justify-between text-[#191C1E] antialiased">
+        <SeoHead
+          title="Not Found"
+          description="The requested page could not be found."
+          noindex={true}
+        />
         <header className="h-16 border-b border-slate-200 bg-white/80 backdrop-blur px-6 flex items-center justify-between">
           <button
             onClick={() => navigate('/')}
@@ -169,8 +175,15 @@ export const AdminPortalPage: React.FC = () => {
   };
 
   return (
-    <AdminLayout currentSection={activeSection} onSelectSection={handleSelectSection}>
-      {renderCurrentSection()}
-    </AdminLayout>
+    <>
+      <SeoHead
+        title="System Administration"
+        description="Protected administration portal"
+        noindex={true}
+      />
+      <AdminLayout currentSection={activeSection} onSelectSection={handleSelectSection}>
+        {renderCurrentSection()}
+      </AdminLayout>
+    </>
   );
 };

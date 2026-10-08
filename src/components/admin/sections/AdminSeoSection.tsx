@@ -103,11 +103,28 @@ export const AdminSeoSection: React.FC = () => {
 
           <pre className="p-4 rounded-xl bg-slate-900 text-emerald-300 font-mono text-xs overflow-x-auto leading-relaxed border border-slate-800">
 {`User-agent: *
-Disallow: ${adminPath}/
-Disallow: /api/admin/
-Disallow: /*?*preview_iab=
 
-# Public Indexable Resources
+# Excluded: Private User States & Accounts
+Disallow: /dashboard/
+Disallow: /checkout/
+Disallow: /login/
+Disallow: /account/
+
+# Excluded: Admin & Management Portal
+Disallow: ${adminPath}/
+Disallow: /admin-portal/
+Disallow: /admin/
+
+# Excluded: Private APIs & Webhooks
+Disallow: /api/
+Disallow: /api/admin/
+Disallow: /api/payments/
+
+# Excluded: Temporary Downloads & URLs
+Disallow: /api/download/
+Disallow: /download/
+
+# Allowed: Public Resources
 Allow: /
 Allow: /study-material
 Allow: /study/
@@ -115,15 +132,22 @@ Allow: /formula-deck
 Allow: /formula/
 Allow: /courses
 Allow: /course/
-Allow: /ai-teacher
 Allow: /annual-pass
 
 Sitemap: https://mayf.co.in/sitemap.xml`}
           </pre>
 
-          <p className="text-[11px] text-slate-500">
-            Served dynamically via Express server handler in <code className="font-mono text-slate-700">server.ts</code>.
-          </p>
+          <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
+            <span>Served dynamically via <code className="font-mono text-slate-700">server.ts</code></span>
+            <a
+              href="/sitemap.xml"
+              target="_blank"
+              rel="noreferrer"
+              className="text-blue-600 hover:underline font-semibold font-mono"
+            >
+              View /sitemap.xml ↗
+            </a>
+          </div>
         </div>
       </div>
     </div>

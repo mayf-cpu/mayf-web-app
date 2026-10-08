@@ -1,10 +1,20 @@
 import React from 'react';
 import { ShieldCheck, Lock, CheckCircle2 } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
+import { SeoHead } from '../components/common/SeoHead';
 
 export const PrivacyPage: React.FC = () => {
   return (
     <SharedLayout>
+      <SeoHead
+        title="Privacy Policy & Student Data Protection"
+        description="Learn how Maths at Your Fingertips protects minor student data under the DPDP Act 2023 with strict child safety guidelines."
+        canonicalUrl="/privacy"
+        breadcrumbs={[
+          { name: 'Home', item: '/' },
+          { name: 'Privacy Policy', item: '/privacy' },
+        ]}
+      />
       <div className="max-w-3xl mx-auto space-y-6">
         <div>
           <div className="flex items-center gap-2 text-xs font-heading font-semibold text-[#00687A] mb-1">

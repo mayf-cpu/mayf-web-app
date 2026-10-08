@@ -96,6 +96,11 @@ export const CourseDetailPage: React.FC = () => {
         title={pageTitle}
         description={pageDesc}
         canonicalUrl={canonicalUrl}
+        breadcrumbs={[
+          { name: 'Home', item: '/' },
+          { name: 'Courses', item: '/courses' },
+          { name: course.title, item: `/course/${course.slug}` },
+        ]}
         structuredData={structuredData}
       />
 

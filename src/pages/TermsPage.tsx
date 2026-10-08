@@ -1,10 +1,20 @@
 import React from 'react';
 import { FileText, CheckCircle2 } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
+import { SeoHead } from '../components/common/SeoHead';
 
 export const TermsPage: React.FC = () => {
   return (
     <SharedLayout>
+      <SeoHead
+        title="Terms of Service & Usage Guidelines"
+        description="Official student and parent terms of service for Maths at Your Fingertips CBSE & ICSE learning platform."
+        canonicalUrl="/terms"
+        breadcrumbs={[
+          { name: 'Home', item: '/' },
+          { name: 'Terms of Service', item: '/terms' },
+        ]}
+      />
       <div className="max-w-3xl mx-auto space-y-6">
         <div>
           <div className="flex items-center gap-2 text-xs font-heading font-semibold text-[#00687A] mb-1">

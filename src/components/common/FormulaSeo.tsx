@@ -84,12 +84,59 @@ export const FormulaSeo: React.FC<FormulaSeoProps> = ({ formula }) => {
 
     scriptTag.textContent = JSON.stringify(structuredData);
 
+    // BreadcrumbList JSON-LD
+    const breadcrumbScriptId = 'formula-breadcrumbs-jsonld';
+    let breadcrumbScript = document.getElementById(breadcrumbScriptId) as HTMLScriptElement | null;
+    if (!breadcrumbScript) {
+      breadcrumbScript = document.createElement('script');
+      breadcrumbScript.id = breadcrumbScriptId;
+      breadcrumbScript.type = 'application/ld+json';
+      document.head.appendChild(breadcrumbScript);
+    }
+
+    const breadcrumbsData = {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        {
+          '@type': 'ListItem',
+          position: 1,
+          name: 'Home',
+          item: window.location.origin,
+        },
+        {
+          '@type': 'ListItem',
+          position: 2,
+          name: 'Formula Deck',
+          item: `${window.location.origin}/formula-deck`,
+        },
+        {
+          '@type': 'ListItem',
+          position: 3,
+          name: formula.category,
+          item: `${window.location.origin}/formula-deck?category=${encodeURIComponent(formula.category)}`,
+        },
+        {
+          '@type': 'ListItem',
+          position: 4,
+          name: formula.title,
+          item: currentUrl,
+        },
+      ],
+    };
+
+    breadcrumbScript.textContent = JSON.stringify(breadcrumbsData);
+
     return () => {
       // Revert title on unmount
       document.title = 'Maths at Your Fingertips | Class 5–10 CBSE & ICSE Math';
       const existingScript = document.getElementById(scriptId);
       if (existingScript) {
         existingScript.remove();
+      }
+      const existingBc = document.getElementById(breadcrumbScriptId);
+      if (existingBc) {
+        existingBc.remove();
       }
     };
   }, [formula]);
