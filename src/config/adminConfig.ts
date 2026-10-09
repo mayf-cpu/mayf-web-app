@@ -176,7 +176,7 @@ export const ADMIN_SECTIONS: AdminSectionMeta[] = [
     id: 'settings',
     title: 'Settings',
     category: 'Platform',
-    description: 'Environment variables, Cloudflare Access status, security, and maintenance mode',
+    description: 'Environment variables, security policies, token revocation, and maintenance mode',
     iconName: 'Settings',
   },
 ];

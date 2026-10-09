@@ -140,8 +140,7 @@ app.use((req, res, next) => {
             hostname === '127.0.0.1' ||
             hostname === 'mayf.co.in' ||
             hostname.endsWith('.mayf.co.in') ||
-            hostname.endsWith('.run.app') ||
-            hostname.endsWith('.cloudflareaccess.com');
+            hostname.endsWith('.run.app');
 
           if (!isAllowedHost) {
             console.warn(`[Security Alert] CSRF Origin Mismatch blocked: ${origin} on ${req.method} ${req.path}`);
@@ -250,7 +249,7 @@ async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextF
 /**
  * Authoritative Admin Role Gatekeeper Middleware
  * DEFENCE IN DEPTH ARCHITECTURE:
- * 1. Cloudflare Access edge token header compatibility.
+ * 1. Direct Firebase Authentication & ID token cryptographic signature verification.
  * 2. Strict X-Robots-Tag: noindex, nofollow response header.
  * 3. Verified custom claims: admin=true / superAdmin=true.
  * 4. Unauthorized users receive 404 Not Found without disclosing administrative information.
@@ -1553,6 +1552,31 @@ app.post('/api/admin/set-claims', requireAuth, requireSuperAdmin, async (req: Au
 // -------------------------------------------------------------
 // Administration Management APIs (Require strict RBAC and claims)
 // -------------------------------------------------------------
+/**
+ * Authoritative Admin Access Verification
+ * Verifies Firebase ID Token, checks custom claims (admin/superAdmin),
+ * and returns authorization status. Rejects students with 403.
+ */
+app.get('/api/admin/verify-access', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  if (!req.userAuth || (req.userAuth.role !== 'admin' && req.userAuth.role !== 'superAdmin')) {
+    return res.status(403).json({
+      success: false,
+      authorized: false,
+      error: 'Forbidden: You do not have administrator permissions.',
+      role: req.userAuth?.role || 'student',
+    });
+  }
+
+  return res.json({
+    success: true,
+    authorized: true,
+    role: req.userAuth.role,
+    email: req.userAuth.email,
+    uid: req.userAuth.uid,
+  });
+});
+
 app.get('/api/admin/metrics', requireAuth, requireAdmin, (_req: Request, res: Response) => {
   return res.json({
     totalStudents: 12480,

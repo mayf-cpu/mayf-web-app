@@ -249,9 +249,6 @@ class AdminService {
       try {
         const token = await auth.currentUser.getIdToken();
         headers['Authorization'] = `Bearer ${token}`;
-        if (auth.currentUser.email) {
-          headers['cf-access-authenticated-user-email'] = auth.currentUser.email;
-        }
       } catch (e) {
         console.warn('[AdminService] Could not retrieve ID token:', e);
       }
@@ -277,6 +274,23 @@ class AdminService {
     }
   }
 
+  /**
+   * Authoritatively verify admin access with the backend using Firebase ID token
+   */
+  async verifyAdminAccess(): Promise<{ authorized: boolean; role?: string; email?: string; error?: string }> {
+    try {
+      const headers = await this.getAuthHeaders();
+      const res = await fetch('/api/admin/verify-access', { headers });
+      const data = await res.json();
+      if (res.ok && data.authorized) {
+        return { authorized: true, role: data.role, email: data.email };
+      }
+      return { authorized: false, error: data.error || 'Access denied' };
+    } catch (err: any) {
+      return { authorized: false, error: err?.message || 'Verification failure' };
+    }
+  }
+
   async getMetrics(): Promise<AdminMetrics> {
     try {
       const headers = await this.getAuthHeaders();
@@ -293,7 +307,7 @@ class AdminService {
         totalChapters: 64,
         activeCoupons: 5,
         serverStatus: 'healthy',
-        cloudflareAccessActive: true,
+        cloudflareAccessActive: false,
         edgeVerifiedEmail: '2026vivekkushwah@gmail.com',
         uptimeHours: 342,
       };

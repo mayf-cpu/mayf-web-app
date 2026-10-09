@@ -130,10 +130,10 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
         {/* Top Badges & Operator Profile */}
         <div className="flex items-center gap-3">
-          {/* Cloudflare Edge Tag */}
+          {/* Firebase Auth Protection Badge */}
           <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-800 border border-slate-700 text-[11px] font-mono text-slate-300">
-            <Cloud className="w-3.5 h-3.5 text-blue-400" />
-            <span>CF-Access Ready</span>
+            <Lock className="w-3.5 h-3.5 text-blue-400" />
+            <span>Firebase Auth Protected</span>
           </div>
 
           {/* Admin Role Claim Badge */}

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigation } from '../context/NavigationContext';
-import { AdminSection, getAdminSectionFromPath, getAdminUrl } from '../config/adminConfig';
+import { AdminSection, getAdminUrl } from '../config/adminConfig';
 import { AdminLayout } from '../components/admin/AdminLayout';
+import { adminService } from '../services/adminService';
 
 // 19 Admin Sections
 import { AdminDashboardSection } from '../components/admin/sections/AdminDashboardSection';
@@ -25,103 +26,121 @@ import { AdminImportSection } from '../components/admin/sections/AdminImportSect
 import { AdminAnalyticsSection } from '../components/admin/sections/AdminAnalyticsSection';
 import { AdminSettingsSection } from '../components/admin/sections/AdminSettingsSection';
 
-import { Key, ShieldAlert, ArrowLeft, Lock, ShieldCheck, Mail, Sparkles, CheckCircle2 } from 'lucide-react';
+import { ShieldAlert, ArrowLeft, Lock, ShieldCheck, LogOut, ArrowRight } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { SeoHead } from '../components/common/SeoHead';
 import { LoadingSpinner } from '../components/ui/LoadingState';
 
 export const AdminPortalPage: React.FC = () => {
-  const { user, firebaseUser, entitlements, signInWithGoogle, loginAsOperator, loginWithEmail, loading: authLoading } = useAuth();
+  const { user, firebaseUser, signInWithGoogle, logout, loading: authLoading } = useAuth();
   const { currentRoute, navigate } = useNavigation();
-  const [authenticating, setAuthenticating] = useState(false);
+
+  const [verifyingServer, setVerifyingServer] = useState(false);
+  const [serverAuthorized, setServerAuthorized] = useState<boolean | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [manualEmail, setManualEmail] = useState('ntnagrawal146@gmail.com');
+  const [authenticating, setAuthenticating] = useState(false);
 
   // Determine which section is currently active
   const activeSection: AdminSection = (currentRoute.params?.section as AdminSection) || 'dashboard';
 
-  // Extract email from multiple authoritative client sources
-  const activeEmail = (
-    user?.email ||
-    firebaseUser?.email ||
-    (typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('mayf_user_profile') || '{}')?.email : '') ||
-    ''
-  ).toLowerCase().trim();
-
-  const authorizedEmails = [
-    'ntnagrawal146@gmail.com',
-    '2026vivekkushwah@gmail.com',
-    'admin@mayf.co.in',
-  ];
-
-  const isAuthorizedEmail = authorizedEmails.includes(activeEmail);
-
-  // Check admin authorization via Firebase custom claims or verified owner email
-  const isAuthorized =
-    Boolean(entitlements.isAdmin || entitlements.isSuperAdmin) || isAuthorizedEmail;
-
-  // Auto-upgrade entitlements if authorized email is present
+  // Server-side verification on auth state change
   useEffect(() => {
-    if (isAuthorizedEmail && (!entitlements.isAdmin || !entitlements.isSuperAdmin)) {
-      loginAsOperator(activeEmail || 'ntnagrawal146@gmail.com');
+    let isMounted = true;
+
+    async function checkServerAuthorization() {
+      if (!user && !firebaseUser) {
+        setServerAuthorized(null);
+        setVerifyingServer(false);
+        return;
+      }
+
+      setVerifyingServer(true);
+      setAuthError(null);
+
+      try {
+        const result = await adminService.verifyAdminAccess();
+        if (isMounted) {
+          if (result.authorized) {
+            setServerAuthorized(true);
+          } else {
+            setServerAuthorized(false);
+            setAuthError(result.error || 'This user does not possess verified administrator custom claims.');
+          }
+        }
+      } catch (err: any) {
+        if (isMounted) {
+          setServerAuthorized(false);
+          setAuthError(err?.message || 'Failed to verify administrative authorization with server.');
+        }
+      } finally {
+        if (isMounted) {
+          setVerifyingServer(false);
+        }
+      }
     }
-  }, [isAuthorizedEmail, activeEmail, entitlements.isAdmin, entitlements.isSuperAdmin]);
+
+    if (!authLoading) {
+      checkServerAuthorization();
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user, firebaseUser, authLoading]);
 
   // Handle section navigation
   const handleSelectSection = (section: AdminSection) => {
     navigate(getAdminUrl(section));
   };
 
+  // Google Sign-In with Firebase Auth
   const handleAdminGoogleSignIn = async () => {
     setAuthenticating(true);
     setAuthError(null);
     try {
       await signInWithGoogle();
-      // Ensure operator claims are minted if email is authorized
-      await loginAsOperator('ntnagrawal146@gmail.com');
-    } catch {
-      await loginAsOperator('ntnagrawal146@gmail.com');
+      // Server-side verification will immediately trigger via the useEffect above
+    } catch (err: any) {
+      setAuthError(err?.message || 'Google authentication could not be completed.');
     } finally {
       setAuthenticating(false);
     }
   };
 
-  const handleManualOperatorLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!manualEmail.trim()) return;
+  // Sign out & switch account
+  const handleSwitchAccount = async () => {
     setAuthenticating(true);
-    setAuthError(null);
     try {
-      const emailLower = manualEmail.trim().toLowerCase();
-      if (authorizedEmails.includes(emailLower)) {
-        await loginAsOperator(emailLower);
-      } else {
-        setAuthError('Email is not recognized as an authorized administrator.');
-      }
+      await logout();
+      setServerAuthorized(null);
+      setAuthError(null);
     } finally {
       setAuthenticating(false);
     }
   };
 
-  // Prevent flash of 404 while authentication is resolving
-  if (authLoading) {
+  // 1. Loading state while Firebase auth or server ID token verification resolves
+  if (authLoading || verifyingServer) {
     return (
       <div className="min-h-screen bg-[#F7F9FB] flex flex-col items-center justify-center p-6 text-center space-y-3">
         <LoadingSpinner />
-        <p className="text-xs text-slate-500 font-mono">Verifying administrative security credentials...</p>
+        <p className="text-xs text-slate-500 font-mono">
+          {authLoading ? 'Restoring Firebase session...' : 'Verifying ID token and custom claims with server...'}
+        </p>
       </div>
     );
   }
 
-  // If unauthorized: display professional operator verification gateway
-  if (!isAuthorized) {
+  // 2. Unauthenticated state: User must sign in with Google via Firebase Auth
+  if (!user && !firebaseUser) {
     return (
       <div className="min-h-screen bg-[#F7F9FB] flex flex-col justify-between text-[#191C1E] antialiased">
         <SeoHead
-          title="Operator Gateway & Identity Verification"
-          description="Administrative control portal authentication."
+          title="Administrator Authentication Required"
+          description="Protected administrative zone"
           noindex={true}
         />
+
         <header className="h-16 border-b border-slate-200 bg-white/80 backdrop-blur px-6 flex items-center justify-between">
           <button
             onClick={() => navigate('/')}
@@ -138,66 +157,31 @@ export const AdminPortalPage: React.FC = () => {
 
         <main className="flex-1 flex flex-col items-center justify-center p-6 text-center max-w-md mx-auto w-full space-y-6">
           <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shadow-sm mx-auto">
-            <ShieldCheck className="w-8 h-8" />
+            <Lock className="w-8 h-8" />
           </div>
 
           <div className="space-y-2">
             <h1 className="font-heading font-extrabold text-2xl text-slate-900 tracking-tight">
-              Operator Identity Verification
+              Administrator Authentication
             </h1>
             <p className="text-xs text-slate-500 leading-relaxed max-w-sm mx-auto">
-              This administrative gateway requires explicit authorization with an assigned administrator account.
+              Please sign in with your authorized administrator Google account to access central administration.
             </p>
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm w-full text-left space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Authorized Administrator Email
-              </label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                <input
-                  type="email"
-                  value={manualEmail}
-                  onChange={(e) => setManualEmail(e.target.value)}
-                  placeholder="ntnagrawal146@gmail.com"
-                  className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <p className="text-[10px] text-slate-400 mt-1">
-                Authorized: <span className="font-mono text-blue-600 font-semibold">ntnagrawal146@gmail.com</span>, <span className="font-mono text-blue-600 font-semibold">2026vivekkushwah@gmail.com</span>
-              </p>
+            <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[11px] leading-relaxed">
+              <span className="font-bold block mb-0.5">Strict Access Enforcement:</span>
+              A student or non-admin account cannot access this console. Knowing this URL alone does not grant access; every API request is verified server-side.
             </div>
 
             <Button
               variant="primary"
-              size="md"
-              fullWidth
-              onClick={handleManualOperatorLogin}
-              isLoading={authenticating}
-              className="gap-2 text-xs font-bold"
-            >
-              <Key className="w-3.5 h-3.5" />
-              <span>Unlock Admin Portal</span>
-            </Button>
-
-            <div className="relative my-3">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-slate-200"></div>
-              </div>
-              <div className="relative flex justify-center text-[10px] uppercase">
-                <span className="bg-white px-2 text-slate-400 font-semibold">or verify via google</span>
-              </div>
-            </div>
-
-            <Button
-              variant="outline"
-              size="md"
+              size="lg"
               fullWidth
               onClick={handleAdminGoogleSignIn}
               isLoading={authenticating}
-              className="gap-2 text-xs font-semibold"
+              className="gap-2.5 text-xs font-bold py-3"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24">
                 <path
@@ -217,7 +201,7 @@ export const AdminPortalPage: React.FC = () => {
                   d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
                 />
               </svg>
-              <span>Verify with Google Account</span>
+              <span>Sign in with Google Account</span>
             </Button>
 
             {authError && (
@@ -238,13 +222,114 @@ export const AdminPortalPage: React.FC = () => {
         </main>
 
         <footer className="h-12 border-t border-slate-200 text-center flex items-center justify-center text-[11px] text-slate-400">
-          <span>© {new Date().getFullYear()} mayf.co.in · Authorized Access Only</span>
+          <span>© {new Date().getFullYear()} mayf.co.in · Authorized Administrator Access Only</span>
         </footer>
       </div>
     );
   }
 
-  // Render authorized administration console with all 19 sections
+  // 3. Authenticated but Unauthorized state (e.g. Student account)
+  // Server-side verification returned 403 Forbidden!
+  if (serverAuthorized === false) {
+    const currentEmail = user?.email || firebaseUser?.email || 'Unknown account';
+
+    return (
+      <div className="min-h-screen bg-[#F7F9FB] flex flex-col justify-between text-[#191C1E] antialiased">
+        <SeoHead
+          title="Access Denied · Administrator Privileges Required"
+          description="Unauthorized access rejected."
+          noindex={true}
+        />
+
+        <header className="h-16 border-b border-slate-200 bg-white/80 backdrop-blur px-6 flex items-center justify-between">
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="flex items-center gap-2 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Go to Student Dashboard</span>
+          </button>
+          <div className="flex items-center gap-1.5 text-[11px] font-mono text-rose-600 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded">
+            <ShieldAlert className="w-3.5 h-3.5" />
+            <span>403 Forbidden</span>
+          </div>
+        </header>
+
+        <main className="flex-1 flex flex-col items-center justify-center p-6 text-center max-w-md mx-auto w-full space-y-6">
+          <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shadow-sm mx-auto">
+            <ShieldAlert className="w-8 h-8" />
+          </div>
+
+          <div className="space-y-2">
+            <h1 className="font-heading font-extrabold text-2xl text-slate-900 tracking-tight">
+              Access Denied
+            </h1>
+            <p className="text-xs text-slate-600 leading-relaxed max-w-sm mx-auto">
+              Administrator privileges required. Knowing this secret URL does not grant access to student accounts.
+            </p>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm w-full text-left space-y-4">
+            <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 space-y-1">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+                Current Authenticated Account
+              </span>
+              <p className="font-mono text-xs font-bold text-slate-800 break-all">
+                {currentEmail}
+              </p>
+              <p className="text-[11px] text-rose-600 font-medium pt-1">
+                Role: <span className="font-mono uppercase font-bold">student</span> (No admin/superAdmin claims)
+              </p>
+            </div>
+
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Every administrative API endpoint validates cryptographic ID token claims independently on the server. If you are an authorized administrator, please sign out and sign in using your designated administrator Google account.
+            </p>
+
+            <div className="space-y-2 pt-1">
+              <Button
+                variant="primary"
+                size="md"
+                fullWidth
+                onClick={handleSwitchAccount}
+                isLoading={authenticating}
+                className="gap-2 text-xs font-bold"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Sign Out & Switch Account</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                size="md"
+                fullWidth
+                onClick={() => navigate('/dashboard')}
+                className="gap-2 text-xs font-semibold"
+              >
+                <span>Go to Student Dashboard</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+          </div>
+
+          <div className="pt-2">
+            <button
+              onClick={() => navigate('/')}
+              className="text-xs text-slate-500 hover:text-slate-800 underline cursor-pointer"
+            >
+              Return to Student Home Page
+            </button>
+          </div>
+        </main>
+
+        <footer className="h-12 border-t border-slate-200 text-center flex items-center justify-center text-[11px] text-slate-400">
+          <span>© {new Date().getFullYear()} mayf.co.in · Access Denied for Non-Admin Accounts</span>
+        </footer>
+      </div>
+    );
+  }
+
+  // 4. Access Granted: Verified Administrator with valid server-verified claims
   const renderCurrentSection = () => {
     switch (activeSection) {
       case 'dashboard':

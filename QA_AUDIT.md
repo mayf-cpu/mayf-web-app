@@ -161,17 +161,27 @@ Cloudflare Zero Trust / Cloudflare Access login protection has been removed **ex
 **Removed from Admin Route:**
 1. **`server.ts` — `requireAdmin` Middleware Decoupled:**
    - Removed blocking check `if (process.env.REQUIRE_CLOUDFLARE_ACCESS === 'true' && (!cfJwt || !cfEmail)) return res.status(404)`.
+   - Removed `hostname.endsWith('.cloudflareaccess.com')` from CSRF permitted hosts.
    - Admin routes now authenticate directly via Firebase Auth custom claims (`admin=true` / `superAdmin=true`).
    - Updated `/api/admin/metrics` to report `cloudflareAccessActive: false`.
 
 2. **`src/services/adminService.ts` — Headers Streamlined:**
    - Removed client injection of `cf-access-jwt-assertion` and `cf-access-authenticated-user-email` headers.
 
-3. **`src/lib/admin/adminUserManager.ts` — Default Configuration Updated:**
-   - Set `requireCloudflareAccess: false`.
+3. **`src/lib/admin/adminUserManager.ts` — Configuration Cleaned:**
+   - Removed `process.env.CLOUDFLARE_ACCESS_AUD` lookup; set `requireCloudflareAccess: false`.
 
-4. **`src/components/admin/sections/AdminSettingsSection.tsx` & `AdminDashboardSection.tsx`:**
+4. **`.env.example` — Access-Specific Variables Purged:**
+   - Purged `CLOUDFLARE_ACCESS_AUD` and `REQUIRE_CLOUDFLARE_ACCESS`.
+
+5. **`src/components/admin/sections/AdminSettingsSection.tsx` & `AdminDashboardSection.tsx`:**
    - Replaced Cloudflare Access inputs with a status summary confirming global Cloudflare Edge active with direct Firebase Auth on the admin URL.
+
+6. **Enforced Administrator Flow & Anti-Bypass Architecture:**
+   - **Flow**: Secret Admin URL (`/mgmt-sec-k92a`) → Firebase Google login if unauthenticated → Client retrieves Firebase ID token → Server verifies ID token (`verifyStudentSessionToken`) → Server validates `admin` or `superAdmin` custom claims (`/api/admin/verify-access`) → Access granted.
+   - **Student Protection**: Student/non-admin users attempting to open the secret admin URL or calling admin APIs are rejected with HTTP 403/404 (`role: 'student'`); knowing the URL grants zero access.
+   - **Server-Authoritative**: Every single Admin API (`/api/admin/*`) independently validates authorization server-side on every request; never relies solely on client UI hiding.
+   - **Headers**: `X-Robots-Tag: noindex, nofollow` on all administrative responses; excluded from `robots.txt` and `sitemap.xml`.
 
 ---
 
