@@ -174,33 +174,68 @@ export const AdminSettingsSection: React.FC = () => {
             </div>
           )}
 
-          {/* Secret Path & Google OAuth Authentication */}
+          {/* Cloudflare Access Edge Protection Integration */}
           <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-2xs space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-lg bg-emerald-50 text-emerald-600">
-                  <ShieldCheck className="w-5 h-5" />
+                <div className="p-2 rounded-lg bg-amber-50 text-amber-600">
+                  <Cloud className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="font-heading font-bold text-sm text-slate-900">
-                    Direct Google OAuth Authentication
+                    Cloudflare Access Edge Protection
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Administrators sign in directly using Google credentials on the secret path (Cloudflare Zero Trust gating disabled).
+                    Zero Trust application policy guarding the secret administrator path at Cloudflare&apos;s edge network.
                   </p>
                 </div>
               </div>
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                ACTIVE
+                EDGE COMPATIBLE
               </span>
             </div>
 
-            <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
-              <p className="font-semibold text-slate-800">Direct Login Policy:</p>
-              <p className="text-[11px] leading-relaxed">
-                When an administrator navigates to the secret path and signs in with an authorized Google account (such as <code className="font-mono text-blue-600">sachin.itig@gmail.com</code>), access to the administration console is granted directly without Cloudflare Zero Trust interstitials.
-              </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700">Cloudflare Access AUD (Audience Tag):</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 566895799712-cfaccess-aud-mayf..."
+                  value={config.cloudflareAccessAud}
+                  disabled={!entitlements.isSuperAdmin}
+                  onChange={(e) => setConfig({ ...config, cloudflareAccessAud: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-900 disabled:opacity-60"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700">Team Domain:</label>
+                <input
+                  type="text"
+                  value={config.cloudflareTeamDomain}
+                  disabled={!entitlements.isSuperAdmin}
+                  onChange={(e) => setConfig({ ...config, cloudflareTeamDomain: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-900 disabled:opacity-60"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between p-3.5 rounded-lg bg-slate-50 border border-slate-200">
+              <div className="space-y-0.5">
+                <span className="font-bold text-xs text-slate-900">Enforce Edge Verification Token</span>
+                <p className="text-[11px] text-slate-500">
+                  When enabled, requests without valid <code className="font-mono">Cf-Access-Jwt-Assertion</code> receive an immediate 404 without reaching the admin UI.
+                </p>
+              </div>
+
+              <input
+                type="checkbox"
+                checked={config.requireCloudflareAccess}
+                disabled={!entitlements.isSuperAdmin}
+                onChange={(e) => setConfig({ ...config, requireCloudflareAccess: e.target.checked })}
+                className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer disabled:opacity-50"
+              />
             </div>
           </div>
 

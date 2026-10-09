@@ -17,51 +17,6 @@
 
 export const DEFAULT_ADMIN_ENTRY_PATH = '/mgmt-sec-k92a';
 
-/**
- * Authoritative default administrator emails (case-insensitive)
- * Includes system owner and configured administrators
- */
-export const DEFAULT_AUTHORIZED_ADMIN_EMAILS: string[] = [
-  'sachin.itig@gmail.com',
-  '2026vivekkushwah@gmail.com',
-  'admin@mayf.co.in',
-];
-
-/**
- * Returns all authorized admin emails from environment variables and built-in defaults
- */
-export function getAuthorizedAdminEmails(): string[] {
-  let envList = '';
-  if (typeof import.meta !== 'undefined' && import.meta.env) {
-    envList = (import.meta.env.VITE_ADMIN_AUTHORIZED_EMAILS as string) || '';
-  }
-  if (!envList && typeof process !== 'undefined' && process.env) {
-    envList = process.env.ADMIN_AUTHORIZED_EMAILS || process.env.VITE_ADMIN_AUTHORIZED_EMAILS || '';
-  }
-
-  const parsed = envList
-    .split(',')
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
-
-  const merged = new Set([
-    ...DEFAULT_AUTHORIZED_ADMIN_EMAILS.map((e) => e.toLowerCase()),
-    ...parsed,
-  ]);
-
-  return Array.from(merged);
-}
-
-/**
- * Checks if a given email is in the authorized admin list
- */
-export function isAuthorizedAdminEmail(email?: string | null): boolean {
-  if (!email) return false;
-  const clean = email.trim().toLowerCase();
-  const authorized = getAuthorizedAdminEmails();
-  return authorized.includes(clean);
-}
-
 export type AdminSection =
   | 'dashboard'
   | 'content'

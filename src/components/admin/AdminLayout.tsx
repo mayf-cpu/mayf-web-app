@@ -130,10 +130,10 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
         {/* Top Badges & Operator Profile */}
         <div className="flex items-center gap-3">
-          {/* Direct Google OAuth Tag */}
+          {/* Cloudflare Edge Tag */}
           <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-800 border border-slate-700 text-[11px] font-mono text-slate-300">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Direct Google OAuth</span>
+            <Cloud className="w-3.5 h-3.5 text-blue-400" />
+            <span>CF-Access Ready</span>
           </div>
 
           {/* Admin Role Claim Badge */}
@@ -145,7 +145,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
           {/* User Email & Exit */}
           <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-slate-800 text-xs">
             <span className="font-mono text-slate-300 text-[11px] truncate max-w-[160px]">
-              {user?.email || 'sachin.itig@gmail.com'}
+              {user?.email || '2026vivekkushwah@gmail.com'}
             </span>
           </div>
 
@@ -204,7 +204,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             <div className="p-2.5 rounded-lg bg-slate-900/70 border border-slate-800/80 text-[10px] font-mono text-slate-400 space-y-0.5">
               <div className="text-emerald-400 font-semibold flex items-center gap-1">
                 <Lock className="w-3 h-3" />
-                <span>Protected Admin Endpoint</span>
+                <span>Zero-Trust Endpoint</span>
               </div>
               <div className="truncate text-slate-500">X-Robots-Tag: noindex</div>
             </div>

@@ -4,15 +4,13 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db, signInWithGooglePopup, signOutUser } from '../lib/firebase/client';
 import { UserProfileDoc, StudentClass, BoardType, UserRole } from '../lib/firebase/types';
 import { getVerifiedClaims, ParsedUserEntitlements } from '../lib/firebase/authClaims';
-import { isAuthorizedAdminEmail } from '../config/adminConfig';
 
 interface AuthContextType {
   firebaseUser: FirebaseUser | null;
   user: UserProfileDoc | null;
   entitlements: ParsedUserEntitlements;
   loading: boolean;
-  signInWithGoogle: (adminMode?: boolean) => Promise<void>;
-  signInAsAdmin: (preferredEmail?: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   loginWithEmail: (email: string) => Promise<void>;
   logout: () => Promise<void>;
   updateClass: (newClass: StudentClass) => Promise<void>;
@@ -81,21 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (fbUser) {
         // 1. Fetch claims cryptographically signed by Firebase
         const claims = await getVerifiedClaims(fbUser);
-        const userEmail = (fbUser.email || '').toLowerCase();
-        const isEmailAdmin = isAuthorizedAdminEmail(userEmail);
-        const isSuperAdmin = claims.isSuperAdmin || (isEmailAdmin && (userEmail === 'sachin.itig@gmail.com' || userEmail === '2026vivekkushwah@gmail.com'));
-        const isAdmin = claims.isAdmin || isEmailAdmin;
-        const role = isSuperAdmin ? 'superAdmin' : isAdmin ? 'admin' : claims.role;
-
-        const resolvedClaims: ParsedUserEntitlements = {
-          ...claims,
-          role,
-          isAdmin,
-          isSuperAdmin,
-          isPro: isAdmin || claims.isPro,
-          hasAnnualPass: isAdmin || claims.hasAnnualPass,
-        };
-        setEntitlements(resolvedClaims);
+        setEntitlements(claims);
 
         // 2. Fetch or update profile in /users/{uid}
         const now = new Date().toISOString();
@@ -194,24 +178,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [savedItemIds]);
 
-  const signInWithGoogle = async (adminMode?: boolean) => {
+  const signInWithGoogle = async () => {
     setLoading(true);
     try {
       await signInWithGooglePopup();
     } catch (error: any) {
-      console.warn('[MAYF Auth] Google sign-in note, enabling fallback:', error);
+      console.warn('[MAYF Auth] Google sign-in note, enabling sandbox user:', error);
       // Fallback for sandboxed preview environments without external OAuth popups
       const now = new Date().toISOString();
-      const mockUid = 'google-user-' + Math.random().toString(36).substring(2, 9);
-      const isTargetAdmin = Boolean(adminMode);
-      const targetEmail: string = isTargetAdmin ? 'sachin.itig@gmail.com' : 'google.student@mayf.co.in';
-      const isSuper = targetEmail === 'sachin.itig@gmail.com' || targetEmail === '2026vivekkushwah@gmail.com';
+      const mockUid = 'google-student-' + Math.random().toString(36).substring(2, 9);
       const demoUser: UserProfileDoc = {
         uid: mockUid,
-        email: targetEmail,
-        displayName: isTargetAdmin ? 'Sachin (Administrator)' : 'Google Verified Student',
+        email: 'google.student@mayf.co.in',
+        displayName: 'Google Verified Student',
         photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
-        studentClass: 'Class 10' as StudentClass,
+        studentClass: 'Class 10',
         board: 'CBSE',
         streakDays: 7,
         lastActiveDate: now.split('T')[0],
@@ -224,12 +205,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem('mayf_user_profile', JSON.stringify(demoUser));
       }
       setEntitlements({
-        role: isTargetAdmin ? (isSuper ? 'superAdmin' : 'admin') : 'student',
+        role: 'student',
         isPro: true,
         hasAnnualPass: true,
-        annualPassExpiry: '2028-12-31',
-        isAdmin: isTargetAdmin,
-        isSuperAdmin: isTargetAdmin && isSuper,
+        annualPassExpiry: '2027-03-31',
+        isAdmin: false,
+        isSuperAdmin: false,
       });
 
       try {
@@ -240,38 +221,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  };
-
-  const signInAsAdmin = async (preferredEmail?: string) => {
-    setLoading(true);
-    const adminEmail = (preferredEmail || 'sachin.itig@gmail.com').toLowerCase();
-    const isSuper = adminEmail === 'sachin.itig@gmail.com' || adminEmail === '2026vivekkushwah@gmail.com';
-    const adminProfile: UserProfileDoc = {
-      uid: 'admin-auth-' + Math.random().toString(36).substring(2, 9),
-      email: adminEmail,
-      displayName: adminEmail.split('@')[0].toUpperCase() + ' (Administrator)',
-      photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
-      studentClass: 'Class 10' as StudentClass,
-      board: 'CBSE',
-      streakDays: 30,
-      lastActiveDate: new Date().toISOString().split('T')[0],
-      createdAt: new Date().toISOString(),
-      lastLoginAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    setUser(adminProfile);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('mayf_user_profile', JSON.stringify(adminProfile));
-    }
-    setEntitlements({
-      role: isSuper ? 'superAdmin' : 'admin',
-      isPro: true,
-      hasAnnualPass: true,
-      annualPassExpiry: '2028-12-31',
-      isAdmin: true,
-      isSuperAdmin: isSuper,
-    });
-    setLoading(false);
   };
 
   const loginWithEmail = async (email: string) => {
@@ -333,7 +282,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         entitlements,
         loading,
         signInWithGoogle,
-        signInAsAdmin,
         loginWithEmail,
         logout,
         updateClass,

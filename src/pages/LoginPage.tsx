@@ -6,7 +6,6 @@ import { Button } from '../components/ui/Button';
 import { useAuth } from '../context/AuthContext';
 import { useNavigation, Link } from '../context/NavigationContext';
 import { trackLogin } from '../lib/analytics/analyticsService';
-import { isAuthorizedAdminEmail, getAdminUrl } from '../config/adminConfig';
 
 export const LoginPage: React.FC = () => {
   const { user, signInWithGoogle, loginWithEmail } = useAuth();
@@ -39,20 +38,9 @@ export const LoginPage: React.FC = () => {
           <p className="text-xs text-[#64748B]">
             Enrolled in {user.studentClass} ({user.board})
           </p>
-          <div className="pt-2 space-y-2">
-            {isAuthorizedAdminEmail(user.email) && (
-              <Button
-                variant="primary"
-                fullWidth
-                size="lg"
-                onClick={() => navigate(getAdminUrl('dashboard'))}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
-              >
-                Go to Administrator Panel
-              </Button>
-            )}
+          <div className="pt-2">
             <Button
-              variant={isAuthorizedAdminEmail(user.email) ? 'outline' : 'primary'}
+              variant="primary"
               fullWidth
               size="lg"
               onClick={() => navigate('/dashboard')}
@@ -70,13 +58,7 @@ export const LoginPage: React.FC = () => {
     try {
       await signInWithGoogle();
       trackLogin('google');
-      const savedUser = typeof window !== 'undefined' ? (JSON.parse(localStorage.getItem('mayf_user_profile') || '{}') as Record<string, any>) : {};
-      const targetEmail = (savedUser.email as string) || '';
-      if (isAuthorizedAdminEmail(targetEmail)) {
-        navigate(getAdminUrl('dashboard'));
-      } else {
-        navigate('/dashboard');
-      }
+      navigate('/dashboard');
     } finally {
       setIsLoading(false);
     }
