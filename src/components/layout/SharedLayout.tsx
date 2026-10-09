@@ -16,7 +16,7 @@ export const SharedLayout: React.FC<SharedLayoutProps> = ({ children, hideFooter
       <SiteAnnouncementBanner />
       <InAppBrowserBanner />
       <Header />
-      <main className="flex-1 w-full max-w-[1140px] mx-auto px-4 sm:px-6 py-6 md:py-8">
+      <main className="flex-1 w-full max-w-[1140px] mx-auto px-3.5 sm:px-6 py-6 md:py-8 pb-20 md:pb-8">
         {children}
       </main>
       {!hideFooter && <Footer />}

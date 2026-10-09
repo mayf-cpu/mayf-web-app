@@ -233,11 +233,11 @@ export const StudyChapterPage: React.FC = () => {
               )}
             </div>
 
-            <h1 className="font-heading font-extrabold text-2xl sm:text-3xl md:text-4xl text-[#0F172A] tracking-tight">
+            <h1 className="font-heading font-extrabold text-2xl sm:text-3xl md:text-4xl text-[#0F172A] tracking-tight break-words">
               {activeItem.title}
             </h1>
 
-            <p className="text-sm md:text-base text-[#475569] leading-relaxed">
+            <p className="text-sm md:text-base text-[#475569] leading-relaxed break-words">
               {activeItem.shortDescription || activeItem.description}
             </p>
 
@@ -255,7 +255,7 @@ export const StudyChapterPage: React.FC = () => {
               {activeItem.downloadAllowed && (
                 <button
                   onClick={() => setIsTurnstileOpen(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#1D4ED8] font-semibold rounded-md text-xs cursor-pointer transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[36px] bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#1D4ED8] font-semibold rounded-md text-xs cursor-pointer transition-colors"
                   title="Secure Cloudflare Turnstile Download"
                 >
                   <Download className="w-3.5 h-3.5" />

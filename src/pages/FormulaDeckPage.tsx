@@ -38,6 +38,8 @@ export const FormulaDeckPage: React.FC = () => {
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'swipe'>('grid');
   const [openInNewTab, setOpenInNewTab] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 24;
 
   const canonicalUrl = 'https://mayf.co.in/formula-deck';
   const pageTitle = 'Interactive Formula Deck (Classes 5–10)';
@@ -94,12 +96,25 @@ export const FormulaDeckPage: React.FC = () => {
     });
   }, [selectedCategory, selectedClass, favoritesOnly, searchQuery, savedItemIds]);
 
+  // Reset pagination and keep swipeIndex in bounds when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+    setSwipeIndex(0);
+  }, [selectedCategory, selectedClass, favoritesOnly, searchQuery]);
+
   // Keep swipeIndex in bounds
   useEffect(() => {
     if (swipeIndex >= filteredFormulas.length && filteredFormulas.length > 0) {
       setSwipeIndex(0);
     }
   }, [filteredFormulas.length, swipeIndex]);
+
+  // Paginated formulas for Grid mode (prevents DOM freeze with 1000+ items)
+  const totalPages = Math.ceil(filteredFormulas.length / PAGE_SIZE) || 1;
+  const paginatedFormulas = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filteredFormulas.slice(start, start + PAGE_SIZE);
+  }, [filteredFormulas, currentPage]);
 
   // Touch handlers for mobile swipe navigation
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -364,15 +379,45 @@ export const FormulaDeckPage: React.FC = () => {
           </div>
         </div>
 
+        {/* Unified Empty State when 0 items match filter criteria */}
+        {filteredFormulas.length === 0 && (
+          <div className="bg-white rounded-xl border border-slate-200 p-8 sm:p-12 text-center text-slate-500 space-y-3 shadow-xs">
+            <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center mx-auto mb-2 font-bold text-lg">
+              Σ
+            </div>
+            <h3 className="font-heading font-bold text-base sm:text-lg text-slate-900">
+              No formulas found matching your filter criteria
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-500 max-w-md mx-auto">
+              We couldn't find any formula cards for your selected category, class level, or search terms.
+            </p>
+            <div className="pt-2">
+              <Button
+                variant="outline"
+                size="md"
+                onClick={() => {
+                  setSelectedCategory('All');
+                  setSelectedClass('All');
+                  setFavoritesOnly(false);
+                  setSearchQuery('');
+                }}
+                className="font-semibold"
+              >
+                Reset All Filters
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* ======================================================== */}
         {/* VIEW MODE 1: SWIPEABLE FLASHCARD DECK (Mobile & Desktop) */}
         {/* ======================================================== */}
-        {viewMode === 'swipe' && filteredFormulas.length > 0 && (
+        {viewMode === 'swipe' && filteredFormulas.length > 0 && activeSwipeFormula && (
           <div className="space-y-4">
             <div className="flex items-center justify-between text-xs text-slate-500 font-medium px-2">
               <span>Card {swipeIndex + 1} of {filteredFormulas.length}</span>
               <span className="hidden sm:inline text-slate-400">
-                Tip: Swipe on mobile touch screen or use ← → arrow keys
+                {filteredFormulas.length === 1 ? 'Single card match' : 'Tip: Swipe on touch screen or use ← → arrow keys'}
               </span>
             </div>
 
@@ -393,17 +438,17 @@ export const FormulaDeckPage: React.FC = () => {
                     </span>
                   </div>
 
-                  <span className="text-xs font-mono text-slate-400">
+                  <span className="text-xs font-mono text-slate-400 truncate max-w-[140px] sm:max-w-none">
                     /formula/{activeSwipeFormula.slug}
                   </span>
                 </div>
 
-                <h2 className="text-2xl sm:text-3xl font-heading font-extrabold text-slate-900">
+                <h2 className="text-2xl sm:text-3xl font-heading font-extrabold text-slate-900 break-words leading-tight" title={activeSwipeFormula.title}>
                   {activeSwipeFormula.title}
                 </h2>
 
                 {/* KaTeX Display */}
-                <div className="bg-sky-50 border border-sky-200 rounded-xl p-6 text-center my-4 overflow-x-auto">
+                <div className="bg-sky-50 border border-sky-200 rounded-xl p-5 sm:p-6 text-center my-4 overflow-x-auto scrollbar-thin">
                   {renderedSwipeLatex ? (
                     <div
                       className="text-blue-900 text-xl sm:text-2xl font-semibold"
@@ -416,24 +461,26 @@ export const FormulaDeckPage: React.FC = () => {
                   )}
                 </div>
 
-                <p className="text-sm sm:text-base text-slate-700 leading-relaxed max-w-2xl">
+                <p className="text-sm sm:text-base text-slate-700 leading-relaxed max-w-2xl break-words">
                   {activeSwipeFormula.explanation}
                 </p>
 
                 {/* Variables summary */}
-                <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-                  <div className="text-xs font-bold text-slate-700 uppercase mb-2">
-                    Variables Specification:
+                {activeSwipeFormula.variables && activeSwipeFormula.variables.length > 0 && (
+                  <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                    <div className="text-xs font-bold text-slate-700 uppercase mb-2">
+                      Variables Specification:
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      {activeSwipeFormula.variables.map((v, i) => (
+                        <div key={i} className="flex items-start gap-1.5">
+                          <span className="font-mono font-bold text-blue-700">{v.symbol}:</span>
+                          <span className="text-slate-600">{v.meaning}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                    {activeSwipeFormula.variables.map((v, i) => (
-                      <div key={i} className="flex items-start gap-1.5">
-                        <span className="font-mono font-bold text-blue-700">{v.symbol}:</span>
-                        <span className="text-slate-600">{v.meaning}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                )}
               </div>
 
               {/* Bottom Card Footer with Previous / Next and Full Document Link */}
@@ -441,9 +488,10 @@ export const FormulaDeckPage: React.FC = () => {
                 <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-start">
                   <Button
                     variant="outline"
-                    size="sm"
+                    size="md"
                     onClick={handlePrevSwipe}
-                    className="gap-1.5"
+                    disabled={filteredFormulas.length <= 1}
+                    className="gap-1.5 min-h-[44px]"
                   >
                     <ChevronLeft className="w-4 h-4" />
                     <span>Previous Card</span>
@@ -451,12 +499,12 @@ export const FormulaDeckPage: React.FC = () => {
 
                   <Button
                     variant="outline"
-                    size="sm"
+                    size="md"
                     onClick={handleNextSwipe}
-                    className="gap-1.5"
+                    disabled={filteredFormulas.length <= 1}
+                    className="gap-1.5 min-h-[44px]"
                   >
                     <span>Next Card</span>
-                    <ChevronRight className="w-4 h-4" />
                   </Button>
                 </div>
 
@@ -464,9 +512,9 @@ export const FormulaDeckPage: React.FC = () => {
                   href={`/formula/${activeSwipeFormula.slug}`}
                   className="w-full sm:w-auto"
                 >
-                  <Button variant="primary" size="sm" className="gap-2 w-full">
-                    <span>Open Full Formula Document & Worked Exemplar</span>
-                    <ExternalLink className="w-3.5 h-3.5" />
+                  <Button variant="primary" size="md" className="gap-2 w-full min-h-[44px] font-bold">
+                    <span>Explore Full Formula Document</span>
+                    <ExternalLink className="w-4 h-4" />
                   </Button>
                 </Link>
               </div>
@@ -475,33 +523,79 @@ export const FormulaDeckPage: React.FC = () => {
         )}
 
         {/* ======================================================== */}
-        {/* VIEW MODE 2: GRID BROWSING */}
+        {/* VIEW MODE 2: GRID BROWSING WITH PAGINATION (1000+ support) */}
         {/* ======================================================== */}
-        {viewMode === 'grid' && (
-          <div>
-            {filteredFormulas.length === 0 ? (
-              <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-500 space-y-3">
-                <p className="text-sm font-medium">No formulas found matching your filter criteria.</p>
-                <p className="text-xs text-slate-400">Try choosing "All" categories or resetting search queries.</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setSelectedCategory('All');
-                    setSelectedClass('All');
-                    setFavoritesOnly(false);
-                    setSearchQuery('');
-                  }}
-                  className="mt-2"
-                >
-                  Reset All Filters
-                </Button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredFormulas.map((formula) => (
-                  <FormulaCard key={formula.id} formula={formula} openInNewTab={openInNewTab} />
-                ))}
+        {viewMode === 'grid' && filteredFormulas.length > 0 && (
+          <div className="space-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {paginatedFormulas.map((formula) => (
+                <FormulaCard key={formula.id} formula={formula} openInNewTab={openInNewTab} />
+              ))}
+            </div>
+
+            {/* Pagination Bar for large catalogues (20, 1000+ items) */}
+            {totalPages > 1 && (
+              <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs">
+                <div className="text-xs text-slate-500 font-medium">
+                  Showing <strong className="text-slate-900">{(currentPage - 1) * PAGE_SIZE + 1}</strong>–
+                  <strong className="text-slate-900">{Math.min(currentPage * PAGE_SIZE, filteredFormulas.length)}</strong> of{' '}
+                  <strong className="text-slate-900">{filteredFormulas.length}</strong> formulas
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={currentPage === 1}
+                    onClick={() => {
+                      setCurrentPage((p) => Math.max(1, p - 1));
+                      window.scrollTo({ top: 300, behavior: 'smooth' });
+                    }}
+                    className="min-h-[36px]"
+                  >
+                    <ChevronLeft className="w-4 h-4 mr-1" />
+                    <span>Previous</span>
+                  </Button>
+
+                  <div className="flex items-center gap-1 px-1">
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let pageNum = i + 1;
+                      if (totalPages > 5 && currentPage > 3) {
+                        pageNum = Math.min(totalPages - 4 + i, Math.max(1, currentPage - 2 + i));
+                      }
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => {
+                            setCurrentPage(pageNum);
+                            window.scrollTo({ top: 300, behavior: 'smooth' });
+                          }}
+                          className={`w-9 h-9 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-xs font-heading font-semibold transition-colors cursor-pointer ${
+                            currentPage === pageNum
+                              ? 'bg-blue-700 text-white shadow-xs'
+                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={currentPage === totalPages}
+                    onClick={() => {
+                      setCurrentPage((p) => Math.min(totalPages, p + 1));
+                      window.scrollTo({ top: 300, behavior: 'smooth' });
+                    }}
+                    className="min-h-[36px]"
+                  >
+                    <span>Next</span>
+                    <ChevronRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </div>
               </div>
             )}
           </div>

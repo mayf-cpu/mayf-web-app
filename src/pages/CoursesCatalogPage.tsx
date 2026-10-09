@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   GraduationCap,
   Search,
@@ -25,6 +25,8 @@ export const CoursesCatalogPage: React.FC = () => {
   const [selectedLevel, setSelectedLevel] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [openInNewTab, setOpenInNewTab] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 12;
 
   const classes: (StudentClass | 'All')[] = [
     'All',
@@ -51,6 +53,17 @@ export const CoursesCatalogPage: React.FC = () => {
       return matchClass && matchLevel && matchSearch;
     });
   }, [selectedClass, selectedLevel, searchQuery]);
+
+  // Reset page when filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedClass, selectedLevel, searchQuery]);
+
+  const totalPages = Math.ceil(filteredCourses.length / PAGE_SIZE) || 1;
+  const paginatedCourses = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filteredCourses.slice(start, start + PAGE_SIZE);
+  }, [filteredCourses, currentPage]);
 
   const canonicalUrl = 'https://mayf.co.in/courses';
   const pageTitle = 'Comprehensive Mathematics Courses for Classes 5–10';
@@ -171,7 +184,7 @@ export const CoursesCatalogPage: React.FC = () => {
                 <button
                   key={cls}
                   onClick={() => setSelectedClass(cls)}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+                  className={`px-3 py-1.5 min-h-[36px] rounded-md text-xs font-medium transition-colors cursor-pointer ${
                     selectedClass === cls
                       ? 'bg-[#1D4ED8] text-white shadow-2xs font-semibold'
                       : 'bg-[#F1F5F9] text-[#64748B] hover:text-[#0F172A]'
@@ -188,7 +201,7 @@ export const CoursesCatalogPage: React.FC = () => {
                 <button
                   key={lvl}
                   onClick={() => setSelectedLevel(lvl)}
-                  className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer ${
+                  className={`px-3 py-1.5 min-h-[36px] rounded-md text-xs font-medium transition-colors cursor-pointer ${
                     selectedLevel === lvl
                       ? 'bg-[#1E293B] text-white'
                       : 'bg-[#F1F5F9] text-[#64748B] hover:text-[#0F172A]'
@@ -224,14 +237,17 @@ export const CoursesCatalogPage: React.FC = () => {
             </Button>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-6">
             <div className="flex items-center justify-between text-xs text-[#64748B] px-1">
-              <span>Showing {filteredCourses.length} structured courses</span>
-              <span>All courses have standalone dedicated URLs</span>
+              <span>
+                Showing {filteredCourses.length > 0 ? (currentPage - 1) * PAGE_SIZE + 1 : 0}–
+                {Math.min(currentPage * PAGE_SIZE, filteredCourses.length)} of {filteredCourses.length} structured courses
+              </span>
+              <span className="hidden sm:inline">All courses have standalone dedicated URLs</span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredCourses.map((course) => (
+              {paginatedCourses.map((course) => (
                 <CourseCard
                   key={course.id}
                   course={course}
@@ -239,6 +255,65 @@ export const CoursesCatalogPage: React.FC = () => {
                 />
               ))}
             </div>
+
+            {/* Pagination Controls for Courses (supporting 20, 1000+ items) */}
+            {totalPages > 1 && (
+              <div className="bg-white rounded-xl border border-[#E2E8F0] p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs mt-6">
+                <div className="text-xs text-[#64748B]">
+                  Page <strong>{currentPage}</strong> of <strong>{totalPages}</strong>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={currentPage === 1}
+                    onClick={() => {
+                      setCurrentPage((p) => Math.max(1, p - 1));
+                      window.scrollTo({ top: 250, behavior: 'smooth' });
+                    }}
+                    className="min-h-[36px]"
+                  >
+                    Previous
+                  </Button>
+
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).slice(
+                      Math.max(0, Math.min(currentPage - 3, totalPages - 5)),
+                      Math.max(5, Math.min(currentPage + 2, totalPages))
+                    ).map((pageNum) => (
+                      <button
+                        key={pageNum}
+                        onClick={() => {
+                          setCurrentPage(pageNum);
+                          window.scrollTo({ top: 250, behavior: 'smooth' });
+                        }}
+                        className={`w-9 h-9 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-xs font-heading font-semibold transition-colors cursor-pointer ${
+                          currentPage === pageNum
+                            ? 'bg-[#1D4ED8] text-white shadow-xs'
+                            : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    ))}
+                  </div>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={currentPage === totalPages}
+                    onClick={() => {
+                      setCurrentPage((p) => Math.min(totalPages, p + 1));
+                      window.scrollTo({ top: 250, behavior: 'smooth' });
+                    }}
+                    className="min-h-[36px]"
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

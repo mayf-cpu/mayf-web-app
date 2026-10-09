@@ -97,7 +97,8 @@ export const SearchPage: React.FC = () => {
           {query && (
             <button
               onClick={() => setQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-[#94A3B8] hover:text-[#475569] cursor-pointer"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 w-9 h-9 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-[#94A3B8] hover:text-[#0F172A] hover:bg-slate-100 transition-colors cursor-pointer"
+              aria-label="Clear Search"
             >
               <X className="w-4 h-4" />
             </button>
@@ -106,13 +107,13 @@ export const SearchPage: React.FC = () => {
 
         {/* Autocomplete suggestions bar */}
         {suggestions.length > 0 && query.trim() && (
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs scrollbar-none">
             <span className="text-[#64748B] font-semibold shrink-0">Suggestions:</span>
             {suggestions.map((s, idx) => (
               <button
                 key={idx}
                 onClick={() => setQuery(s)}
-                className="bg-[#EFF6FF] text-[#1D4ED8] hover:bg-[#DBEAFE] px-2.5 py-0.5 rounded-full shrink-0 font-medium cursor-pointer transition-colors"
+                className="bg-[#EFF6FF] text-[#1D4ED8] hover:bg-[#DBEAFE] px-3 py-1.5 min-h-[32px] rounded-full shrink-0 font-medium cursor-pointer transition-colors"
               >
                 {s}
               </button>
@@ -131,7 +132,7 @@ export const SearchPage: React.FC = () => {
                 <button
                   key={term}
                   onClick={() => setQuery(term)}
-                  className="px-3 py-1.5 bg-white hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#1D4ED8]/40 rounded-full text-xs text-[#334155] hover:text-[#1D4ED8] transition-colors cursor-pointer"
+                  className="px-3.5 py-2 min-h-[36px] bg-white hover:bg-[#EFF6FF] border border-[#E2E8F0] hover:border-[#1D4ED8]/40 rounded-full text-xs text-[#334155] hover:text-[#1D4ED8] transition-colors cursor-pointer"
                 >
                   {term}
                 </button>

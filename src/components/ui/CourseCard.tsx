@@ -26,11 +26,7 @@ export const CourseCard: React.FC<CourseCardProps> = ({
     if (target.closest('button') || target.closest('a')) {
       return;
     }
-    if (openInNewTab) {
-      window.open(targetUrl, '_blank', 'noopener,noreferrer');
-    } else {
-      navigate(targetUrl);
-    }
+    navigate(targetUrl);
   };
 
   return (
@@ -52,7 +48,10 @@ export const CourseCard: React.FC<CourseCardProps> = ({
           </div>
 
           {/* Title */}
-          <h3 className="font-heading font-bold text-base sm:text-lg text-[#0F172A] group-hover:text-[#1D4ED8] transition-colors leading-snug">
+          <h3
+            className="font-heading font-bold text-base sm:text-lg text-[#0F172A] group-hover:text-[#1D4ED8] transition-colors leading-snug line-clamp-2 break-words"
+            title={course.title}
+          >
             {openInNewTab ? (
               <a
                 href={targetUrl}

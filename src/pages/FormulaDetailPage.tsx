@@ -192,33 +192,33 @@ export const FormulaDetailPage: React.FC = () => {
         </div>
 
         {/* Previous / Next Quick Jump Ribbon */}
-        <div className="flex items-center justify-between bg-white rounded-xl border border-slate-200 p-2 sm:p-3 shadow-2xs text-xs">
+        <div className="flex items-center justify-between bg-white rounded-xl border border-slate-200 p-2 sm:p-3 shadow-2xs text-xs overflow-hidden">
           <Link
             href={`/formula/${prevFormula.slug}`}
-            className="inline-flex items-center gap-2 font-medium text-slate-700 hover:text-blue-700 transition-colors py-1 px-2 rounded-lg hover:bg-slate-50 group"
+            className="inline-flex items-center gap-1.5 sm:gap-2 font-medium text-slate-700 hover:text-blue-700 transition-colors py-1.5 px-2 rounded-lg hover:bg-slate-50 group min-w-0"
           >
-            <ChevronLeft className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-transform group-hover:-translate-x-0.5" />
-            <div className="text-left">
+            <ChevronLeft className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-transform group-hover:-translate-x-0.5 shrink-0" />
+            <div className="text-left min-w-0">
               <span className="text-[10px] uppercase font-bold text-slate-400 block">Previous</span>
-              <span className="font-semibold truncate max-w-[140px] sm:max-w-[220px] block">
+              <span className="font-semibold truncate max-w-[95px] min-[400px]:max-w-[130px] sm:max-w-[220px] block">
                 {prevFormula.title}
               </span>
             </div>
           </Link>
 
-          <span className="text-slate-300 hidden md:inline">|</span>
+          <span className="text-slate-300 hidden md:inline shrink-0">|</span>
 
           <Link
             href={`/formula/${nextFormula.slug}`}
-            className="inline-flex items-center gap-2 font-medium text-slate-700 hover:text-blue-700 transition-colors py-1 px-2 rounded-lg hover:bg-slate-50 text-right group"
+            className="inline-flex items-center gap-1.5 sm:gap-2 font-medium text-slate-700 hover:text-blue-700 transition-colors py-1.5 px-2 rounded-lg hover:bg-slate-50 text-right group min-w-0"
           >
-            <div className="text-right">
+            <div className="text-right min-w-0">
               <span className="text-[10px] uppercase font-bold text-slate-400 block">Next</span>
-              <span className="font-semibold truncate max-w-[140px] sm:max-w-[220px] block">
+              <span className="font-semibold truncate max-w-[95px] min-[400px]:max-w-[130px] sm:max-w-[220px] block">
                 {nextFormula.title}
               </span>
             </div>
-            <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-transform group-hover:translate-x-0.5" />
+            <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-transform group-hover:translate-x-0.5 shrink-0" />
           </Link>
         </div>
 
@@ -228,37 +228,37 @@ export const FormulaDetailPage: React.FC = () => {
           <div className="absolute top-0 left-0 bottom-0 w-[5px] bg-[#06B6D4]" aria-hidden="true" />
           <WatermarkGlyph glyph={(formula.watermarkGlyph as any) || 'π'} size="xl" className="opacity-25 -top-10 right-2" />
 
-          <div className="p-6 sm:p-8 pl-8 relative z-10 space-y-6">
+          <div className="p-5 sm:p-8 pl-7 sm:pl-8 relative z-10 space-y-6">
             
             {/* Top metadata & Action bar */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs font-bold text-blue-800 bg-blue-50 px-3 py-1 rounded-md border border-blue-200">
                   {formula.category}
                 </span>
                 {formula.isProOnly ? <Badge variant="pro" /> : <Badge variant="free" />}
-                <span className="text-xs text-slate-500 font-mono">
-                  {window?.location?.pathname || `/formula/${formula.slug}`}
+                <span className="text-xs text-slate-500 font-mono truncate max-w-[150px] sm:max-w-none">
+                  {typeof window !== 'undefined' ? window.location.pathname : `/formula/${formula.slug}`}
                 </span>
               </div>
 
               {/* Action buttons: Bookmark, Copy, Share */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 {/* Bookmark / Favourite */}
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={handleToggleBookmark}
-                  className={`gap-1.5 cursor-pointer ${isSaved ? 'border-amber-300 bg-amber-50 text-amber-900' : ''}`}
+                  className={`gap-1.5 cursor-pointer min-h-[36px] ${isSaved ? 'border-amber-300 bg-amber-50 text-amber-900' : ''}`}
                 >
                   <Bookmark className={`w-3.5 h-3.5 ${isSaved ? 'fill-amber-500 text-amber-500' : ''}`} />
-                  <span>{isSaved ? 'Saved in Deck' : 'Bookmark'}</span>
+                  <span>{isSaved ? 'Saved' : 'Bookmark'}</span>
                 </Button>
 
                 {/* Copy Formula text */}
-                <Button size="sm" variant="secondary" onClick={handleCopyFormula} className="gap-1.5 cursor-pointer">
+                <Button size="sm" variant="secondary" onClick={handleCopyFormula} className="gap-1.5 cursor-pointer min-h-[36px]">
                   {copiedFormula ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedFormula ? 'Copied!' : 'Copy Formula'}</span>
+                  <span>{copiedFormula ? 'Copied!' : 'Copy'}</span>
                 </Button>
 
                 {/* Reusable Share Component */}
@@ -274,7 +274,7 @@ export const FormulaDetailPage: React.FC = () => {
 
             {/* Document Title & Target Class levels */}
             <div>
-              <h1 className="font-heading font-extrabold text-2xl sm:text-3xl md:text-4xl text-slate-900 tracking-tight">
+              <h1 className="font-heading font-extrabold text-2xl sm:text-3xl md:text-4xl text-slate-900 tracking-tight break-words">
                 {formula.title}
               </h1>
               <div className="flex items-center gap-2 mt-2 text-xs sm:text-sm text-slate-600">

@@ -121,7 +121,7 @@ export const AnnualPassPage: React.FC = () => {
               buttonSize="xs"
             />
           </div>
-          <h1 className="font-heading font-extrabold text-3xl sm:text-4xl md:text-5xl text-[#0F172A] tracking-tight">
+          <h1 className="font-heading font-extrabold text-2xl sm:text-4xl md:text-5xl text-[#0F172A] tracking-tight break-words text-balance">
             One Pass. Every Class. Complete Math Mastery.
           </h1>
           <p className="text-base sm:text-lg text-[#64748B] max-w-2xl mx-auto">
@@ -181,7 +181,7 @@ export const AnnualPassPage: React.FC = () => {
           </div>
 
           {/* Full Annual Pass Tier */}
-          <div className="relative bg-white rounded-xl border-2 border-[#1D4ED8] p-6 sm:p-8 flex flex-col justify-between shadow-[0_10px_25px_-4px_rgba(29,78,216,0.12)] overflow-hidden">
+          <div className="relative bg-white rounded-xl border-2 border-[#1D4ED8] p-6 pt-10 sm:p-8 flex flex-col justify-between shadow-[0_10px_25px_-4px_rgba(29,78,216,0.12)] overflow-hidden">
             <div className="absolute top-0 right-0 bg-gradient-to-r from-[#FF6B4A] to-[#F97316] text-white text-[11px] font-heading font-bold px-4 py-1 rounded-bl-lg tracking-wider uppercase flex items-center gap-1 shadow-xs">
               <Star className="w-3 h-3 fill-white stroke-none" />
               <span>{isPromoActive ? 'Special Promotional Offer' : 'Recommended for Board Prep'}</span>

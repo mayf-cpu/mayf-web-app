@@ -239,7 +239,7 @@ export const HomePage: React.FC = () => {
             />
             <button
               type="submit"
-              className="absolute right-2 px-4 py-1.5 bg-[#1D4ED8] hover:bg-[#1E40AF] text-white text-xs font-heading font-bold rounded-md transition-colors cursor-pointer"
+              className="absolute right-1.5 sm:right-2 px-3.5 sm:px-4 py-2 min-h-[38px] bg-[#1D4ED8] hover:bg-[#1E40AF] text-white text-xs font-heading font-bold rounded-md transition-colors cursor-pointer flex items-center justify-center"
             >
               Search
             </button>
@@ -253,7 +253,7 @@ export const HomePage: React.FC = () => {
                   key={tag}
                   type="button"
                   onClick={() => navigate(`/study-material?q=${encodeURIComponent(tag)}`)}
-                  className="px-2.5 py-1 bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#334155] rounded-md text-[11px] font-medium transition-colors cursor-pointer"
+                  className="px-3 py-1.5 min-h-[34px] bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#334155] rounded-md text-xs font-medium transition-colors cursor-pointer"
                 >
                   {tag}
                 </button>
@@ -358,7 +358,7 @@ export const HomePage: React.FC = () => {
 
     return (
       <section key={block.id} className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
           <div>
             <div className="flex items-center gap-1.5 text-xs font-heading font-bold text-[#EA580C] uppercase tracking-wider mb-1">
               <Flame className="w-4 h-4 fill-current" />
@@ -371,8 +371,8 @@ export const HomePage: React.FC = () => {
               {config.subtitle || 'Most active proofs and problem sets this week across board batches.'}
             </p>
           </div>
-          <Link href="/study-material">
-            <Button variant="outline" size="sm">
+          <Link href="/study-material" className="self-start sm:self-auto">
+            <Button variant="outline" size="sm" className="min-h-[36px]">
               <span>View All</span>
               <ArrowRight className="w-3.5 h-3.5 ml-1" />
             </Button>
@@ -418,7 +418,7 @@ export const HomePage: React.FC = () => {
         key={block.id}
         className="bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] p-6 shadow-xs space-y-4"
       >
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
           <div>
             <div className="flex items-center gap-1.5 text-xs font-heading font-bold text-[#10B981] uppercase tracking-wider mb-1">
               <Gift className="w-4 h-4" />
@@ -431,8 +431,8 @@ export const HomePage: React.FC = () => {
               {config.subtitle || 'Accessible 100% free without sign-in or payment.'}
             </p>
           </div>
-          <Link href="/study-material">
-            <Button variant="outline" size="sm" className="bg-white">
+          <Link href="/study-material" className="self-start sm:self-auto">
+            <Button variant="outline" size="sm" className="bg-white min-h-[36px]">
               <span>View Free Library</span>
               <ArrowRight className="w-3.5 h-3.5 ml-1" />
             </Button>
@@ -566,7 +566,7 @@ export const HomePage: React.FC = () => {
 
     return (
       <section key={block.id} className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
           <div>
             <div className="flex items-center gap-1.5 text-xs font-heading font-bold text-[#1D4ED8] uppercase tracking-wider mb-1">
               <TrendingUp className="w-4 h-4" />
@@ -580,8 +580,8 @@ export const HomePage: React.FC = () => {
                 'Highest rated study guides, formula cheatsheets, and question banks.'}
             </p>
           </div>
-          <Link href="/study-material">
-            <Button variant="outline" size="sm">
+          <Link href="/study-material" className="self-start sm:self-auto">
+            <Button variant="outline" size="sm" className="min-h-[36px]">
               <span>View All</span>
               <ArrowRight className="w-3.5 h-3.5 ml-1" />
             </Button>
@@ -645,7 +645,7 @@ export const HomePage: React.FC = () => {
 
     return (
       <section key={block.id} className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
           <div>
             <div className="flex items-center gap-1.5 text-xs font-heading font-bold text-[#7C3AED] uppercase tracking-wider mb-1">
               <Video className="w-4 h-4" />
@@ -659,8 +659,8 @@ export const HomePage: React.FC = () => {
                 'Concept-first video series covering every NCERT exemplar proof.'}
             </p>
           </div>
-          <Link href="/study-material">
-            <Button variant="outline" size="sm">
+          <Link href="/courses" className="self-start sm:self-auto">
+            <Button variant="outline" size="sm" className="min-h-[36px]">
               <span>View All Courses</span>
               <ArrowRight className="w-3.5 h-3.5 ml-1" />
             </Button>
@@ -712,7 +712,7 @@ export const HomePage: React.FC = () => {
         key={block.id}
         className="bg-gradient-to-br from-amber-50/50 via-white to-amber-50/20 rounded-xl border border-amber-200/80 p-6 shadow-xs space-y-4"
       >
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
           <div>
             <div className="flex items-center gap-1.5 text-xs font-heading font-bold text-amber-700 uppercase tracking-wider mb-1">
               <Crown className="w-4 h-4 fill-amber-500 text-amber-600" />
@@ -726,8 +726,8 @@ export const HomePage: React.FC = () => {
                 'Full length mock papers and timed section practice for Annual Pass holders.'}
             </p>
           </div>
-          <Link href="/annual-pass">
-            <Button size="sm" variant="primary" className="bg-amber-600 hover:bg-amber-700 text-white">
+          <Link href="/annual-pass" className="self-start sm:self-auto">
+            <Button size="sm" variant="primary" className="bg-amber-600 hover:bg-amber-700 text-white min-h-[36px]">
               <span>Unlock Pass</span>
               <ArrowRight className="w-3.5 h-3.5 ml-1" />
             </Button>
@@ -817,7 +817,7 @@ export const HomePage: React.FC = () => {
 
     return (
       <section key={block.id} className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
           <div>
             <div className="flex items-center gap-1.5 text-xs font-heading font-bold text-[#00687A] uppercase tracking-wider mb-1">
               <Clock className="w-4 h-4" />
@@ -830,8 +830,8 @@ export const HomePage: React.FC = () => {
               {config.subtitle || 'Latest updates added to our mathematical repository.'}
             </p>
           </div>
-          <Link href="/study-material">
-            <Button variant="outline" size="sm">
+          <Link href="/study-material" className="self-start sm:self-auto">
+            <Button variant="outline" size="sm" className="min-h-[36px]">
               <span>View Repository</span>
               <ArrowRight className="w-3.5 h-3.5 ml-1" />
             </Button>

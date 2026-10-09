@@ -46,7 +46,8 @@ export const MobileNav: React.FC = () => {
             <Link
               key={item.label}
               href={item.href}
-              className="flex flex-col items-center justify-center py-1 group focus:outline-none"
+              className="flex flex-col items-center justify-center min-h-[48px] w-full py-1 group focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1D4ED8]"
+              aria-label={item.label}
             >
               <div
                 className={`flex items-center justify-center px-3.5 py-1 rounded-full transition-all duration-200 ${

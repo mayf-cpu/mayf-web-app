@@ -132,10 +132,10 @@ export const LoginPage: React.FC = () => {
           </div>
 
           {/* Student vs Parent Toggle */}
-          <div className="grid grid-cols-2 p-1 bg-[#F1F5F9] rounded-lg">
+          <div className="grid grid-cols-2 p-1 bg-[#F1F5F9] rounded-xl gap-1">
             <button
               onClick={() => setActiveTab('student')}
-              className={`py-1.5 text-xs font-heading font-semibold rounded-md transition-all cursor-pointer ${
+              className={`py-2.5 min-h-[44px] text-xs font-heading font-semibold rounded-lg transition-all cursor-pointer flex items-center justify-center ${
                 activeTab === 'student'
                   ? 'bg-white text-[#1D4ED8] shadow-xs'
                   : 'text-[#64748B] hover:text-[#0F172A]'
@@ -145,7 +145,7 @@ export const LoginPage: React.FC = () => {
             </button>
             <button
               onClick={() => setActiveTab('parent')}
-              className={`py-1.5 text-xs font-heading font-semibold rounded-md transition-all cursor-pointer ${
+              className={`py-2.5 min-h-[44px] text-xs font-heading font-semibold rounded-lg transition-all cursor-pointer flex items-center justify-center ${
                 activeTab === 'parent'
                   ? 'bg-white text-[#1D4ED8] shadow-xs'
                   : 'text-[#64748B] hover:text-[#0F172A]'
@@ -160,7 +160,7 @@ export const LoginPage: React.FC = () => {
             <button
               onClick={handleGoogleSignIn}
               disabled={isLoading}
-              className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-white hover:bg-[#F8FAFC] border-2 border-[#CBD5E1] hover:border-[#1D4ED8] rounded-xl font-heading font-bold text-xs sm:text-sm text-[#0F172A] shadow-xs transition-all cursor-pointer active:scale-[0.99]"
+              className="w-full min-h-[48px] flex items-center justify-center gap-3 py-3 px-4 bg-white hover:bg-[#F8FAFC] border-2 border-[#CBD5E1] hover:border-[#1D4ED8] rounded-xl font-heading font-bold text-xs sm:text-sm text-[#0F172A] shadow-xs transition-all cursor-pointer active:scale-[0.99]"
             >
               <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
                 <path
@@ -195,28 +195,28 @@ export const LoginPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Alternative tabs: Mobile OTP vs Email */}
-          <div className="flex border-b border-[#F1F5F9] pb-2 gap-4 text-xs font-semibold">
+          {/* Alternative tabs: Mobile OTP vs Email with accessible touch targets */}
+          <div className="flex border-b border-[#F1F5F9] pb-1 gap-4 text-xs font-semibold">
             <button
               onClick={() => setMethod('otp')}
-              className={`flex items-center gap-1.5 pb-1 border-b-2 cursor-pointer ${
+              className={`flex items-center gap-1.5 pb-2 min-h-[44px] border-b-2 cursor-pointer transition-colors ${
                 method === 'otp'
                   ? 'border-[#1D4ED8] text-[#1D4ED8]'
                   : 'border-transparent text-[#64748B]'
               }`}
             >
-              <Smartphone className="w-3.5 h-3.5" />
+              <Smartphone className="w-4 h-4" />
               <span>Mobile OTP</span>
             </button>
             <button
               onClick={() => setMethod('email')}
-              className={`flex items-center gap-1.5 pb-1 border-b-2 cursor-pointer ${
+              className={`flex items-center gap-1.5 pb-2 min-h-[44px] border-b-2 cursor-pointer transition-colors ${
                 method === 'email'
                   ? 'border-[#1D4ED8] text-[#1D4ED8]'
                   : 'border-transparent text-[#64748B]'
               }`}
             >
-              <Mail className="w-3.5 h-3.5" />
+              <Mail className="w-4 h-4" />
               <span>Email</span>
             </button>
           </div>

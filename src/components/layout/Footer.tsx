@@ -50,15 +50,16 @@ export const Footer: React.FC = () => {
               <span>Official portal: mayf.co.in</span>
             </div>
 
-            {/* Social channels strip */}
+            {/* Social channels strip with accessible touch targets (>= 40px) */}
             <div className="pt-1 flex items-center gap-2 flex-wrap text-xs">
               {social.youtube && (
                 <a
                   href={social.youtube}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="p-1.5 rounded-md bg-slate-100 hover:bg-red-50 hover:text-red-600 transition-colors"
+                  className="w-10 h-10 min-w-[40px] min-h-[40px] inline-flex items-center justify-center rounded-lg bg-slate-100 hover:bg-red-50 hover:text-red-600 transition-colors font-bold text-xs"
                   title="YouTube"
+                  aria-label="YouTube Channel"
                 >
                   YT
                 </a>
@@ -68,8 +69,9 @@ export const Footer: React.FC = () => {
                   href={social.telegram}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="p-1.5 rounded-md bg-slate-100 hover:bg-sky-50 hover:text-sky-600 transition-colors"
+                  className="w-10 h-10 min-w-[40px] min-h-[40px] inline-flex items-center justify-center rounded-lg bg-slate-100 hover:bg-sky-50 hover:text-sky-600 transition-colors font-bold text-xs"
                   title="Telegram"
+                  aria-label="Telegram Channel"
                 >
                   TG
                 </a>
@@ -79,8 +81,9 @@ export const Footer: React.FC = () => {
                   href={social.whatsapp}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="p-1.5 rounded-md bg-slate-100 hover:bg-emerald-50 hover:text-emerald-600 transition-colors"
+                  className="w-10 h-10 min-w-[40px] min-h-[40px] inline-flex items-center justify-center rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-600 transition-colors font-bold text-xs"
                   title="WhatsApp"
+                  aria-label="WhatsApp Support"
                 >
                   WA
                 </a>
@@ -90,8 +93,9 @@ export const Footer: React.FC = () => {
                   href={social.instagram}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="p-1.5 rounded-md bg-slate-100 hover:bg-pink-50 hover:text-pink-600 transition-colors"
+                  className="w-10 h-10 min-w-[40px] min-h-[40px] inline-flex items-center justify-center rounded-lg bg-slate-100 hover:bg-pink-50 hover:text-pink-600 transition-colors font-bold text-xs"
                   title="Instagram"
+                  aria-label="Instagram Profile"
                 >
                   IG
                 </a>

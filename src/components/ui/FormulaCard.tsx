@@ -56,11 +56,7 @@ export const FormulaCard: React.FC<FormulaCardProps> = ({
     if (target.closest('button') || target.closest('a')) {
       return;
     }
-    if (openInNewTab) {
-      window.open(targetUrl, '_blank', 'noopener,noreferrer');
-    } else {
-      navigate(targetUrl);
-    }
+    navigate(targetUrl);
   };
 
   return (
@@ -97,7 +93,7 @@ export const FormulaCard: React.FC<FormulaCardProps> = ({
               onClick={handleBookmark}
               title={isSaved ? 'Remove from favorites' : 'Add to favorites'}
               aria-label={isSaved ? 'Remove from favorites' : 'Add to favorites'}
-              className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+              className={`w-9 h-9 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg transition-colors cursor-pointer ${
                 isSaved
                   ? 'text-[#FF6B4A] bg-[#FFF1EE]'
                   : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
@@ -108,8 +104,11 @@ export const FormulaCard: React.FC<FormulaCardProps> = ({
           </div>
         </div>
 
-        {/* Formula Title */}
-        <h3 className="font-heading font-bold text-base text-slate-900 mb-2 group-hover:text-blue-700 transition-colors leading-snug">
+        {/* Formula Title with safe wrapping for long titles */}
+        <h3
+          className="font-heading font-bold text-base text-slate-900 mb-2 group-hover:text-blue-700 transition-colors leading-snug line-clamp-2 break-words"
+          title={formula.title}
+        >
           <Link
             href={targetUrl}
             openInNewTab={openInNewTab}
@@ -120,8 +119,8 @@ export const FormulaCard: React.FC<FormulaCardProps> = ({
         </h3>
 
         {/* Mathematical Typesetting centered in soft blue-tinted container */}
-        <div className="bg-[#F0F9FF] border border-[#BAE6FD]/70 rounded-lg p-3 my-3 flex items-center justify-between gap-3 group-hover:border-blue-300 transition-colors">
-          <div className="overflow-x-auto py-1 max-w-[calc(100%-2.5rem)] scrollbar-none">
+        <div className="bg-[#F0F9FF] border border-[#BAE6FD]/70 rounded-lg p-2.5 sm:p-3 my-3 flex items-center justify-between gap-2.5 group-hover:border-blue-300 transition-colors overflow-hidden">
+          <div className="flex-1 min-w-0 overflow-x-auto py-1 scrollbar-thin">
             {renderedLatex ? (
               <div
                 className="text-blue-900 font-medium text-sm sm:text-base whitespace-nowrap"
@@ -137,7 +136,7 @@ export const FormulaCard: React.FC<FormulaCardProps> = ({
           <button
             onClick={handleCopy}
             title="Copy formula expression"
-            className="p-1.5 rounded-md text-sky-700 hover:bg-white hover:shadow-2xs transition-all shrink-0 cursor-pointer"
+            className="w-9 h-9 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-sky-700 hover:bg-white hover:shadow-2xs transition-all shrink-0 cursor-pointer"
             aria-label="Copy formula"
           >
             {copied ? (
@@ -181,7 +180,7 @@ export const FormulaCard: React.FC<FormulaCardProps> = ({
             <span>{openInNewTab ? 'Explore in new tab' : 'Explore formula document & derivation'}</span>
             {openInNewTab ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowRight className="w-3.5 h-3.5" />}
           </span>
-          <span className="text-[10px] uppercase font-bold text-slate-400 group-hover:text-blue-600">
+          <span className="text-[10px] uppercase font-bold text-slate-400 group-hover:text-blue-600 truncate max-w-[110px] sm:max-w-[180px]">
             /formula/{formula.slug}
           </span>
         </div>

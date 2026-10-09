@@ -11,6 +11,9 @@ import { SeoHead } from '../components/common/SeoHead';
 import { PromotionalBanner } from '../components/ui/PromotionalBanner';
 import { ShareButton } from '../components/ui/ShareButton';
 import { AdSensePlacement } from '../components/adsense/AdSensePlacement';
+import { Link } from '../context/NavigationContext';
+import { CardSkeleton } from '../components/ui/LoadingState';
+import { ErrorState } from '../components/ui/ErrorState';
 import { trackSearch } from '../lib/analytics/analyticsService';
 
 export const StudyMaterialPage: React.FC = () => {
@@ -36,6 +39,7 @@ export const StudyMaterialPage: React.FC = () => {
   const [hasMore, setHasMore] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const classes: (StudentClass | 'All')[] = [
     'All',
@@ -132,6 +136,7 @@ export const StudyMaterialPage: React.FC = () => {
     if (reset) {
       setLoading(true);
       setCursor(null);
+      setErrorMessage(null);
     } else {
       setLoadingMore(true);
     }
@@ -158,6 +163,10 @@ export const StudyMaterialPage: React.FC = () => {
       }
       setCursor(result.nextCursor);
       setHasMore(result.hasMore);
+      setErrorMessage(null);
+    } catch (err: any) {
+      console.error('[StudyMaterialPage] Catalogue fetch error:', err);
+      setErrorMessage(err?.message || 'Unable to load curriculum study materials. Please check your network connection and retry.');
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -433,13 +442,13 @@ export const StudyMaterialPage: React.FC = () => {
               </select>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-[#64748B] font-semibold">Difficulty:</span>
               {(['All', 'Foundation', 'Standard', 'Exemplar / Board'] as const).map((diff) => (
                 <button
                   key={diff}
                   onClick={() => setSelectedDifficulty(diff)}
-                  className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer ${
+                  className={`px-3 py-1.5 min-h-[36px] rounded-md text-xs font-medium transition-colors cursor-pointer ${
                     selectedDifficulty === diff
                       ? 'bg-[#1E293B] text-white'
                       : 'bg-[#F1F5F9] text-[#64748B] hover:text-[#0F172A]'
@@ -452,12 +461,26 @@ export const StudyMaterialPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Content Items Grid */}
+        {/* Content Items Grid & Network States */}
         {loading ? (
-          <div className="py-20 text-center text-[#64748B] text-xs space-y-2">
-            <div className="w-8 h-8 rounded-full border-2 border-[#1D4ED8] border-t-transparent animate-spin mx-auto" />
-            <p>Querying indexed Firestore catalogue (up to 20 documents via database cursor)...</p>
+          <div className="space-y-4">
+            <div className="text-xs text-[#64748B] flex items-center gap-2">
+              <div className="w-3.5 h-3.5 border-2 border-[#1D4ED8] border-t-transparent rounded-full animate-spin" />
+              <span>Loading curriculum catalogue...</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {Array.from({ length: 6 }).map((_, idx) => (
+                <CardSkeleton key={idx} />
+              ))}
+            </div>
           </div>
+        ) : errorMessage ? (
+          <ErrorState
+            title="Failed to Load Study Materials"
+            description={errorMessage}
+            onRetry={() => loadCatalogue(true)}
+            actionText="Retry Loading Catalogue"
+          />
         ) : displayedItems.length === 0 ? (
           <div className="bg-white rounded-xl border border-[#E2E8F0] p-12 text-center text-[#64748B] space-y-3">
             <p className="text-sm font-heading font-semibold text-[#0F172A]">
@@ -486,12 +509,11 @@ export const StudyMaterialPage: React.FC = () => {
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {displayedItems.map((item) => (
-                /* Content card with configurable openInNewTab */
-                <a
+                /* Content card with SPA routing */
+                <Link
                   key={item.id}
                   href={`/study/${item.slug}`}
-                  target={openInNewTab ? '_blank' : undefined}
-                  rel={openInNewTab ? 'noopener noreferrer' : undefined}
+                  openInNewTab={openInNewTab}
                   className="bg-white rounded-xl border border-[#E2E8F0] shadow-[0_4px_14px_-2px_rgba(29,78,216,0.05)] hover:shadow-[0_10px_25px_-2px_rgba(29,78,216,0.12)] transition-all duration-200 flex flex-col justify-between overflow-hidden group block focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]"
                 >
                   <div className="p-5">
@@ -513,19 +535,22 @@ export const StudyMaterialPage: React.FC = () => {
                       )}
                     </div>
 
-                    {/* Title */}
-                    <h3 className="font-heading font-bold text-base text-[#0F172A] mb-2 group-hover:text-[#1D4ED8] transition-colors leading-snug">
+                    {/* Title with break-words and tooltip for long titles */}
+                    <h3
+                      className="font-heading font-bold text-base text-[#0F172A] mb-2 group-hover:text-[#1D4ED8] transition-colors leading-snug line-clamp-2 break-words"
+                      title={item.title}
+                    >
                       {item.title}
                     </h3>
 
                     {/* Description */}
-                    <p className="text-xs text-[#64748B] leading-relaxed mb-4 line-clamp-2">
+                    <p className="text-xs text-[#64748B] leading-relaxed mb-4 line-clamp-2 break-words">
                       {item.shortDescription || item.description}
                     </p>
 
                     {/* Topic metadata */}
                     <div className="pt-2 border-t border-[#F1F5F9] flex items-center justify-between text-[11px] text-[#64748B]">
-                      <span className="font-semibold text-[#00687A]">{item.categoryId}</span>
+                      <span className="font-semibold text-[#00687A] truncate max-w-[150px]">{item.categoryId}</span>
                       <span className="font-mono tabular-nums">{item.viewCount} views</span>
                     </div>
                   </div>
@@ -540,7 +565,7 @@ export const StudyMaterialPage: React.FC = () => {
                       {openInNewTab ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowRight className="w-3.5 h-3.5" />}
                     </span>
                   </div>
-                </a>
+                </Link>
               ))}
             </div>
 
