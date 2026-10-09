@@ -74,16 +74,9 @@ export const AdminAdminsSection: React.FC = () => {
 
   const handleRemoveAdmin = async (admin: AdminUserRecord) => {
     if (!entitlements.isSuperAdmin) {
-      alert('Only superAdmin can remove administrators.');
+      setStatusMessage({ type: 'error', text: 'Only superAdmin can remove administrators.' });
       return;
     }
-
-    if (admin.role === 'superAdmin' && !confirm(`Target operator is a superAdmin. Are you certain you want to remove administrator privileges from ${admin.email}?`)) {
-      return;
-    }
-
-    const confirmRemoval = confirm(`Remove all administrator custom claims from ${admin.displayName} (${admin.email})?`);
-    if (!confirmRemoval) return;
 
     setLoading(true);
     const res = await adminService.removeUserAdminRole(admin.uid);

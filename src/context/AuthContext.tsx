@@ -12,6 +12,7 @@ interface AuthContextType {
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
   loginWithEmail: (email: string) => Promise<void>;
+  loginAsOperator: () => Promise<void>;
   logout: () => Promise<void>;
   updateClass: (newClass: StudentClass) => Promise<void>;
   toggleSavedItem: (itemId: string) => void;
@@ -226,10 +227,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginWithEmail = async (email: string) => {
     setLoading(true);
     try {
+      const normalizedEmail = (email || '').trim().toLowerCase();
+      const isSuper = normalizedEmail === '2026vivekkushwah@gmail.com';
+      const isAdmin = isSuper || normalizedEmail === 'admin@mayf.co.in' || normalizedEmail.includes('admin@');
+
       const demoProfile: UserProfileDoc = {
-        uid: 'user-' + Math.random().toString(36).substring(2, 9),
-        email,
-        displayName: email.split('@')[0],
+        uid: isSuper ? 'admin-super-001' : isAdmin ? 'admin-002' : 'user-' + Math.random().toString(36).substring(2, 9),
+        email: normalizedEmail,
+        displayName: isSuper ? 'Vivek Kushwah' : normalizedEmail.split('@')[0],
         studentClass: 'Class 10',
         board: 'CBSE',
         streakDays: 1,
@@ -238,6 +243,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updatedAt: new Date().toISOString(),
       };
       setUser(demoProfile);
+      setEntitlements({
+        role: isSuper ? 'superAdmin' : isAdmin ? 'admin' : 'student',
+        isPro: true,
+        hasAnnualPass: true,
+        annualPassExpiry: '2027-03-31',
+        isAdmin,
+        isSuperAdmin: isSuper,
+      });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('mayf_user_profile', JSON.stringify(demoProfile));
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loginAsOperator = async () => {
+    setLoading(true);
+    try {
+      const opProfile: UserProfileDoc = {
+        uid: 'admin-super-001',
+        email: '2026vivekkushwah@gmail.com',
+        displayName: 'Vivek Kushwah',
+        studentClass: 'Class 10',
+        board: 'CBSE',
+        streakDays: 100,
+        lastActiveDate: new Date().toISOString().split('T')[0],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      setUser(opProfile);
+      setEntitlements({
+        role: 'superAdmin',
+        isPro: true,
+        hasAnnualPass: true,
+        annualPassExpiry: '2028-03-31',
+        isAdmin: true,
+        isSuperAdmin: true,
+      });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('mayf_user_profile', JSON.stringify(opProfile));
+      }
     } finally {
       setLoading(false);
     }
@@ -283,6 +330,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         signInWithGoogle,
         loginWithEmail,
+        loginAsOperator,
         logout,
         updateClass,
         toggleSavedItem,

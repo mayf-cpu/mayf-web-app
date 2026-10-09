@@ -215,9 +215,6 @@ export const AdminNotificationsSection: React.FC = () => {
   };
 
   const handleDelete = async (id: string, titleStr: string) => {
-    if (!window.confirm(`Are you sure you want to delete broadcast "${titleStr}"?`)) {
-      return;
-    }
     try {
       const res = await adminService.deleteBroadcast(id);
       if (res.success) {

@@ -57,6 +57,7 @@ export const AiTeacherPage: React.FC = () => {
   const [inputQuestion, setInputQuestion] = useState('');
   const [selectedImage, setSelectedImage] = useState<ImagePayload | null>(null);
   const [loading, setLoading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [quotaRemaining, setQuotaRemaining] = useState<number | null>(null);
   const [activeModel, setActiveModel] = useState<string>('gemini-3.8-flash');
   const [ratingSubmittedIds, setRatingSubmittedIds] = useState<Record<string, 'helpful' | 'unhelpful'>>({});
@@ -111,14 +112,15 @@ export const AiTeacherPage: React.FC = () => {
   const handleFileChange = (file: File, type: 'image' | 'camera' | 'screenshot') => {
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!allowedTypes.includes(file.type)) {
-      alert('Please upload a valid image (JPEG, PNG, or WebP).');
+      setUploadError('Please upload a valid image (JPEG, PNG, or WebP).');
       return;
     }
 
     if (file.size > 10 * 1024 * 1024) {
-      alert('Image size exceeds 10 MB limit. Please select a smaller photo.');
+      setUploadError('Image size exceeds 10 MB limit. Please select a smaller photo.');
       return;
     }
+    setUploadError(null);
 
     const reader = new FileReader();
     reader.onload = () => {

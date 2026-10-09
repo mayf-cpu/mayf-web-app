@@ -96,11 +96,6 @@ export const AdminBrandingSection: React.FC = () => {
   };
 
   const handleReset = async () => {
-    const confirmed = window.confirm(
-      'Reset all branding, colors, social links, and controlled section copy to canonical defaults?'
-    );
-    if (!confirmed) return;
-
     setSaving(true);
     try {
       const res = await adminService.resetAdminSiteSettings();

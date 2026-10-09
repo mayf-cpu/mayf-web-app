@@ -170,11 +170,6 @@ export const AdminLayoutSection: React.FC = () => {
 
   // Reset to Defaults
   const handleResetDefaults = async () => {
-    const confirmed = window.confirm(
-      'Reset homepage block sequence and configurations to canonical defaults?'
-    );
-    if (!confirmed) return;
-
     try {
       const res = await adminService.resetAdminHomepageLayout();
       if (res.success && res.layout) {

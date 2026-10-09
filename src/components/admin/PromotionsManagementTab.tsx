@@ -170,7 +170,6 @@ export const PromotionsManagementTab: React.FC<PromotionsManagementTabProps> = (
   };
 
   const handleDeletePromo = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this promotional banner?')) return;
     try {
       const res = await fetch(`/api/admin/promotions/${id}`, {
         method: 'DELETE',

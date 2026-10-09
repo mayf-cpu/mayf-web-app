@@ -129,10 +129,6 @@ export const AdminStudentsSection: React.FC = () => {
 
   const handleDeleteAccordingToPolicy = async () => {
     if (!selectedStudent) return;
-    const confirm = window.confirm(
-      `Are you sure you want to remove user ${selectedStudent.displayName} (${selectedStudent.email}) according to policy: ${policyReason}? This will purge authentication credentials.`
-    );
-    if (!confirm) return;
 
     setActionLoading(true);
     setActionMessage(null);

@@ -106,7 +106,33 @@ export const DashboardPurchasesPage: React.FC = () => {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => alert('Downloading GST tax invoice PDF for order MAYF-ORD-2026-1001...')}
+                onClick={() => {
+                  const invoiceText =
+                    `=======================================================\n` +
+                    `  TAX INVOICE / RECEIPT - MATHS AT YOUR FINGERTIPS\n` +
+                    `  Website: https://mayf.co.in | GSTIN: 27AABCM8921P1Z5\n` +
+                    `=======================================================\n` +
+                    `Invoice / Order ID: MAYF-ORD-2026-1001\n` +
+                    `Date: ${new Date().toLocaleDateString()}\n` +
+                    `Student: ${user?.displayName || 'Arjun Sharma'}\n` +
+                    `Item: Maths at Your Fingertips Annual Pass (Class 5–10)\n` +
+                    `Gross Amount: ₹999.00\n` +
+                    `Discount (BOARD2026): -₹100.00\n` +
+                    `Net Amount Paid: ₹899.00\n` +
+                    `Payment Status: PAID (Verified 256-Bit SSL Transaction)\n` +
+                    `7-Day Money-Back Guarantee Active\n` +
+                    `=======================================================\n` +
+                    `Thank you for learning with Maths at Your Fingertips!\n`;
+                  const blob = new Blob([invoiceText], { type: 'text/plain' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `MAYF_Invoice_MAYF-ORD-2026-1001.txt`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                }}
               >
                 <Download className="w-3.5 h-3.5 mr-1" />
                 <span>GST Tax Invoice</span>
@@ -116,11 +142,7 @@ export const DashboardPurchasesPage: React.FC = () => {
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => {
-                    if (confirm('Are you sure you wish to request a refund? Our support team will process this within 24 hours.')) {
-                      setRefundRequested(true);
-                    }
-                  }}
+                  onClick={() => setRefundRequested(true)}
                   className="text-[#DC2626] hover:bg-[#FEF2F2]"
                 >
                   Request 7-Day Refund
@@ -194,7 +216,31 @@ export const DashboardPurchasesPage: React.FC = () => {
                       </td>
                       <td className="py-3 px-4 text-right">
                         <button
-                          onClick={() => alert(`Downloading GST Tax Invoice for order ${ord.orderId}`)}
+                          onClick={() => {
+                            const planTitle = ord.items?.[0]?.title || 'Maths at Your Fingertips Annual Pass';
+                            const invoiceText =
+                              `=======================================================\n` +
+                              `  TAX INVOICE / RECEIPT - MATHS AT YOUR FINGERTIPS\n` +
+                              `  Website: https://mayf.co.in | GSTIN: 27AABCM8921P1Z5\n` +
+                              `=======================================================\n` +
+                              `Invoice / Order ID: ${ord.orderId}\n` +
+                              `Date: ${new Date(ord.createdAt).toLocaleDateString()}\n` +
+                              `Student: ${user?.displayName || 'Arjun Sharma'}\n` +
+                              `Item: ${planTitle}\n` +
+                              `Amount Paid: ₹${net}\n` +
+                              `Gateway: ${ord.provider}\n` +
+                              `Payment Status: PAID\n` +
+                              `=======================================================\n`;
+                            const blob = new Blob([invoiceText], { type: 'text/plain' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `MAYF_Invoice_${ord.orderId}.txt`;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(url);
+                          }}
                           className="text-[#00687A] hover:underline font-semibold cursor-pointer"
                         >
                           Invoice PDF

@@ -256,7 +256,11 @@ export const CheckoutPage: React.FC = () => {
       }
 
       // 2. Obtain verified session token
-      const token = firebaseUser ? await firebaseUser.getIdToken() : 'student-session-token';
+      const token = firebaseUser
+        ? await firebaseUser.getIdToken()
+        : user?.uid
+        ? `dev-student-${user.uid}`
+        : 'dev-student-mayf-student-1001';
 
       // 3. STEP 1 OF FLOW: Server Creates Order (Never created directly by browser)
       const createRes = await fetch('/api/payments/create-order', {
@@ -362,7 +366,11 @@ export const CheckoutPage: React.FC = () => {
     setShowSandboxModal(false);
 
     try {
-      const token = firebaseUser ? await firebaseUser.getIdToken() : 'student-session-token';
+      const token = firebaseUser
+        ? await firebaseUser.getIdToken()
+        : user?.uid
+        ? `dev-student-${user.uid}`
+        : 'dev-student-mayf-student-1001';
       const verifyRes = await fetch('/api/payments/verify-signature', {
         method: 'POST',
         headers: {

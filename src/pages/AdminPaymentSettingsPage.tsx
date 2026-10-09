@@ -507,7 +507,7 @@ export const AdminPaymentSettingsPage: React.FC = () => {
 
   const handleRunSimulator = async () => {
     if (!simOrderId) {
-      alert('Please select an order to simulate');
+      setErrorMessage('Please select an order to simulate');
       return;
     }
 

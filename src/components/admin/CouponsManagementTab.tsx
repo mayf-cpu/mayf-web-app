@@ -177,7 +177,6 @@ export const CouponsManagementTab: React.FC<CouponsManagementTabProps> = ({ auth
   };
 
   const handleDeleteCoupon = async (codeToDelete: string) => {
-    if (!confirm(`Are you sure you want to delete coupon ${codeToDelete}?`)) return;
     try {
       const res = await fetch(`/api/admin/coupons/${codeToDelete}`, {
         method: 'DELETE',

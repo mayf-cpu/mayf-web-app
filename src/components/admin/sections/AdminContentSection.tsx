@@ -282,7 +282,7 @@ export const AdminContentSection: React.FC = () => {
     if (!editItem) return;
 
     if (!editItem.title?.trim()) {
-      alert('Please enter a Resource Title');
+      showMessage('Please enter a Resource Title', 'error');
       return;
     }
 

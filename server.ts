@@ -3297,6 +3297,7 @@ app.get('/api/formulas/:slug', (req: Request, res: Response) => {
  */
 app.get('/api/ai-teacher/config', (_req: Request, res: Response) => {
   return res.json({
+    success: true,
     status: 'ok',
     model: getAiTeacherModel(),
     supportedImageTypes: ['image/jpeg', 'image/png', 'image/webp'],

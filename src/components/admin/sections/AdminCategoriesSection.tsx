@@ -130,7 +130,7 @@ export const AdminCategoriesSection: React.FC = () => {
 
   const handleSaveCreate = async () => {
     if (!formName.trim()) {
-      alert('Please enter a category name');
+      showMessage('Please enter a category name', 'error');
       return;
     }
 
@@ -287,7 +287,7 @@ export const AdminCategoriesSection: React.FC = () => {
     const requiresReassignment = checkResult && !checkResult.canDelete;
 
     if (requiresReassignment && !targetReassignId) {
-      alert('Please select a target category to reassign content before deletion.');
+      showMessage('Please select a target category to reassign content before deletion.', 'error');
       return;
     }
 

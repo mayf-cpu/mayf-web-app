@@ -9,6 +9,7 @@ import {
   Lock,
   Save,
   CheckCircle2,
+  AlertCircle,
   AlertTriangle,
   FileCode,
   Download,
@@ -40,6 +41,7 @@ export const AdminSettingsSection: React.FC = () => {
   const [auditCategory, setAuditCategory] = useState<string>('all');
   const [auditLogs, setAuditLogs] = useState<AuditLogRecord[]>([]);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const loadData = async () => {
@@ -61,8 +63,9 @@ export const AdminSettingsSection: React.FC = () => {
   }, [auditCategory]);
 
   const handleSaveSecurity = async () => {
+    setErrorMessage(null);
     if (!entitlements.isSuperAdmin) {
-      alert('Only superAdmin can modify critical security configuration.');
+      setErrorMessage('Only superAdmin can modify critical security configuration.');
       return;
     }
 
@@ -77,7 +80,7 @@ export const AdminSettingsSection: React.FC = () => {
       const logs = await adminService.getAuditLogs('security');
       setAuditLogs(logs);
     } else {
-      alert(res.error || 'Failed to update security configuration.');
+      setErrorMessage(res.error || 'Failed to update security configuration.');
     }
   };
 
@@ -134,6 +137,13 @@ export const AdminSettingsSection: React.FC = () => {
         <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800 flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 text-emerald-600" />
           <span>{savedMessage}</span>
+        </div>
+      )}
+
+      {errorMessage && (
+        <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-800 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-rose-600" />
+          <span>{errorMessage}</span>
         </div>
       )}
 

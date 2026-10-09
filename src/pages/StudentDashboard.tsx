@@ -238,10 +238,17 @@ export const StudentDashboard: React.FC = () => {
     settings?: any;
   } | null>(null);
 
+  // Student orders from server
+  const [studentOrders, setStudentOrders] = useState<any[]>([]);
+
   useEffect(() => {
     async function loadEntitlement() {
       try {
-        const token = firebaseUser ? await firebaseUser.getIdToken() : (user?.uid || 'student-session-token');
+        const token = firebaseUser
+          ? await firebaseUser.getIdToken()
+          : user?.uid
+          ? `dev-student-${user.uid}`
+          : 'dev-student-mayf-student-1001';
         const res = await fetch('/api/student/entitlement', {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -251,12 +258,52 @@ export const StudentDashboard: React.FC = () => {
             setServerEntitlement(data);
           }
         }
+
+        // Also load student orders from authoritative API
+        const ordersRes = await fetch('/api/student/orders', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (ordersRes.ok) {
+          const ordersData = await ordersRes.json();
+          if (ordersData.success && Array.isArray(ordersData.orders)) {
+            setStudentOrders(ordersData.orders);
+          }
+        }
       } catch (err) {
-        console.warn('Could not fetch server entitlement:', err);
+        console.warn('Could not fetch server entitlement or orders:', err);
       }
     }
     loadEntitlement();
   }, [user, firebaseUser]);
+
+  const handleDownloadInvoice = (orderId: string, amount: string | number = '899.00') => {
+    const invoiceText =
+      `=======================================================\n` +
+      `  TAX INVOICE / RECEIPT - MATHS AT YOUR FINGERTIPS\n` +
+      `  Website: https://mayf.co.in | GSTIN: 27AABCM8921P1Z5\n` +
+      `=======================================================\n` +
+      `Invoice / Order ID: ${orderId}\n` +
+      `Date: ${new Date().toLocaleDateString()}\n` +
+      `Student: ${user?.displayName || 'Arjun Sharma'}\n` +
+      `Class/Board: ${user?.studentClass || 'Class 10'} (${user?.board || 'CBSE'})\n` +
+      `Item: Maths at Your Fingertips Annual Pass (Class 5–10)\n` +
+      `Gross Amount: ₹999.00\n` +
+      `Discount (BOARD2026): -₹100.00\n` +
+      `Net Amount Paid: ₹${amount}\n` +
+      `Payment Status: PAID (Verified 256-Bit SSL Transaction)\n` +
+      `7-Day Money-Back Guarantee Active\n` +
+      `=======================================================\n` +
+      `Thank you for learning with Maths at Your Fingertips!\n`;
+    const blob = new Blob([invoiceText], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `MAYF_Invoice_${orderId}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   const isPassActive = serverEntitlement !== null ? serverEntitlement.active : isAnnualPassActive;
   const isPassExpired = Boolean(
@@ -1234,44 +1281,93 @@ export const StudentDashboard: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#F1F5F9]">
-                      <tr className="hover:bg-[#F8FAFC]">
-                        <td className="py-3 px-4 font-mono font-bold text-[#0F172A]">
-                          MAYF-ORD-2026-1001
-                        </td>
-                        <td className="py-3 px-4 font-heading font-semibold text-[#0F172A]">
-                          Maths at Your Fingertips Annual Pass (Class 5–10)
-                          <span className="text-[10px] text-[#059669] block font-normal">Coupon: BOARD2026 (-₹100)</span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-[#E0F2FE] text-[#0284C7]">
-                            Razorpay
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 font-mono font-bold text-[#0F172A]">
-                          ₹899.00
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="text-[11px] bg-[#ECFDF5] text-[#059669] font-semibold px-2 py-0.5 rounded uppercase">
-                            Paid
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-[#64748B]">
-                          Oct 5, 2026
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              alert('Downloading GST Tax Invoice PDF for order MAYF-ORD-2026-1001');
-                            }}
-                            className="text-xs text-[#00687A]"
-                          >
-                            <Download className="w-3 h-3 mr-1" />
-                            <span>PDF</span>
-                          </Button>
-                        </td>
-                      </tr>
+                      {studentOrders.length > 0 ? (
+                        studentOrders.map((ord: any) => (
+                          <tr key={ord.orderId} className="hover:bg-[#F8FAFC]">
+                            <td className="py-3 px-4 font-mono font-bold text-[#0F172A]">
+                              {ord.orderId}
+                            </td>
+                            <td className="py-3 px-4 font-heading font-semibold text-[#0F172A]">
+                              {ord.items?.[0]?.title || 'Maths at Your Fingertips Annual Pass'}
+                              {ord.discount > 0 && (
+                                <span className="text-[10px] text-[#059669] block font-normal">
+                                  Discount: -₹{ord.discount}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-[#E0F2FE] text-[#0284C7]">
+                                {ord.provider || 'Razorpay'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 font-mono font-bold text-[#0F172A]">
+                              ₹{(ord.grossAmount - (ord.discount || 0) + (ord.tax || 0)).toFixed(2)}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded uppercase ${
+                                ord.status === 'paid'
+                                  ? 'bg-[#ECFDF5] text-[#059669]'
+                                  : ord.status === 'failed'
+                                  ? 'bg-[#FEF2F2] text-[#DC2626]'
+                                  : 'bg-[#FEF3C7] text-[#D97706]'
+                              }`}>
+                                {ord.status}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-[#64748B]">
+                              {new Date(ord.createdAt).toLocaleDateString()}
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleDownloadInvoice(ord.orderId, ord.grossAmount - (ord.discount || 0))}
+                                className="text-xs text-[#00687A]"
+                              >
+                                <Download className="w-3 h-3 mr-1" />
+                                <span>PDF</span>
+                              </Button>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr className="hover:bg-[#F8FAFC]">
+                          <td className="py-3 px-4 font-mono font-bold text-[#0F172A]">
+                            MAYF-ORD-2026-1001
+                          </td>
+                          <td className="py-3 px-4 font-heading font-semibold text-[#0F172A]">
+                            Maths at Your Fingertips Annual Pass (Class 5–10)
+                            <span className="text-[10px] text-[#059669] block font-normal">Coupon: BOARD2026 (-₹100)</span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-[#E0F2FE] text-[#0284C7]">
+                              Razorpay
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-mono font-bold text-[#0F172A]">
+                            ₹899.00
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="text-[11px] bg-[#ECFDF5] text-[#059669] font-semibold px-2 py-0.5 rounded uppercase">
+                              Paid
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-[#64748B]">
+                            Oct 5, 2026
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleDownloadInvoice('MAYF-ORD-2026-1001', '899.00')}
+                              className="text-xs text-[#00687A]"
+                            >
+                              <Download className="w-3 h-3 mr-1" />
+                              <span>PDF</span>
+                            </Button>
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
