@@ -24,12 +24,26 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
   const navigate = useCallback((to: string, options?: { replace?: boolean }) => {
     if (typeof window === 'undefined') return;
 
-    if (options?.replace) {
-      window.history.replaceState({}, '', to);
-    } else {
-      window.history.pushState({}, '', to);
+    // Security Defense: Strict Open Redirect Protection
+    // Only permit local relative paths starting with a single '/'
+    let safePath = to.trim();
+    if (
+      !safePath.startsWith('/') ||
+      safePath.startsWith('//') ||
+      /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(safePath) ||
+      safePath.toLowerCase().includes('javascript:') ||
+      safePath.toLowerCase().includes('data:')
+    ) {
+      console.warn('[Navigation Security] Blocked potentially dangerous non-local navigation path:', safePath);
+      safePath = '/';
     }
-    updatePath(to.split('?')[0]);
+
+    if (options?.replace) {
+      window.history.replaceState({}, '', safePath);
+    } else {
+      window.history.pushState({}, '', safePath);
+    }
+    updatePath(safePath.split('?')[0]);
   }, [updatePath]);
 
   const goBack = useCallback(() => {

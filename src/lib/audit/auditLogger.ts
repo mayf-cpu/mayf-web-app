@@ -14,6 +14,7 @@
 export type AuditAction =
   | 'ADMIN_CREATED'
   | 'ADMIN_REMOVED'
+  | 'ADMIN_CLAIMS_UPDATED'
   | 'PRO_GRANTED'
   | 'PRO_REVOKED'
   | 'ANNUAL_PASS_GRANTED'

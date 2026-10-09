@@ -142,6 +142,15 @@ export class EntitlementService {
     paymentId?: string;
     durationDays?: number;
   }): Entitlement {
+    // Enforce strict order idempotency: prevent duplicate webhook replays from multiplying subscriptions
+    if (params.orderId) {
+      for (const existing of this.entitlementsStore.values()) {
+        if (existing.orderId === params.orderId) {
+          return existing;
+        }
+      }
+    }
+
     const duration = params.durationDays || this.settings.durationDays || 365;
     const now = new Date();
     const expiresAt = new Date(now.getTime() + duration * 24 * 60 * 60 * 1000);

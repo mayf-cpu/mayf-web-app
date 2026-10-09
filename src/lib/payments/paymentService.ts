@@ -266,6 +266,22 @@ export class PaymentService {
       };
     }
 
+    // Ownership check: Prevent payment verification spoofing across different user accounts
+    if (req.userId && order.userId !== req.userId) {
+      return {
+        success: false,
+        error: 'Unauthorized: Payment order does not belong to the authenticated student account.',
+      };
+    }
+
+    // Gateway order ID consistency check
+    if (order.providerOrderId && req.providerOrderId && order.providerOrderId !== req.providerOrderId) {
+      return {
+        success: false,
+        error: 'Payment verification failed: Provider order ID mismatch.',
+      };
+    }
+
     if (order.status === 'paid') {
       return {
         success: true,

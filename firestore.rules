@@ -24,12 +24,17 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && (
         request.auth.token.role == 'admin' ||
-        request.auth.token.role == 'superAdmin'
+        request.auth.token.role == 'superAdmin' ||
+        request.auth.token.admin == true ||
+        request.auth.token.superAdmin == true
       );
     }
 
     function isSuperAdmin() {
-      return isSignedIn() && request.auth.token.role == 'superAdmin';
+      return isSignedIn() && (
+        request.auth.token.role == 'superAdmin' ||
+        request.auth.token.superAdmin == true
+      );
     }
 
     function isValidId(id) {
@@ -187,7 +192,7 @@ service cloud.firestore {
       allow list: if isSignedIn() && existing().userId == request.auth.uid;
       allow update: if isValidId(notificationId) && isOwner(existing().userId)
         && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
-      allow create: if isSignedIn() && (incoming().userId == request.auth.uid || isAdmin());
+      allow create: if isAdmin();
       allow delete: if isAdmin() || (isSignedIn() && isOwner(existing().userId));
     }
 

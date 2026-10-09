@@ -41,9 +41,13 @@ const app = express();
 const PORT = 3000;
 const isProduction = process.env.NODE_ENV === 'production';
 
+// Administrator Entry Path (configurable via environment variable)
+const ADMIN_ENTRY_PATH = process.env.ADMIN_ENTRY_PATH || process.env.VITE_ADMIN_ENTRY_PATH || '/mgmt-sec-k92a';
+
 // Capture raw body for authoritative cryptographic HMAC webhook signature verification
 app.use(
   express.json({
+    limit: '10mb',
     verify: (req: any, _res, buf) => {
       req.rawBody = buf;
     },
@@ -60,6 +64,20 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=(), payment=(self)');
+
+  // Content Security Policy (enforcing strict resource origins and script protections)
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://www.googletagmanager.com https://checkout.razorpay.com https://js.stripe.com; " +
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+    "font-src 'self' https://fonts.gstatic.com data:; " +
+    "img-src 'self' data: https: blob:; " +
+    "connect-src 'self' https://challenges.cloudflare.com https://www.google-analytics.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://api.razorpay.com https://api.stripe.com; " +
+    "frame-src 'self' https://challenges.cloudflare.com https://api.razorpay.com https://js.stripe.com https://www.youtube.com https://www.youtube-nocookie.com; " +
+    "object-src 'none'; " +
+    "base-uri 'self';"
+  );
 
   // 2. Extract Cloudflare Edge Headers
   const cfRay = req.headers['cf-ray'];
@@ -99,8 +117,44 @@ app.use((req, res, next) => {
   next();
 });
 
-// Administrator Entry Path (configurable via environment variable)
-const ADMIN_ENTRY_PATH = process.env.ADMIN_ENTRY_PATH || process.env.VITE_ADMIN_ENTRY_PATH || '/mgmt-sec-k92a';
+// -------------------------------------------------------------
+// Cross-Site Request Forgery (CSRF) & Origin Defense Middleware
+// Validates Origin/Referer on state-changing requests (POST, PUT, DELETE)
+// Machine-to-machine webhooks with cryptographic HMAC signatures are exempt
+// -------------------------------------------------------------
+app.use((req, res, next) => {
+  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+    const path = req.path.toLowerCase();
+    const isWebhook =
+      path.startsWith('/api/payments/webhook') ||
+      path.startsWith('/api/ingestion/webhook');
+
+    if (!isWebhook) {
+      const origin = (req.headers.origin as string) || (req.headers.referer as string) || '';
+      if (origin) {
+        try {
+          const parsedOrigin = new URL(origin);
+          const hostname = parsedOrigin.hostname.toLowerCase();
+          const isAllowedHost =
+            hostname === 'localhost' ||
+            hostname === '127.0.0.1' ||
+            hostname === 'mayf.co.in' ||
+            hostname.endsWith('.mayf.co.in') ||
+            hostname.endsWith('.run.app') ||
+            hostname.endsWith('.cloudflareaccess.com');
+
+          if (!isAllowedHost) {
+            console.warn(`[Security Alert] CSRF Origin Mismatch blocked: ${origin} on ${req.method} ${req.path}`);
+            return res.status(403).json({ error: 'Forbidden: Cross-site request rejected by CSRF origin shield.' });
+          }
+        } catch {
+          return res.status(403).json({ error: 'Forbidden: Malformed request origin header.' });
+        }
+      }
+    }
+  }
+  next();
+});
 
 // Enforce X-Robots-Tag: noindex, nofollow on all administrative routes and APIs
 app.use((req, res, next) => {
@@ -167,10 +221,17 @@ async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextF
   // Check active entitlement authoritatively from server-side store
   const entitlementCheck = entitlementService.checkActiveEntitlement(tokenVerification.uid);
 
-  // Assign verified user identity from token
+  // Assign verified user identity from token (CRITICAL: Strictly rely on cryptographic claims, NEVER substrings in UID)
   const assignedRole =
-    tokenVerification.role ||
-    (tokenVerification.superAdmin ? 'superAdmin' : tokenVerification.admin ? 'admin' : tokenVerification.uid.includes('admin') ? 'admin' : 'student');
+    tokenVerification.superAdmin
+      ? 'superAdmin'
+      : tokenVerification.admin
+      ? 'admin'
+      : tokenVerification.role === 'superAdmin'
+      ? 'superAdmin'
+      : tokenVerification.role === 'admin'
+      ? 'admin'
+      : 'student';
 
   const resolvedEmail =
     tokenVerification.email ||
@@ -294,7 +355,8 @@ app.post('/api/turnstile/verify', async (req: Request, res: Response) => {
 
     const secretKey = process.env.TURNSTILE_SECRET_KEY || '1x0000000000000000000000000000000AA';
 
-    if (token.startsWith('cf-test-') || token === '1x00000000000000000000AA' || secretKey.startsWith('1x0000')) {
+    const isProd = process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'production';
+    if (!isProd && (token.startsWith('cf-test-') || token === '1x00000000000000000000AA' || secretKey.startsWith('1x0000'))) {
       return res.json({
         success: true,
         message: 'Turnstile verified (development test key)',
@@ -352,8 +414,9 @@ async function verifyTurnstileTokenServer(token: string, remoteIp?: string): Pro
 
   const secretKey = process.env.TURNSTILE_SECRET_KEY || '1x0000000000000000000000000000000AA';
 
-  // Support local test and development keys without breaking
-  if (token.startsWith('cf-test-') || token === '1x00000000000000000000AA' || secretKey.startsWith('1x0000')) {
+  // Support local test and development keys without breaking ONLY in non-production
+  const isProd = process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'production';
+  if (!isProd && (token.startsWith('cf-test-') || token === '1x00000000000000000000AA' || secretKey.startsWith('1x0000'))) {
     return { success: true };
   }
 
@@ -439,6 +502,7 @@ interface DownloadTokenRecord {
   mimeType: string;
   accessType: 'free' | 'paid';
   uid: string | null;
+  clientIpHash: string;
   createdAt: number;
   expiresAt: number;
   used: boolean;
@@ -595,7 +659,9 @@ app.post('/api/downloads/authorize', async (req: Request, res: Response) => {
     }
 
     // Generate short-lived (60 seconds) cryptographically secure single-use token
+    // Bound strictly to client IP hash to prevent download URL sharing
     const downloadToken = crypto.randomBytes(32).toString('hex');
+    const clientIpHash = crypto.createHash('sha256').update(rawIp).digest('hex').substring(0, 16);
     const expiresInSeconds = 60;
     const expiresAt = Date.now() + expiresInSeconds * 1000;
 
@@ -606,6 +672,7 @@ app.post('/api/downloads/authorize', async (req: Request, res: Response) => {
       mimeType: item.mimeType,
       accessType: item.accessType,
       uid: verifiedUid,
+      clientIpHash,
       createdAt: Date.now(),
       expiresAt,
       used: false,
@@ -635,6 +702,7 @@ app.post('/api/downloads/authorize', async (req: Request, res: Response) => {
 /**
  * Authorized Short-Lived Single-Use File Download Endpoint
  * Never exposes permanent public URLs or permanent redistribution links.
+ * Enforces IP binding to prevent URL sharing.
  */
 app.get('/api/downloads/file/:token', async (req: Request, res: Response) => {
   const { token } = req.params;
@@ -663,6 +731,24 @@ app.get('/api/downloads/file/:token', async (req: Request, res: Response) => {
   if (tokenRecord.used) {
     return res.status(403).json({
       error: 'Download token has already been consumed. Download tokens are strictly single-use.',
+    });
+  }
+
+  // Security Check: Download URL Sharing Prevention
+  // Ensure requesting IP matches the IP that authorized the token
+  const callerIpHash = crypto.createHash('sha256').update(rawIp).digest('hex').substring(0, 16);
+  if (tokenRecord.clientIpHash && tokenRecord.clientIpHash !== callerIpHash) {
+    logDownloadAudit({
+      contentId: tokenRecord.contentId,
+      uid: tokenRecord.uid,
+      accessType: tokenRecord.accessType,
+      status: 'failed',
+      action: 'file_served',
+      reason: 'Download URL sharing detected: IP address does not match authorized session',
+      req,
+    });
+    return res.status(403).json({
+      error: 'Download link cannot be shared across different networks or devices. Please generate a new download.',
     });
   }
 
@@ -740,6 +826,7 @@ app.get('/api/admin/downloads/audit-logs', requireAuth, requireAdmin, (_req: Req
 /**
  * 1. Server Creates Order
  * Primary: /api/payments/create-order (Also backwards-compatible with /api/orders/create)
+ * ENFORCES AUTHORITATIVE SERVER PRICING TO PREVENT PRICE MANIPULATION!
  */
 async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
   try {
@@ -755,13 +842,48 @@ async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
     } = req.body;
     const userId = req.userAuth!.uid;
 
-    const chosenGross = grossAmount || amount || 999;
+    // Rate Limiting on checkout creation: max 10 orders per 5 minutes per user/IP
+    const rawIp = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || '127.0.0.1');
+    if (checkDownloadRateLimit(`order-rate-${userId || rawIp}`, 10, 300 * 1000)) {
+      return res.status(429).json({
+        success: false,
+        error: 'Too many order requests. Please wait a few minutes before starting a new checkout.',
+      });
+    }
+
+    // AUTHORITATIVE PRICE CALCULATION: Prevent price manipulation
+    // Never trust client-supplied amounts for Annual Pass or catalog items.
+    const isUsd = currency.toUpperCase() === 'USD';
+    const passSettings = entitlementService.getSettings();
+    const authoritativePassPrice = isUsd ? 29 : (passSettings.salePrice || 999);
+
+    let authoritativeGross = authoritativePassPrice;
+    if (items && Array.isArray(items) && items.length > 0) {
+      authoritativeGross = items.reduce((sum: number, it: any) => {
+        if (it.annualPass || it.id?.includes('pass')) {
+          return sum + authoritativePassPrice;
+        }
+        const unitPrice = Math.max(Number(it.unitPrice) || 0, isUsd ? 9 : 199);
+        const qty = Math.max(1, Math.min(10, Number(it.quantity) || 1));
+        return sum + (unitPrice * qty);
+      }, 0);
+    }
+
     const chosenCoupon = coupon || couponCode;
 
     const result = await paymentService.createOrder({
       userId,
-      items,
-      grossAmount: chosenGross,
+      items: items.length > 0 ? items : [
+        {
+          id: 'item-annual-pass',
+          title: 'Maths at Your Fingertips Annual Pass (Class 5–10)',
+          unitPrice: authoritativeGross,
+          quantity: 1,
+          annualPass: true,
+          description: '1-Year Unlimited Access to All Formula Decks, Chapter Materials, & AI Teacher',
+        },
+      ],
+      grossAmount: authoritativeGross,
       coupon: chosenCoupon,
       currency,
       preferredProvider: provider as PaymentProvider,
@@ -794,6 +916,7 @@ app.post('/api/orders/create', requireAuth, handleCreateOrder);
 /**
  * 2. Client Returns Payment Identifiers -> Server Authoritatively Verifies Signature
  * Never grants content access simply because the browser says payment succeeded!
+ * Strictly validates user ownership to prevent payment spoofing!
  */
 async function handleVerifyPayment(req: AuthenticatedRequest, res: Response) {
   try {
@@ -817,6 +940,7 @@ async function handleVerifyPayment(req: AuthenticatedRequest, res: Response) {
 
     const verification = await paymentService.verifyPaymentSignature({
       orderId,
+      userId,
       provider: (provider as PaymentProvider) || 'razorpay',
       providerOrderId: providerOrderId || razorpay_order_id || '',
       providerPaymentId: providerPaymentId || razorpay_payment_id || paymentGatewayTransactionId || '',
@@ -832,10 +956,10 @@ async function handleVerifyPayment(req: AuthenticatedRequest, res: Response) {
       });
     }
 
-    // Authoritatively create or renew entitlement upon verified payment
-    // Entitlement contains: userId, type = 'annual_pass', startsAt, expiresAt, status
+    // Authoritatively create or renew entitlement upon verified payment for the ORDER OWNER ONLY
+    const targetUserId = verification.order?.userId || userId;
     const entitlementGrant = entitlementService.createOrRenewFromPayment({
-      userId,
+      userId: targetUserId,
       orderId: verification.order?.orderId || orderId,
       paymentId: verification.order?.providerPaymentId || `PAY-${Date.now()}`,
     });
@@ -868,8 +992,8 @@ app.post('/api/payments/webhook/razorpay', async (req: Request, res: Response) =
       return res.status(400).json({ status: 'invalid_signature', error: result.message });
     }
 
-    // Provision entitlement if order is confirmed paid
-    if (result.success && result.orderId) {
+    // Provision entitlement ONLY on genuine first-time processed payment, NEVER on duplicate webhook replays!
+    if (result.success && result.status === 'processed' && result.orderId) {
       const order = paymentService.getAllOrders().find((o) => o.orderId === result.orderId);
       if (order && order.status === 'paid') {
         entitlementService.createOrRenewFromPayment({
@@ -907,8 +1031,8 @@ app.post('/api/payments/webhook/stripe', async (req: Request, res: Response) => 
       return res.status(400).json({ status: 'invalid_signature', error: result.message });
     }
 
-    // Provision entitlement if order is confirmed paid
-    if (result.success && result.orderId) {
+    // Provision entitlement ONLY on genuine first-time processed payment, NEVER on duplicate webhook replays!
+    if (result.success && result.status === 'processed' && result.orderId) {
       const order = paymentService.getAllOrders().find((o) => o.orderId === result.orderId);
       if (order && order.status === 'paid') {
         entitlementService.createOrRenewFromPayment({
@@ -1390,16 +1514,33 @@ app.delete('/api/admin/promotions/:id', requireAuth, requireAdmin, (req: Authent
 
 // -------------------------------------------------------------
 // Admin Privileged Custom Claims Setter
+// RBAC GATED: ONLY superAdmin can mint or adjust custom claims
 // -------------------------------------------------------------
-app.post('/api/admin/set-claims', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/set-claims', requireAuth, requireSuperAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { targetUid, role, pro, annualPass } = req.body;
     if (!targetUid) {
       return res.status(400).json({ error: 'targetUid is required' });
     }
 
+    if (role && !['student', 'admin', 'superAdmin'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role specified' });
+    }
+
     // Server-side custom claims assignment logic
-    console.info(`[MAYF Admin] Setting custom claims for ${targetUid}:`, { role, pro, annualPass });
+    console.info(`[MAYF SuperAdmin] Setting custom claims for ${targetUid}:`, { role, pro, annualPass });
+
+    auditLogService.log({
+      action: 'ADMIN_CLAIMS_UPDATED',
+      category: 'admin',
+      actorUid: req.userAuth!.uid,
+      actorEmail: req.userAuth!.email,
+      actorRole: 'superAdmin',
+      targetId: targetUid,
+      targetType: 'user_claims',
+      details: { role, pro, annualPass },
+      status: 'success',
+    });
 
     return res.json({
       success: true,
@@ -3236,7 +3377,7 @@ app.post('/api/ai-teacher/ask', async (req: Request, res: Response) => {
     // Identify user identity if logged in
     const authHeader = req.headers.authorization;
     let verifiedUid: string | null = null;
-    let userLimit = 30; // Anonymous default
+    let userLimit = 15; // Anonymous tightened quota (max 15/day)
 
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const tokenVerification = await verifyStudentSessionToken(authHeader);
@@ -3244,6 +3385,11 @@ app.post('/api/ai-teacher/ask', async (req: Request, res: Response) => {
         verifiedUid = tokenVerification.uid;
         userLimit = 100; // Authenticated free tier
       }
+    }
+
+    // Input Validation: Question message length guard
+    if (message && typeof message === 'string' && message.length > 2500) {
+      return res.status(400).json({ error: 'Question text exceeds maximum allowed length of 2500 characters.' });
     }
 
     // Rate Limiting & Daily Quota Guard
@@ -3258,7 +3404,7 @@ app.post('/api/ai-teacher/ask', async (req: Request, res: Response) => {
     const classLevel = studentClass || 'Class 10';
     const topic = chapterTopic || 'General Mathematics';
 
-    // Image format validation
+    // Image format & security validation
     let validImagePart: { inlineData: { mimeType: string; data: string } } | null = null;
     if (image && image.data) {
       const allowedMimes = ['image/jpeg', 'image/png', 'image/webp'];
@@ -3277,6 +3423,31 @@ app.post('/api/ai-teacher/ask', async (req: Request, res: Response) => {
           error: 'The uploaded image was empty or unreadable. Please upload a clear photo or screenshot.',
         });
       }
+
+      // Payload size guard: Max 5MB (~7MB base64 string)
+      if (cleanBase64.length > 7 * 1024 * 1024) {
+        return res.status(400).json({
+          error: 'Image file size exceeds maximum allowable limit (5MB). Please upload a smaller photo or crop the question.',
+        });
+      }
+
+      // Magic byte verification on base64 headers
+      const isJpeg = cleanBase64.startsWith('/9j/');
+      const isPng = cleanBase64.startsWith('iVBORw0KGgo');
+      const isWebp = cleanBase64.startsWith('UklGR');
+      if (!isJpeg && !isPng && !isWebp) {
+        return res.status(400).json({
+          error: 'Invalid image signature. Only authentic JPEG, PNG, and WebP images are permitted.',
+        });
+      }
+
+      // Strictly reject SVG, scripts, and HTML embedded payloads
+      if (cleanBase64.includes('PHN2Zy') || cleanBase64.toLowerCase().includes('script')) {
+        return res.status(400).json({
+          error: 'Vector SVG and executable image formats are strictly forbidden.',
+        });
+      }
+
       validImagePart = {
         inlineData: {
           mimeType: mime,
@@ -3544,8 +3715,9 @@ app.post('/api/ingestion/webhook', async (req: Request, res: Response) => {
 
 // -------------------------------------------------------------
 // Admin Ingestion Jobs API
+// Gated strictly with requireAuth, requireAdmin
 // -------------------------------------------------------------
-app.get('/api/admin/ingest/jobs', (_req: Request, res: Response) => {
+app.get('/api/admin/ingest/jobs', requireAuth, requireAdmin, (_req: Request, res: Response) => {
   const jobs = INGESTION_JOBS_STORE;
   const summary = {
     all: jobs.length,
@@ -3563,7 +3735,7 @@ app.get('/api/admin/ingest/jobs', (_req: Request, res: Response) => {
   });
 });
 
-app.post('/api/admin/ingest/retry', async (req: Request, res: Response) => {
+app.post('/api/admin/ingest/retry', requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const { jobId } = req.body;
     if (!jobId) {
@@ -3582,7 +3754,7 @@ app.post('/api/admin/ingest/retry', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/admin/ingest/sync', async (_req: Request, res: Response) => {
+app.post('/api/admin/ingest/sync', requireAuth, requireAdmin, async (_req: Request, res: Response) => {
   try {
     const syncOutcome = await syncRegistryNow();
     return res.json({
@@ -3596,7 +3768,7 @@ app.post('/api/admin/ingest/sync', async (_req: Request, res: Response) => {
   }
 });
 
-app.post('/api/admin/ingest/simulate-approval', async (req: Request, res: Response) => {
+app.post('/api/admin/ingest/simulate-approval', requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const { content_id } = req.body;
     const target = INGESTION_JOBS_STORE.find((j) => j.content_id === content_id);

@@ -74,6 +74,7 @@ export interface ProviderOrderResult {
 
 export interface VerifyPaymentRequest {
   orderId: string;
+  userId?: string;
   provider: PaymentProvider;
   providerOrderId: string;
   providerPaymentId: string;

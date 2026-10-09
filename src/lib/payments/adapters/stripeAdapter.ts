@@ -222,48 +222,69 @@ export class StripeAdapter implements PaymentProviderAdapter {
     const eventId = payloadJson?.id || `evt_stripe_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
     const eventType = payloadJson?.type || 'checkout.session.completed';
 
-    // Verify Stripe signature header: t=...,v1=...
-    if (signatureHeader && this.webhookSecret) {
-      const parts = signatureHeader.split(',');
-      let timestamp = '';
-      let v1Sig = '';
+    // Strictly mandate cryptographic signature header on all webhooks
+    if (!signatureHeader) {
+      return {
+        isValid: false,
+        provider: 'stripe',
+        eventId,
+        eventType,
+        error: 'Missing required Stripe webhook signature header (stripe-signature)',
+      };
+    }
 
-      for (const part of parts) {
-        const [k, v] = part.split('=');
-        if (k.trim() === 't') timestamp = v.trim();
-        if (k.trim() === 'v1') v1Sig = v.trim();
-      }
+    if (!this.webhookSecret) {
+      return {
+        isValid: false,
+        provider: 'stripe',
+        eventId,
+        eventType,
+        error: 'Stripe webhook secret is not configured on server',
+      };
+    }
 
-      if (timestamp && v1Sig) {
-        const signedPayload = `${timestamp}.${payloadString}`;
-        const computedSignature = crypto
-          .createHmac('sha256', this.webhookSecret)
-          .update(signedPayload)
-          .digest('hex');
+    const parts = signatureHeader.split(',');
+    let timestamp = '';
+    let v1Sig = '';
 
-        const sigBuf = Buffer.from(v1Sig);
-        const compBuf = Buffer.from(computedSignature);
+    for (const part of parts) {
+      const [k, v] = part.split('=');
+      if (k.trim() === 't') timestamp = v.trim();
+      if (k.trim() === 'v1') v1Sig = v.trim();
+    }
 
-        let isSigValid = false;
-        if (sigBuf.length === compBuf.length) {
-          isSigValid = crypto.timingSafeEqual(sigBuf, compBuf);
-        }
+    if (!timestamp || !v1Sig) {
+      return {
+        isValid: false,
+        provider: 'stripe',
+        eventId,
+        eventType,
+        error: 'Malformed Stripe webhook signature header format',
+      };
+    }
 
-        // Sandbox fallback validation
-        if (!isSigValid && this.testMode && v1Sig.startsWith('stripe_mock_sig_')) {
-          isSigValid = true;
-        }
+    const signedPayload = `${timestamp}.${payloadString}`;
+    const computedSignature = crypto
+      .createHmac('sha256', this.webhookSecret)
+      .update(signedPayload)
+      .digest('hex');
 
-        if (!isSigValid) {
-          return {
-            isValid: false,
-            provider: 'stripe',
-            eventId,
-            eventType,
-            error: 'Invalid Stripe webhook signature header (stripe-signature)',
-          };
-        }
-      }
+    const sigBuf = Buffer.from(v1Sig);
+    const compBuf = Buffer.from(computedSignature);
+
+    let isSigValid = false;
+    if (sigBuf.length === compBuf.length) {
+      isSigValid = crypto.timingSafeEqual(sigBuf, compBuf);
+    }
+
+    if (!isSigValid) {
+      return {
+        isValid: false,
+        provider: 'stripe',
+        eventId,
+        eventType,
+        error: 'Invalid Stripe webhook signature header (stripe-signature)',
+      };
     }
 
     const sessionObj = payloadJson?.data?.object;

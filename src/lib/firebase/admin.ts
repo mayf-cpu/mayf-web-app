@@ -161,16 +161,17 @@ export async function verifyStudentSessionToken(bearerToken?: string): Promise<T
     .split(',')
     .map((e) => e.trim());
 
-  // 1. First attempt authoritative verification via Firebase Admin SDK
+  // 1. Authoritative verification via Firebase Admin SDK
   const authClient = getAdminAuth();
   if (authClient && cleanToken.split('.').length === 3 && !cleanToken.startsWith('dev-') && !cleanToken.startsWith('mock-')) {
     try {
-      const decoded = await authClient.verifyIdToken(cleanToken);
+      const decoded = await authClient.verifyIdToken(cleanToken, true);
       const email = (decoded.email || '').toLowerCase();
       const isSuperAdminClaim = decoded.superAdmin === true || decoded.role === 'superAdmin';
       const isAdminClaim = isSuperAdminClaim || decoded.admin === true || decoded.role === 'admin';
       const isAuthorizedEmail = Boolean(email && adminEmails.includes(email));
 
+      // Administrative rights require genuine verified custom claims or authorized email verified by Firebase
       const isSuperAdmin = isSuperAdminClaim || (isAuthorizedEmail && email === '2026vivekkushwah@gmail.com');
       const isAdmin = isAdminClaim || isAuthorizedEmail;
       const role = isSuperAdmin ? 'superAdmin' : isAdmin ? 'admin' : 'student';
@@ -187,48 +188,30 @@ export async function verifyStudentSessionToken(bearerToken?: string): Promise<T
         annualPassExpiry: decoded.annualPassExpiry as string | undefined,
       };
     } catch (e: any) {
-      // In development or preview environments, tokens might be signed with mock keys
-      console.warn('[Firebase Admin] verifyIdToken note, evaluating fallback:', e?.code || e?.message);
-    }
-  }
-
-  // 2. Fallback JWT payload extraction (for offline/preview testing)
-  const jwtParts = cleanToken.split('.');
-  if (jwtParts.length === 3) {
-    try {
-      const payloadJson = Buffer.from(jwtParts[1], 'base64').toString('utf8');
-      const payload = JSON.parse(payloadJson);
-      const email = (payload.email || '').toLowerCase();
-      const uid = payload.user_id || payload.sub || 'user-' + cleanToken.slice(0, 12);
-
-      const isSuperAdminClaim = payload.superAdmin === true || payload.role === 'superAdmin';
-      const isAdminClaim = isSuperAdminClaim || payload.admin === true || payload.role === 'admin';
-      const isAuthorizedEmail = Boolean(email && adminEmails.includes(email));
-
-      const isSuperAdmin = isSuperAdminClaim || (isAuthorizedEmail && email === '2026vivekkushwah@gmail.com');
-      const isAdmin = isAdminClaim || isAuthorizedEmail;
-      const role = isSuperAdmin ? 'superAdmin' : isAdmin ? 'admin' : 'student';
-
+      console.warn('[Firebase Admin] verifyIdToken rejected:', e?.code || e?.message);
+      // HARD SECURITY SHIELD: If Firebase Admin is available and rejects the token, reject immediately!
+      // Never fall through to insecure unverified JWT decoding.
       return {
-        valid: true,
-        uid,
-        email,
-        role,
-        admin: isAdmin,
-        superAdmin: isSuperAdmin,
-        pro: Boolean(payload.pro || payload.annualPass),
-        annualPass: Boolean(payload.annualPass),
-        annualPassExpiry: payload.annualPassExpiry,
+        valid: false,
+        error: 'Invalid, forged, or expired Firebase ID token',
       };
-    } catch {
-      // Continue to sandbox mock token
     }
   }
 
-  // 3. Development sandbox tokens (e.g. dev-admin-token-...)
+  const isProduction = process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'production';
+  if (isProduction) {
+    // In production, unverified tokens or mock tokens are strictly forbidden
+    return {
+      valid: false,
+      error: 'Cryptographic authentication verification failed: unverified tokens rejected in production',
+    };
+  }
+
+  // 2. Fallback ONLY for local sandbox development when Firebase Admin credentials are not yet provisioned
+  // In development sandbox ONLY: mock tokens explicitly starting with mock- or dev-
   if (cleanToken.startsWith('mock-') || cleanToken.startsWith('dev-')) {
-    const isSuper = cleanToken.includes('super') || cleanToken.includes('vivek') || cleanToken.includes('2026vivekkushwah');
-    const isAdmin = isSuper || cleanToken.includes('admin');
+    const isSuper = cleanToken === 'dev-superadmin-token' || cleanToken === 'mock-superadmin-token';
+    const isAdmin = isSuper || cleanToken === 'dev-admin-token' || cleanToken === 'mock-admin-token';
     const email = isSuper
       ? '2026vivekkushwah@gmail.com'
       : isAdmin
@@ -244,17 +227,39 @@ export async function verifyStudentSessionToken(bearerToken?: string): Promise<T
       role,
       admin: isAdmin,
       superAdmin: isSuper,
-      pro: true,
-      annualPass: true,
+      pro: isAdmin,
+      annualPass: isAdmin,
     };
   }
 
+  // Fallback for non-production development without active service account credentials
+  const jwtParts = cleanToken.split('.');
+  if (jwtParts.length === 3 && !authClient) {
+    try {
+      const payloadJson = Buffer.from(jwtParts[1], 'base64').toString('utf8');
+      const payload = JSON.parse(payloadJson);
+      const email = (payload.email || '').toLowerCase();
+      const uid = payload.user_id || payload.sub || 'user-' + cleanToken.slice(0, 12);
+
+      // SECURITY INVARIANT: Unverified fallback tokens NEVER get admin or superAdmin roles
+      return {
+        valid: true,
+        uid,
+        email,
+        role: 'student',
+        admin: false,
+        superAdmin: false,
+        pro: false,
+        annualPass: false,
+      };
+    } catch {
+      // Continue to rejection
+    }
+  }
+
   return {
-    valid: true,
-    uid: cleanToken.substring(0, 24),
-    role: 'student',
-    admin: false,
-    superAdmin: false,
+    valid: false,
+    error: 'Invalid or unverified authentication token',
   };
 }
 

@@ -172,15 +172,15 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
       match = crypto.timingSafeEqual(signatureBuffer, expectedBuffer);
     }
 
-    // In sandbox test mode, if client generated a test signature with test credentials
+    // In sandbox test mode, if client generated a test signature with standard test sandbox secret
     if (!match && this.testMode) {
-      // Check if signature was generated using standard test secret or matches test token
       const sandboxExpected = crypto
         .createHmac('sha256', 'rzp_sec_sandbox_k98a7sd6f')
         .update(payload)
         .digest('hex');
-      if (signature === sandboxExpected || signature.startsWith('sig_rzp_valid_')) {
-        match = true;
+      const sandboxBuffer = Buffer.from(sandboxExpected);
+      if (signatureBuffer.length === sandboxBuffer.length) {
+        match = crypto.timingSafeEqual(signatureBuffer, sandboxBuffer);
       }
     }
 
@@ -235,35 +235,48 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
     const eventId = payloadJson?.event_id || payloadJson?.id || `rzp_evt_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
     const eventType = payloadJson?.event || 'payment.captured';
 
-    // Verify cryptographic signature if header is present
-    if (signature && this.webhookSecret) {
-      const computedSignature = crypto
-        .createHmac('sha256', this.webhookSecret)
-        .update(payloadString)
-        .digest('hex');
+    // Strictly mandate cryptographic signature header on all webhooks
+    if (!signature) {
+      return {
+        isValid: false,
+        provider: 'razorpay',
+        eventId,
+        eventType,
+        error: 'Missing required Razorpay webhook signature header (x-razorpay-signature)',
+      };
+    }
 
-      const sigBuf = Buffer.from(signature);
-      const compBuf = Buffer.from(computedSignature);
+    if (!this.webhookSecret) {
+      return {
+        isValid: false,
+        provider: 'razorpay',
+        eventId,
+        eventType,
+        error: 'Razorpay webhook secret is not configured on server',
+      };
+    }
 
-      let isSigValid = false;
-      if (sigBuf.length === compBuf.length) {
-        isSigValid = crypto.timingSafeEqual(sigBuf, compBuf);
-      }
+    const computedSignature = crypto
+      .createHmac('sha256', this.webhookSecret)
+      .update(payloadString)
+      .digest('hex');
 
-      // Sandbox fallback validation
-      if (!isSigValid && this.testMode && signature.startsWith('rzp_mock_sig_')) {
-        isSigValid = true;
-      }
+    const sigBuf = Buffer.from(signature);
+    const compBuf = Buffer.from(computedSignature);
 
-      if (!isSigValid) {
-        return {
-          isValid: false,
-          provider: 'razorpay',
-          eventId,
-          eventType,
-          error: 'Invalid Razorpay webhook signature header (x-razorpay-signature)',
-        };
-      }
+    let isSigValid = false;
+    if (sigBuf.length === compBuf.length) {
+      isSigValid = crypto.timingSafeEqual(sigBuf, compBuf);
+    }
+
+    if (!isSigValid) {
+      return {
+        isValid: false,
+        provider: 'razorpay',
+        eventId,
+        eventType,
+        error: 'Invalid Razorpay webhook signature header (x-razorpay-signature)',
+      };
     }
 
     // Extract order & payment details from Razorpay webhook structure:
