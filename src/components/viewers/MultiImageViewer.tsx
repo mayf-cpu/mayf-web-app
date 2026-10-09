@@ -88,6 +88,10 @@ export const MultiImageViewer: React.FC<MultiImageViewerProps> = ({ files, title
           <img
             src={currentFile.url}
             alt={`${title} - Step ${currentIndex + 1}`}
+            width={1200}
+            height={750}
+            loading="lazy"
+            decoding="async"
             className="max-w-full max-h-full object-contain rounded shadow-lg"
           />
         </div>
@@ -122,7 +126,15 @@ export const MultiImageViewer: React.FC<MultiImageViewerProps> = ({ files, title
                 : 'border-[#CBD5E1] opacity-70 hover:opacity-100'
             }`}
           >
-            <img src={file.url} alt={`Thumb ${idx + 1}`} className="w-full h-full object-cover" />
+            <img
+              src={file.url}
+              alt={`Thumb ${idx + 1}`}
+              width={64}
+              height={48}
+              loading="lazy"
+              decoding="async"
+              className="w-full h-full object-cover"
+            />
           </button>
         ))}
       </div>

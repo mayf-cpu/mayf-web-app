@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { Suspense } from 'react';
+import React, { Suspense, lazy } from 'react';
 import { NavigationProvider, useNavigation } from './context/NavigationContext';
 import { AuthProvider } from './context/AuthContext';
 import { SiteSettingsProvider } from './context/SiteSettingsContext';
@@ -13,29 +13,27 @@ import { AdConsentBanner } from './components/adsense/AdConsentBanner';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { LoadingSpinner } from './components/ui/LoadingState';
 
-// Page imports
+// Critical LCP path: Keep HomePage in primary bundle for sub-second FCP/LCP
 import { HomePage } from './pages/HomePage';
-import { StudyMaterialPage } from './pages/StudyMaterialPage';
-import { StudyChapterPage } from './pages/StudyChapterPage';
-import { FormulaDeckPage } from './pages/FormulaDeckPage';
-import { FormulaDetailPage } from './pages/FormulaDetailPage';
-import { CoursesCatalogPage } from './pages/CoursesCatalogPage';
-import { CourseDetailPage } from './pages/CourseDetailPage';
-import { AiTeacherPage } from './pages/AiTeacherPage';
-import { AnnualPassPage } from './pages/AnnualPassPage';
-import { CheckoutPage } from './pages/CheckoutPage';
-import { LoginPage } from './pages/LoginPage';
-import { DashboardOverviewPage } from './pages/DashboardOverviewPage';
-import { DashboardPurchasesPage } from './pages/DashboardPurchasesPage';
-import { DashboardDownloadsPage } from './pages/DashboardDownloadsPage';
-import { DashboardSavedPage } from './pages/DashboardSavedPage';
-import { DashboardAiHistoryPage } from './pages/DashboardAiHistoryPage';
-import { SearchPage } from './pages/SearchPage';
-import { AdminPortalPage } from './pages/AdminPortalPage';
-import { PrivacyPage } from './pages/PrivacyPage';
-import { TermsPage } from './pages/TermsPage';
-import { RefundPolicyPage } from './pages/RefundPolicyPage';
-import { NotFoundPage } from './pages/NotFoundPage';
+
+// Route-level code splitting with dynamic imports for non-critical paths
+const StudyMaterialPage = lazy(() => import('./pages/StudyMaterialPage').then((m) => ({ default: m.StudyMaterialPage })));
+const StudyChapterPage = lazy(() => import('./pages/StudyChapterPage').then((m) => ({ default: m.StudyChapterPage })));
+const FormulaDeckPage = lazy(() => import('./pages/FormulaDeckPage').then((m) => ({ default: m.FormulaDeckPage })));
+const FormulaDetailPage = lazy(() => import('./pages/FormulaDetailPage').then((m) => ({ default: m.FormulaDetailPage })));
+const CoursesCatalogPage = lazy(() => import('./pages/CoursesCatalogPage').then((m) => ({ default: m.CoursesCatalogPage })));
+const CourseDetailPage = lazy(() => import('./pages/CourseDetailPage').then((m) => ({ default: m.CourseDetailPage })));
+const AiTeacherPage = lazy(() => import('./pages/AiTeacherPage').then((m) => ({ default: m.AiTeacherPage })));
+const AnnualPassPage = lazy(() => import('./pages/AnnualPassPage').then((m) => ({ default: m.AnnualPassPage })));
+const CheckoutPage = lazy(() => import('./pages/CheckoutPage').then((m) => ({ default: m.CheckoutPage })));
+const LoginPage = lazy(() => import('./pages/LoginPage').then((m) => ({ default: m.LoginPage })));
+const DashboardOverviewPage = lazy(() => import('./pages/DashboardOverviewPage').then((m) => ({ default: m.DashboardOverviewPage })));
+const SearchPage = lazy(() => import('./pages/SearchPage').then((m) => ({ default: m.SearchPage })));
+const AdminPortalPage = lazy(() => import('./pages/AdminPortalPage').then((m) => ({ default: m.AdminPortalPage })));
+const PrivacyPage = lazy(() => import('./pages/PrivacyPage').then((m) => ({ default: m.PrivacyPage })));
+const TermsPage = lazy(() => import('./pages/TermsPage').then((m) => ({ default: m.TermsPage })));
+const RefundPolicyPage = lazy(() => import('./pages/RefundPolicyPage').then((m) => ({ default: m.RefundPolicyPage })));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
 
 function AppRouter() {
   const { currentRoute } = useNavigation();

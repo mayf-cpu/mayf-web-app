@@ -72,8 +72,44 @@ export function useNavigation() {
 }
 
 /**
+ * Selective route prefetcher for near-zero navigation latency
+ */
+export function prefetchRoute(to: string) {
+  if (typeof window === 'undefined' || !to.startsWith('/')) return;
+  const path = to.split('?')[0];
+
+  try {
+    if (path === '/study-material') {
+      import('../pages/StudyMaterialPage');
+    } else if (path.startsWith('/study/')) {
+      import('../pages/StudyChapterPage');
+    } else if (path === '/formula-deck') {
+      import('../pages/FormulaDeckPage');
+    } else if (path.startsWith('/formula/')) {
+      import('../pages/FormulaDetailPage');
+    } else if (path === '/courses') {
+      import('../pages/CoursesCatalogPage');
+    } else if (path.startsWith('/course/')) {
+      import('../pages/CourseDetailPage');
+    } else if (path === '/ai-teacher') {
+      import('../pages/AiTeacherPage');
+    } else if (path === '/annual-pass') {
+      import('../pages/AnnualPassPage');
+    } else if (path === '/checkout') {
+      import('../pages/CheckoutPage');
+    } else if (path === '/search') {
+      import('../pages/SearchPage');
+    } else if (path.startsWith('/dashboard')) {
+      import('../pages/DashboardOverviewPage');
+    }
+  } catch {
+    // ignore prefetch errors
+  }
+}
+
+/**
  * Reusable accessible Link component that triggers client-side routing
- * or opens in a new tab when specifically configured.
+ * with intelligent prefetch and keyboard accessibility.
  */
 export function Link({
   href,
@@ -121,12 +157,20 @@ export function Link({
     }
   };
 
+  const handleMouseEnter = () => {
+    if (!isBlank && href.startsWith('/')) {
+      prefetchRoute(href);
+    }
+  };
+
   return (
     <a
       href={href}
       target={computedTarget}
       rel={computedRel}
       onClick={handleClick}
+      onMouseEnter={handleMouseEnter}
+      onTouchStart={handleMouseEnter}
       className={className}
       title={title}
       aria-label={ariaLabel}

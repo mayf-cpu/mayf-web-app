@@ -195,6 +195,20 @@ export const ShareButton: React.FC<ShareProps> = ({
     },
   ];
 
+  const handleSocialClick = (methodName: string) => {
+    const methodMap: Record<string, 'whatsapp' | 'telegram' | 'twitter' | 'web_share'> = {
+      WhatsApp: 'whatsapp',
+      Telegram: 'telegram',
+      'X (Twitter)': 'twitter',
+    };
+    const method = methodMap[methodName] || 'web_share';
+    trackShare({
+      method,
+      content_type: 'general',
+      item_title: shareTitle,
+    });
+  };
+
   // Inline mode: directly renders horizontal share icons
   if (variant === 'inline') {
     return (
@@ -239,6 +253,7 @@ export const ShareButton: React.FC<ShareProps> = ({
             href={item.href}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={() => handleSocialClick(item.name)}
             className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#CBD5E1] bg-white text-xs font-semibold transition-all ${item.color}`}
             title={`Share on ${item.name}`}
             aria-label={`Share on ${item.name}`}
@@ -380,7 +395,10 @@ export const ShareButton: React.FC<ShareProps> = ({
                   href={item.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  onClick={() => setIsOpen(false)}
+                  onClick={() => {
+                    handleSocialClick(item.name);
+                    setIsOpen(false);
+                  }}
                   className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border border-[#E2E8F0] font-medium text-xs transition-all ${item.color}`}
                 >
                   {item.icon}

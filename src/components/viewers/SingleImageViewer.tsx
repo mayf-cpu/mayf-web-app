@@ -83,6 +83,10 @@ export const SingleImageViewer: React.FC<SingleImageViewerProps> = ({
         <img
           src={imageUrl}
           alt={title}
+          width={1200}
+          height={750}
+          loading="lazy"
+          decoding="async"
           className="max-w-full max-h-full object-contain rounded transition-transform duration-200 shadow-lg"
           style={{ transform: `scale(${zoomLevel / 100})` }}
         />

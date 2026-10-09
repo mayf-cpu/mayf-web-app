@@ -50,11 +50,52 @@ app.use(
   })
 );
 
-// Security headers
-app.use((_req, res, next) => {
+// -------------------------------------------------------------
+// Cloudflare Edge Security & Cache Header Architecture
+// -------------------------------------------------------------
+app.use((req, res, next) => {
+  // 1. Core Security & Transport Protection
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=(), payment=(self)');
+
+  // 2. Extract Cloudflare Edge Headers
+  const cfRay = req.headers['cf-ray'];
+  if (cfRay) {
+    res.setHeader('X-Edge-Server', 'Cloudflare-CDN');
+  }
+
+  // 3. Strict Classification of Non-Cacheable Private Resources
+  // Do NOT publicly cache: user dashboards, checkout, orders, admin,
+  // authenticated API responses, payment responses, AI Teacher private history, personalized content
+  const path = req.path.toLowerCase();
+  const isPrivateResource =
+    path.startsWith('/dashboard') ||
+    path.startsWith('/checkout') ||
+    path.startsWith('/orders') ||
+    path.startsWith('/admin') ||
+    path.startsWith('/mgmt-sec') ||
+    path.startsWith(ADMIN_ENTRY_PATH.toLowerCase()) ||
+    path.startsWith('/api/admin') ||
+    path.startsWith('/api/student') ||
+    path.startsWith('/api/activity') ||
+    path.startsWith('/api/payments') ||
+    path.startsWith('/api/orders') ||
+    path.startsWith('/api/ai-teacher/ask') ||
+    path.startsWith('/api/ai-teacher/history') ||
+    path.startsWith('/api/downloads') ||
+    path.startsWith('/api/turnstile') ||
+    Boolean(req.headers.authorization);
+
+  if (isPrivateResource) {
+    res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate, max-age=0, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Surrogate-Control', 'no-store');
+  }
+
   next();
 });
 
@@ -3591,8 +3632,27 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.resolve(__dirname, 'dist');
-    app.use(express.static(distPath));
+    // Serve static assets with granular, aggressive caching headers
+    app.use(
+      express.static(distPath, {
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith('.html')) {
+            // HTML entry point must always revalidate to pick up latest build hashes
+            res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+          } else if (
+            filePath.includes('/assets/') ||
+            /\.(js|css|woff2|woff|ttf|eot|avif|webp|png|jpg|jpeg|gif|svg|ico)$/i.test(filePath)
+          ) {
+            // Immutable static assets: Cache aggressively for 1 year across browser and Cloudflare CDN
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            res.setHeader('X-Cache-Rule', 'cloudflare-immutable-cdn');
+          }
+        },
+      })
+    );
+
     app.get('*', (_req, res) => {
+      res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
       res.sendFile(path.resolve(distPath, 'index.html'));
     });
   }
