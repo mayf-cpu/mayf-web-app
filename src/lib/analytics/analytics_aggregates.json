@@ -1,0 +1,212 @@
+{
+  "totalUsers": 18450,
+  "newUsersToday": 142,
+  "dau": 4890,
+  "wau": 12840,
+  "mau": 18450,
+  "currentSessions": 184,
+  "totalPageViews": 248601,
+  "pageViewsToday": 6421,
+  "uniqueVisitors": 41200,
+  "dailyTraffic": {
+    "2026-10-03": {
+      "date": "2026-10-03",
+      "views": 3860,
+      "downloads": 587,
+      "aiQuestions": 826,
+      "revenue": 18220
+    },
+    "2026-10-04": {
+      "date": "2026-10-04",
+      "views": 3520,
+      "downloads": 547,
+      "aiQuestions": 744,
+      "revenue": 16867
+    },
+    "2026-10-05": {
+      "date": "2026-10-05",
+      "views": 3621,
+      "downloads": 490,
+      "aiQuestions": 769,
+      "revenue": 14992
+    },
+    "2026-10-06": {
+      "date": "2026-10-06",
+      "views": 4070,
+      "downloads": 470,
+      "aiQuestions": 876,
+      "revenue": 14320
+    },
+    "2026-10-07": {
+      "date": "2026-10-07",
+      "views": 4454,
+      "downloads": 505,
+      "aiQuestions": 969,
+      "revenue": 15467
+    },
+    "2026-10-08": {
+      "date": "2026-10-08",
+      "views": 4420,
+      "downloads": 562,
+      "aiQuestions": 960,
+      "revenue": 17380
+    },
+    "2026-10-09": {
+      "date": "2026-10-09",
+      "views": 3611,
+      "downloads": 530,
+      "aiQuestions": 771,
+      "revenue": 17000
+    }
+  },
+  "totalDownloads": 34120,
+  "downloadsToday": 890,
+  "downloadsByFormat": {
+    "pdf_summary": 19800,
+    "ncert_solutions": 8940,
+    "formula_cheatsheet": 4210,
+    "worksheet_practice": 1170
+  },
+  "totalAiQuestions": 51201,
+  "aiQuestionsToday": 1341,
+  "aiQuestionsByClass": {
+    "Class 10": 23401,
+    "Class 9": 14800,
+    "Class 8": 6900,
+    "Class 7": 3500,
+    "Class 6": 2600
+  },
+  "aiQuestionsByCategory": {
+    "Algebra": 16500,
+    "Trigonometry": 12401,
+    "Geometry": 9800,
+    "Mensuration": 6700,
+    "Coordinate Geometry": 3400,
+    "Statistics & Probability": 2400
+  },
+  "totalOrders": 3240,
+  "completedOrders": 3012,
+  "pendingOrders": 228,
+  "totalRevenue": 682400,
+  "revenueToday": 14900,
+  "revenueThisMonth": 194800,
+  "activePasses": 1480,
+  "newPassesMonth": 215,
+  "renewalRate": 78.4,
+  "funnelVisitors": 41201,
+  "funnelContentViews": 29800,
+  "funnelCheckoutStarts": 4420,
+  "funnelPurchases": 3012,
+  "contentStats": {
+    "quad-eq-10": {
+      "title": "Quadratic Equations & Roots (Class 10)",
+      "classLevel": "Class 10",
+      "category": "Algebra",
+      "views": 18420,
+      "downloads": 4190,
+      "shares": 820
+    },
+    "trig-ratios-10": {
+      "title": "Introduction to Trigonometric Ratios (Class 10)",
+      "classLevel": "Class 10",
+      "category": "Trigonometry",
+      "views": 16900,
+      "downloads": 3840,
+      "shares": 740
+    },
+    "pythagoras-theorem-9": {
+      "title": "Triangles & Pythagoras Proofs (Class 9 & 10)",
+      "classLevel": "Class 10",
+      "category": "Geometry",
+      "views": 14200,
+      "downloads": 3120,
+      "shares": 610
+    },
+    "surface-areas-volumes-10": {
+      "title": "Surface Areas & Volumes of Combinations",
+      "classLevel": "Class 10",
+      "category": "Mensuration",
+      "views": 11800,
+      "downloads": 2790,
+      "shares": 530
+    },
+    "linear-eq-two-variables-9": {
+      "title": "Linear Equations in Two Variables (Class 9)",
+      "classLevel": "Class 9",
+      "category": "Algebra",
+      "views": 9400,
+      "downloads": 1980,
+      "shares": 410
+    },
+    "circles-tangents-10": {
+      "title": "Circles & Properties of Tangents (Class 10)",
+      "classLevel": "Class 10",
+      "category": "Geometry",
+      "views": 8900,
+      "downloads": 1840,
+      "shares": 380
+    }
+  },
+  "categoriesStats": {
+    "Algebra": 38,
+    "Trigonometry": 26,
+    "Geometry": 18,
+    "Mensuration": 11,
+    "Statistics & Probability": 7
+  },
+  "classesStats": {
+    "Class 10": 48,
+    "Class 9": 28,
+    "Class 8": 12,
+    "Class 7": 7,
+    "Class 6": 5
+  },
+  "searchQueries": {
+    "quadratic formula proof": {
+      "count": 4210,
+      "resultsFound": true,
+      "trend": "up"
+    },
+    "trigonometry table trick": {
+      "count": 3890,
+      "resultsFound": true,
+      "trend": "up"
+    },
+    "pythagoras theorem": {
+      "count": 3120,
+      "resultsFound": true,
+      "trend": "stable"
+    },
+    "cylinder surface area derivation": {
+      "count": 2450,
+      "resultsFound": true,
+      "trend": "up"
+    },
+    "arithmetic progression sum formula": {
+      "count": 1980,
+      "resultsFound": true,
+      "trend": "stable"
+    },
+    "circles class 10 theorem 10.2": {
+      "count": 1640,
+      "resultsFound": true,
+      "trend": "up"
+    },
+    "rd sharma class 9 solutions": {
+      "count": 980,
+      "resultsFound": true,
+      "trend": "stable"
+    },
+    "calculus class 11 sneak peek": {
+      "count": 620,
+      "resultsFound": false,
+      "trend": "down"
+    },
+    "trigonometry identities": {
+      "count": 1,
+      "resultsFound": true,
+      "trend": "up"
+    }
+  },
+  "lastUpdated": "2026-10-09T04:38:51.644Z"
+}

@@ -18,6 +18,7 @@ import { INITIAL_FORMULAS, INITIAL_SOLVED_PROBLEMS } from '../data/curriculumDat
 import { TurnstileModal } from '../components/ui/TurnstileModal';
 import { AdSensePlacement } from '../components/adsense/AdSensePlacement';
 import { logProductEvent } from '../lib/activity/activityService';
+import { trackContentView, trackShare } from '../lib/analytics/analyticsService';
 
 export const StudyChapterPage: React.FC = () => {
   const { currentRoute, goBack } = useNavigation();
@@ -37,6 +38,16 @@ export const StudyChapterPage: React.FC = () => {
         const resolved = item || (slug ? null : SEED_CONTENT_ITEMS[0]);
         setContentItem(resolved);
         if (resolved) {
+          // GA4 / Firebase Analytics content_view
+          trackContentView({
+            content_id: resolved.id,
+            title: resolved.title,
+            category: resolved.categoryId || 'Mathematics',
+            class_level: resolved.classLevels[0] || 'Class 10',
+            content_type: resolved.contentType || 'chapter',
+            access_type: resolved.accessType === 'free' ? 'free' : 'premium',
+          });
+
           logProductEvent({
             userId: user?.uid || 'anonymous-student',
             eventType: 'content_view',
@@ -103,7 +114,14 @@ export const StudyChapterPage: React.FC = () => {
   const canonicalUrl = `https://mayf.co.in/study/${activeItem.slug}`;
 
   const handleShare = () => {
-    if (navigator.share) {
+    trackShare({
+      method: typeof navigator !== 'undefined' && typeof navigator.share === 'function' ? 'web_share' : 'clipboard',
+      content_type: 'chapter',
+      item_id: activeItem.id,
+      item_title: activeItem.title,
+    });
+
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       navigator.share({
         title: `${activeItem.title} - Maths at Your Fingertips`,
         text: activeItem.shortDescription,

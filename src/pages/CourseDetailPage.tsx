@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   GraduationCap,
   BookOpen,
@@ -23,11 +23,25 @@ import { Link, useNavigation } from '../context/NavigationContext';
 import { getCourseBySlug, STUDENT_COURSES } from '../data/coursesData';
 import { FORMULA_DECK_ITEMS } from '../data/formulaDeckData';
 import { INITIAL_CHAPTERS } from '../data/curriculumData';
+import { trackContentView } from '../lib/analytics/analyticsService';
 
 export const CourseDetailPage: React.FC = () => {
   const { currentRoute } = useNavigation();
   const slug = currentRoute.params.slug;
   const course = getCourseBySlug(slug);
+
+  useEffect(() => {
+    if (course) {
+      trackContentView({
+        content_id: course.id,
+        title: course.title,
+        category: 'Course Catalogue',
+        class_level: course.targetClass,
+        content_type: 'course',
+        access_type: 'free',
+      });
+    }
+  }, [course?.id]);
 
   if (!course) {
     return (

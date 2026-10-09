@@ -11,6 +11,7 @@ import { SeoHead } from '../components/common/SeoHead';
 import { PromotionalBanner } from '../components/ui/PromotionalBanner';
 import { ShareButton } from '../components/ui/ShareButton';
 import { AdSensePlacement } from '../components/adsense/AdSensePlacement';
+import { trackSearch } from '../lib/analytics/analyticsService';
 
 export const StudyMaterialPage: React.FC = () => {
   const [selectedClass, setSelectedClass] = useState<StudentClass | 'All'>('All');
@@ -89,6 +90,18 @@ export const StudyMaterialPage: React.FC = () => {
     }, 250);
     return () => clearTimeout(timer);
   }, [searchInput]);
+
+  // Track catalogue search events
+  useEffect(() => {
+    if (debouncedQuery.length >= 2) {
+      trackSearch({
+        search_term: debouncedQuery,
+        results_count: items.length,
+        category_filter: selectedCategory !== 'All' ? selectedCategory : undefined,
+        class_filter: selectedClass !== 'All' ? selectedClass : undefined,
+      });
+    }
+  }, [debouncedQuery]);
 
   // Autocomplete suggestions as user types
   useEffect(() => {

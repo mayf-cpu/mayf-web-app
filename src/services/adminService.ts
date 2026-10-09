@@ -10,6 +10,7 @@ import { HomepageBlock, HomepageLayoutConfig } from '../lib/layout/homepageLayou
 import { SiteSettings } from '../lib/settings/siteSettingsTypes';
 import { AdSenseSettings } from '../lib/adsense/adsenseTypes';
 import { BroadcastItem } from '../lib/broadcasts/broadcastTypes';
+import { DashboardAnalyticsData } from '../lib/analytics/analyticsTypes';
 
 export interface AdminMetrics {
   totalStudents: number;
@@ -1347,6 +1348,37 @@ class AdminService {
       const data = await res.json();
       if (!res.ok) return { success: false, error: data.error || 'Failed to reset AdSense config' };
       return { success: true, config: data.config };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  // --- Aggregate Analytics Architecture ---
+
+  async getAnalyticsDashboard(timeframe: 'today' | '7d' | '30d' | 'all' = '30d'): Promise<{ success: boolean; data?: DashboardAnalyticsData; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch(`/api/admin/analytics/dashboard?timeframe=${encodeURIComponent(timeframe)}`, {
+        headers,
+      });
+      const json = await res.json();
+      if (!res.ok) return { success: false, error: json.error || `HTTP ${res.status}` };
+      return { success: true, data: json.data };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'Network error' };
+    }
+  }
+
+  async resetAnalyticsBaseline(): Promise<{ success: boolean; data?: DashboardAnalyticsData; error?: string }> {
+    const headers = await this.getAuthHeaders();
+    try {
+      const res = await fetch('/api/admin/analytics/reset', {
+        method: 'POST',
+        headers,
+      });
+      const json = await res.json();
+      if (!res.ok) return { success: false, error: json.error || `HTTP ${res.status}` };
+      return { success: true, data: json.data };
     } catch (e: any) {
       return { success: false, error: e?.message || 'Network error' };
     }

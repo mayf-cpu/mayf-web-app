@@ -29,6 +29,7 @@ import { siteSettingsService } from './src/lib/settings/siteSettingsService';
 import { adSenseService } from './src/lib/adsense/adsenseService';
 import { broadcastService } from './src/lib/broadcasts/broadcastService';
 import { sitemapService } from './src/lib/seo/sitemapService';
+import { aggregateMetricsService } from './src/lib/analytics/aggregateMetricsService';
 
 dotenv.config();
 
@@ -2791,6 +2792,50 @@ app.delete('/api/admin/broadcasts/:id', requireAuth, requireAdmin, async (req: A
     });
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to delete broadcast' });
+  }
+});
+
+/**
+ * 57. Analytics Event Ingestion (Public, O(1) Atomic Counter Aggregation, Zero Student PII)
+ */
+app.post('/api/analytics/track', (req: Request, res: Response) => {
+  try {
+    const { eventType, params } = req.body || {};
+    if (!eventType || typeof eventType !== 'string') {
+      return res.status(400).json({ success: false, error: 'eventType is required' });
+    }
+    aggregateMetricsService.recordEvent(eventType as any, params || {});
+    return res.status(200).json({ success: true });
+  } catch (err: any) {
+    return res.status(200).json({ success: false, note: 'non-blocking tracking' });
+  }
+});
+
+/**
+ * 58. Admin Analytics Dashboard Metrics (Pre-Aggregated O(1) Query, Zero Event Log Scanning)
+ */
+app.get('/api/admin/analytics/dashboard', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const timeframe = (req.query.timeframe as any) || '30d';
+    const data = aggregateMetricsService.getDashboardMetrics(timeframe);
+    return res.json({
+      success: true,
+      data,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Failed to fetch analytics' });
+  }
+});
+
+/**
+ * 59. Admin Analytics Reset Baseline
+ */
+app.post('/api/admin/analytics/reset', requireAuth, requireAdmin, (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const data = aggregateMetricsService.resetToBaseline();
+    return res.json({ success: true, message: 'Analytics reset to baseline successfully', data });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Failed to reset analytics' });
   }
 });
 

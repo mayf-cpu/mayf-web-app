@@ -5,6 +5,7 @@ import { SeoHead } from '../components/common/SeoHead';
 import { Button } from '../components/ui/Button';
 import { useAuth } from '../context/AuthContext';
 import { useNavigation, Link } from '../context/NavigationContext';
+import { trackLogin } from '../lib/analytics/analyticsService';
 
 export const LoginPage: React.FC = () => {
   const { user, signInWithGoogle, loginWithEmail } = useAuth();
@@ -56,6 +57,7 @@ export const LoginPage: React.FC = () => {
     setIsLoading(true);
     try {
       await signInWithGoogle();
+      trackLogin('google');
       navigate('/dashboard');
     } finally {
       setIsLoading(false);
@@ -77,6 +79,7 @@ export const LoginPage: React.FC = () => {
     setIsLoading(true);
     try {
       await loginWithEmail(phoneNumber.includes('@') ? phoneNumber : `student.${phoneNumber.slice(-4)}@mayf.co.in`);
+      trackLogin('phone');
       navigate('/dashboard');
     } finally {
       setIsLoading(false);
@@ -89,6 +92,7 @@ export const LoginPage: React.FC = () => {
     setIsLoading(true);
     try {
       await loginWithEmail(email);
+      trackLogin('email');
       navigate('/dashboard');
     } finally {
       setIsLoading(false);

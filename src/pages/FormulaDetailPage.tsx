@@ -28,6 +28,7 @@ import { ShareButton } from '../components/ui/ShareButton';
 import { AdSensePlacement } from '../components/adsense/AdSensePlacement';
 import { useAuth } from '../context/AuthContext';
 import { logProductEvent } from '../lib/activity/activityService';
+import { trackFormulaView } from '../lib/analytics/analyticsService';
 
 export const FormulaDetailPage: React.FC = () => {
   const { currentRoute, navigate, goBack } = useNavigation();
@@ -60,6 +61,14 @@ export const FormulaDetailPage: React.FC = () => {
   // Log formula_view product event
   useEffect(() => {
     if (formula) {
+      trackFormulaView({
+        formula_id: formula.id,
+        formula_slug: formula.slug,
+        formula_title: formula.title,
+        category: formula.category,
+        class_level: formula.applicableClasses[0] || 'Class 10',
+      });
+
       logProductEvent({
         userId: user?.uid || 'anonymous-student',
         eventType: 'formula_view',

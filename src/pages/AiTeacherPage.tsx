@@ -25,6 +25,7 @@ import { MathRenderer } from '../components/ui/MathRenderer';
 import { SeoHead } from '../components/common/SeoHead';
 import { ShareButton } from '../components/ui/ShareButton';
 import { logProductEvent } from '../lib/activity/activityService';
+import { trackAiQuestion } from '../lib/analytics/analyticsService';
 
 interface ChatMessage {
   id: string;
@@ -186,6 +187,14 @@ export const AiTeacherPage: React.FC = () => {
     setInputQuestion('');
     setSelectedImage(null);
     setLoading(true);
+
+    // GA4 / Firebase Analytics: Privacy-preserving AI doubt question tracking
+    trackAiQuestion({
+      math_category: topic || 'General Mathematics',
+      class_level: studentClass || 'Class 10',
+      has_image: Boolean(currentImg),
+      question_length_bracket: questionText.length < 30 ? 'short' : questionText.length < 120 ? 'medium' : 'long',
+    });
 
     try {
       let authToken: string | null = null;

@@ -32,6 +32,12 @@ import { useNavigation } from '../context/NavigationContext';
 import { clientConfig } from '../config/env';
 import { logProductEvent } from '../lib/activity/activityService';
 import { PaymentProvider } from '../lib/payments/types';
+import {
+  trackCheckoutStarted,
+  trackCouponApplied,
+  trackPurchase,
+  trackAnnualPassPurchase,
+} from '../lib/analytics/analyticsService';
 
 declare global {
   interface Window {
@@ -132,6 +138,13 @@ export const CheckoutPage: React.FC = () => {
           message: data.message,
         });
         setAppliedCoupon(data.code);
+
+        // GA4 / Firebase Analytics coupon_applied
+        trackCouponApplied({
+          coupon_code: data.code,
+          discount_amount: data.discountAmount || 0,
+          is_valid: true,
+        });
       } else {
         setCouponValidation({
           valid: false,
@@ -141,6 +154,13 @@ export const CheckoutPage: React.FC = () => {
           error: data.error || data.message || 'Invalid promotional code.',
         });
         setAppliedCoupon('');
+
+        // Track invalid coupon attempt
+        trackCouponApplied({
+          coupon_code: cleanCode,
+          discount_amount: 0,
+          is_valid: false,
+        });
       }
     } catch (err: any) {
       setCouponValidation({
@@ -185,6 +205,14 @@ export const CheckoutPage: React.FC = () => {
           validateCouponOnServer(upper, initialGross);
         }
       } catch {}
+      // Log GA4 / Firebase Analytics checkout_started event
+      trackCheckoutStarted({
+        item_id: 'annual-pass',
+        item_name: 'Annual Pass',
+        plan_type: 'annual_pass',
+        price: initialGross,
+        currency: 'INR',
+      });
     }
     loadConfigAndCoupon();
   }, []);
@@ -351,6 +379,24 @@ export const CheckoutPage: React.FC = () => {
 
       // Authoritative verification succeeded! Entitlement confirmed by server.
       setVerificationSuccess(verifyData);
+
+      // GA4 / Firebase Analytics purchase & annual_pass_purchase
+      trackPurchase({
+        transaction_id: verifyPayload.orderId,
+        item_id: 'annual-pass',
+        item_name: configuredPassName,
+        value: netAmount,
+        currency: isINR ? 'INR' : 'USD',
+        payment_gateway: verifyPayload.provider as any,
+      });
+
+      trackAnnualPassPurchase({
+        pass_id: 'annual-pass',
+        plan_duration: 'annual',
+        value: netAmount,
+        currency: isINR ? 'INR' : 'USD',
+        promo_code: appliedCoupon,
+      });
 
       // Log verified purchase event
       logProductEvent({

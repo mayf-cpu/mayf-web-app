@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { RouteMatch, matchCurrentPath } from '../types/routes';
+import { trackPageView } from '../lib/analytics/analyticsService';
 
 interface NavigationContextType {
   currentRoute: RouteMatch;
@@ -45,6 +46,15 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, [updatePath]);
+
+  // Authoritative GA4 / Firebase Analytics page_view tracking
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const pageTitle = typeof document !== 'undefined' ? document.title : currentRoute.path;
+      trackPageView(pageTitle, currentRoute.path);
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [currentRoute.path]);
 
   return (
     <NavigationContext.Provider value={{ currentRoute, navigate, goBack }}>

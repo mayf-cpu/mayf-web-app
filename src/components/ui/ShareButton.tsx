@@ -7,6 +7,7 @@ import {
   ExternalLink,
   X as CloseIcon,
 } from 'lucide-react';
+import { trackShare } from '../../lib/analytics/analyticsService';
 
 export interface ShareProps {
   url?: string;
@@ -110,6 +111,11 @@ export const ShareButton: React.FC<ShareProps> = ({
         document.body.removeChild(input);
       }
       setCopied(true);
+      trackShare({
+        method: 'clipboard',
+        content_type: 'general',
+        item_title: shareTitle,
+      });
       setTimeout(() => setCopied(false), 2200);
     } catch (err) {
       console.warn('Clipboard write failed:', err);
@@ -124,6 +130,11 @@ export const ShareButton: React.FC<ShareProps> = ({
         title: shareTitle,
         text: shareDescription ? `${shareTitle}\n${shareDescription}` : shareTitle,
         url: shareUrl,
+      });
+      trackShare({
+        method: 'web_share',
+        content_type: 'general',
+        item_title: shareTitle,
       });
       setIsOpen(false);
     } catch (err: any) {

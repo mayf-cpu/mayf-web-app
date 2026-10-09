@@ -6,6 +6,7 @@ import { Link } from '../context/NavigationContext';
 import { AdSensePlacement } from '../components/adsense/AdSensePlacement';
 import { searchService } from '../lib/search/lightweightSearchService';
 import { SearchResultItem } from '../lib/search/searchInterface';
+import { trackSearch } from '../lib/analytics/analyticsService';
 
 export const SearchPage: React.FC = () => {
   const [query, setQuery] = useState('');
@@ -38,6 +39,14 @@ export const SearchPage: React.FC = () => {
         ]);
         setResults(items);
         setSuggestions(auto);
+
+        // GA4 / Firebase Analytics search event
+        if (query.trim().length >= 2) {
+          trackSearch({
+            search_term: query.trim(),
+            results_count: items.length,
+          });
+        }
       } finally {
         setIsSearching(false);
       }

@@ -27,7 +27,7 @@ import {
 } from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
 import { initializeAppCheck, CustomProvider, AppCheck } from 'firebase/app-check';
-import { getActiveFirebaseConfig } from './config';
+import { getActiveFirebaseConfig, hasRealFirebaseCredentials } from './config';
 
 export enum OperationType {
   CREATE = 'create',
@@ -154,6 +154,9 @@ export function handleFirestoreError(
 // Validate Connection to Firestore on boot
 // -------------------------------------------------------------
 export async function testConnection(): Promise<boolean> {
+  if (!hasRealFirebaseCredentials()) {
+    return false;
+  }
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
     return true;

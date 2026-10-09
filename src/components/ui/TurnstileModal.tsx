@@ -3,6 +3,7 @@ import { ShieldCheck, Download, AlertCircle, CheckCircle2, Lock, X, RefreshCw, L
 import { useAuth } from '../../context/AuthContext';
 import { clientConfig } from '../../config/env';
 import { requestDownloadAuthorization, triggerAuthorizedDownload } from '../../lib/download/downloadClient';
+import { trackContentDownload } from '../../lib/analytics/analyticsService';
 import { Button } from './Button';
 import { LoadingSpinner } from './LoadingState';
 
@@ -139,6 +140,15 @@ export const TurnstileModal: React.FC<TurnstileModalProps> = ({
 
       // Trigger download using the single-use short-lived download URL
       await triggerAuthorizedDownload(response.downloadUrl, response.fileName || fallbackFileName);
+
+      // Log GA4 / Firebase Analytics content_download event
+      trackContentDownload({
+        content_id: contentId,
+        title: title || 'Mathematics Study PDF',
+        category: 'Mathematics',
+        class_level: classLevel || 'General',
+        file_format: 'pdf',
+      });
 
       setPhase('success');
       if (onDownloadSuccess) {
