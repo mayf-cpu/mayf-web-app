@@ -1,24 +1,20 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import { defineConfig } from 'vite';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': __dirname,
+        '@': path.resolve(import.meta.dirname || '.', '.'),
       },
     },
     build: {
       target: 'es2022',
       cssCodeSplit: true,
       sourcemap: false,
-      chunkSizeWarningLimit: 1200,
       rollupOptions: {
         output: {
           manualChunks(id) {

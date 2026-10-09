@@ -223,42 +223,6 @@ export function getAdminSectionFromPath(pathname: string): AdminSection {
 }
 
 /**
- * Default list of assigned administrator emails
- */
-export const DEFAULT_AUTHORIZED_ADMIN_EMAILS: string[] = [
-  '2026vivekkushwah@gmail.com',
-  'ntnagrawal146@gmail.com',
-  'admin@mayf.co.in',
-];
-
-/**
- * Returns the list of authorized admin emails from environment or defaults
- */
-export function getAuthorizedAdminEmails(): string[] {
-  const envEmails =
-    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_ADMIN_AUTHORIZED_EMAILS) ||
-    (typeof process !== 'undefined' && process.env?.ADMIN_AUTHORIZED_EMAILS);
-
-  if (envEmails && typeof envEmails === 'string') {
-    return envEmails
-      .split(',')
-      .map((e) => e.trim().toLowerCase())
-      .filter(Boolean);
-  }
-  return DEFAULT_AUTHORIZED_ADMIN_EMAILS.map((e) => e.toLowerCase());
-}
-
-/**
- * Checks whether the given email belongs to an assigned administrator account
- */
-export function isAuthorizedAdminEmail(email?: string | null): boolean {
-  if (!email) return false;
-  const cleanEmail = email.trim().toLowerCase();
-  const allowed = getAuthorizedAdminEmails();
-  return allowed.includes(cleanEmail);
-}
-
-/**
  * Constructs an internal admin URL for a section
  */
 export function getAdminUrl(section?: AdminSection): string {

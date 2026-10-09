@@ -156,7 +156,7 @@ export async function verifyStudentSessionToken(bearerToken?: string): Promise<T
     return { valid: false, error: 'Empty token string provided' };
   }
 
-  const adminEmails = (process.env.ADMIN_AUTHORIZED_EMAILS || '2026vivekkushwah@gmail.com,ntnagrawal146@gmail.com,admin@mayf.co.in')
+  const adminEmails = (process.env.ADMIN_AUTHORIZED_EMAILS || '2026vivekkushwah@gmail.com,admin@mayf.co.in')
     .toLowerCase()
     .split(',')
     .map((e) => e.trim());
@@ -241,19 +241,16 @@ export async function verifyStudentSessionToken(bearerToken?: string): Promise<T
       const email = (payload.email || '').toLowerCase();
       const uid = payload.user_id || payload.sub || 'user-' + cleanToken.slice(0, 12);
 
-      const isSuper = email === '2026vivekkushwah@gmail.com' || (adminEmails.includes(email) && payload.superAdmin === true);
-      const isAdmin = isSuper || adminEmails.includes(email) || payload.admin === true;
-      const role = isSuper ? 'superAdmin' : isAdmin ? 'admin' : 'student';
-
+      // SECURITY INVARIANT: Unverified fallback tokens NEVER get admin or superAdmin roles
       return {
         valid: true,
         uid,
         email,
-        role,
-        admin: isAdmin,
-        superAdmin: isSuper,
-        pro: isAdmin,
-        annualPass: isAdmin,
+        role: 'student',
+        admin: false,
+        superAdmin: false,
+        pro: false,
+        annualPass: false,
       };
     } catch {
       // Continue to rejection
