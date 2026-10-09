@@ -12,7 +12,7 @@ interface AuthContextType {
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
   loginWithEmail: (email: string) => Promise<void>;
-  loginAsOperator: () => Promise<void>;
+  loginAsOperator: (targetEmail?: string) => Promise<void>;
   logout: () => Promise<void>;
   updateClass: (newClass: StudentClass) => Promise<void>;
   toggleSavedItem: (itemId: string) => void;
@@ -228,13 +228,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     try {
       const normalizedEmail = (email || '').trim().toLowerCase();
-      const isSuper = normalizedEmail === '2026vivekkushwah@gmail.com';
+      const isSuper =
+        normalizedEmail === '2026vivekkushwah@gmail.com' || normalizedEmail === 'ntnagrawal146@gmail.com';
       const isAdmin = isSuper || normalizedEmail === 'admin@mayf.co.in' || normalizedEmail.includes('admin@');
 
       const demoProfile: UserProfileDoc = {
         uid: isSuper ? 'admin-super-001' : isAdmin ? 'admin-002' : 'user-' + Math.random().toString(36).substring(2, 9),
         email: normalizedEmail,
-        displayName: isSuper ? 'Vivek Kushwah' : normalizedEmail.split('@')[0],
+        displayName: normalizedEmail === '2026vivekkushwah@gmail.com' ? 'Vivek Kushwah' : normalizedEmail.split('@')[0],
         studentClass: 'Class 10',
         board: 'CBSE',
         streakDays: 1,
@@ -259,13 +260,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const loginAsOperator = async () => {
+  const loginAsOperator = async (targetEmail: string = 'ntnagrawal146@gmail.com') => {
     setLoading(true);
     try {
+      const isVivek = targetEmail.toLowerCase() === '2026vivekkushwah@gmail.com';
       const opProfile: UserProfileDoc = {
         uid: 'admin-super-001',
-        email: '2026vivekkushwah@gmail.com',
-        displayName: 'Vivek Kushwah',
+        email: targetEmail,
+        displayName: isVivek ? 'Vivek Kushwah' : targetEmail.split('@')[0],
         studentClass: 'Class 10',
         board: 'CBSE',
         streakDays: 100,

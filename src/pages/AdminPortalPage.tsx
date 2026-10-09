@@ -41,7 +41,12 @@ export const AdminPortalPage: React.FC = () => {
   // Check admin authorization via Firebase custom claims or verified owner email
   const isAuthorized =
     Boolean(entitlements.isAdmin || entitlements.isSuperAdmin) ||
-    Boolean(user?.email && (user.email.toLowerCase() === '2026vivekkushwah@gmail.com' || user.email.toLowerCase() === 'admin@mayf.co.in'));
+    Boolean(
+      user?.email &&
+      ['2026vivekkushwah@gmail.com', 'ntnagrawal146@gmail.com', 'admin@mayf.co.in'].includes(
+        user.email.toLowerCase()
+      )
+    );
 
   // Handle section navigation
   const handleSelectSection = (section: AdminSection) => {

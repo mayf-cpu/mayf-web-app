@@ -1108,7 +1108,7 @@ class AdminService {
         cloudflareAccessAud: '566895799712-cfaccess-aud-mayf-2026',
         cloudflareTeamDomain: 'mayf.cloudflareaccess.com',
         requireCloudflareAccess: false,
-        authorizedAdminEmails: ['2026vivekkushwah@gmail.com', 'admin@mayf.co.in'],
+        authorizedAdminEmails: ['2026vivekkushwah@gmail.com', 'ntnagrawal146@gmail.com', 'admin@mayf.co.in'],
         emergencyMaintenanceMode: false,
         tokenRevocationWindowMinutes: 60,
         updatedAt: new Date().toISOString(),

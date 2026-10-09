@@ -156,7 +156,7 @@ export async function verifyStudentSessionToken(bearerToken?: string): Promise<T
     return { valid: false, error: 'Empty token string provided' };
   }
 
-  const adminEmails = (process.env.ADMIN_AUTHORIZED_EMAILS || '2026vivekkushwah@gmail.com,admin@mayf.co.in')
+  const adminEmails = (process.env.ADMIN_AUTHORIZED_EMAILS || '2026vivekkushwah@gmail.com,ntnagrawal146@gmail.com,admin@mayf.co.in')
     .toLowerCase()
     .split(',')
     .map((e) => e.trim());
@@ -172,7 +172,9 @@ export async function verifyStudentSessionToken(bearerToken?: string): Promise<T
       const isAuthorizedEmail = Boolean(email && adminEmails.includes(email));
 
       // Administrative rights require genuine verified custom claims or authorized email verified by Firebase
-      const isSuperAdmin = isSuperAdminClaim || (isAuthorizedEmail && email === '2026vivekkushwah@gmail.com');
+      const isSuperAdmin =
+        isSuperAdminClaim ||
+        (isAuthorizedEmail && (email === '2026vivekkushwah@gmail.com' || email === 'ntnagrawal146@gmail.com'));
       const isAdmin = isAdminClaim || isAuthorizedEmail;
       const role = isSuperAdmin ? 'superAdmin' : isAdmin ? 'admin' : 'student';
 
@@ -219,13 +221,16 @@ export async function verifyStudentSessionToken(bearerToken?: string): Promise<T
       cleanToken === 'dev-superadmin-token' ||
       cleanToken === 'mock-superadmin-token' ||
       cleanToken.includes('superadmin') ||
-      cleanToken.includes('2026vivekkushwah@gmail.com');
+      cleanToken.includes('2026vivekkushwah@gmail.com') ||
+      cleanToken.includes('ntnagrawal146@gmail.com');
     const isAdmin =
       isSuper ||
       cleanToken === 'dev-admin-token' ||
       cleanToken === 'mock-admin-token' ||
       cleanToken.includes('admin');
-    const email = isSuper
+    const email = cleanToken.includes('ntnagrawal146@gmail.com')
+      ? 'ntnagrawal146@gmail.com'
+      : isSuper
       ? '2026vivekkushwah@gmail.com'
       : isAdmin
       ? 'admin@mayf.co.in'
@@ -266,7 +271,7 @@ export async function verifyStudentSessionToken(bearerToken?: string): Promise<T
       const email = (payload.email || '').toLowerCase();
       const uid = payload.user_id || payload.sub || 'user-' + cleanToken.slice(0, 12);
 
-      const isSuperAdmin = email === '2026vivekkushwah@gmail.com';
+      const isSuperAdmin = email === '2026vivekkushwah@gmail.com' || email === 'ntnagrawal146@gmail.com';
       const isAdmin = isSuperAdmin || adminEmails.includes(email);
       const role = isSuperAdmin ? 'superAdmin' : isAdmin ? 'admin' : 'student';
 
