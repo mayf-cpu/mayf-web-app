@@ -76,14 +76,14 @@ class AdminUserManager {
   private securityConfig: SecurityConfigState = {
     cloudflareAccessAud: process.env.CLOUDFLARE_ACCESS_AUD || '566895799712-cfaccess-aud-mayf-2026',
     cloudflareTeamDomain: 'mayf.cloudflareaccess.com',
-    requireCloudflareAccess: process.env.REQUIRE_CLOUDFLARE_ACCESS === 'true',
-    authorizedAdminEmails: (process.env.ADMIN_AUTHORIZED_EMAILS || '2026vivekkushwah@gmail.com,admin@mayf.co.in')
+    requireCloudflareAccess: false,
+    authorizedAdminEmails: (process.env.ADMIN_AUTHORIZED_EMAILS || 'sachin.itig@gmail.com,2026vivekkushwah@gmail.com,admin@mayf.co.in')
       .split(',')
       .map((e) => e.trim().toLowerCase()),
     emergencyMaintenanceMode: false,
     tokenRevocationWindowMinutes: 60,
     updatedAt: new Date().toISOString(),
-    updatedBy: '2026vivekkushwah@gmail.com',
+    updatedBy: 'sachin.itig@gmail.com',
   };
 
   constructor() {

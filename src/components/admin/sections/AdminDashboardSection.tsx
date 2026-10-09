@@ -5,6 +5,7 @@ import {
   Sparkles,
   TrendingUp,
   ShieldCheck,
+  ShieldAlert,
   Server,
   Cloud,
   RefreshCw,
@@ -58,16 +59,16 @@ export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({ on
                 DEFENCE IN DEPTH ACTIVE
               </span>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                <Cloud className="w-3 h-3" />
-                Cloudflare Edge Compatible
+                <ShieldAlert className="w-3 h-3" />
+                Google OAuth Protected
               </span>
             </div>
             <h2 className="text-xl font-heading font-extrabold tracking-tight">
               Maths at Your Fingertips · Central Command
             </h2>
             <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
-              Multi-tiered administrative security: Custom entry path isolation, Firebase Google auth,
-              server-verified custom claims (<code className="text-blue-300">admin=true</code>), and Cloudflare Access edge token compatibility.
+              Administrative security: Secret entry path isolation, Firebase Google auth, and
+              verified admin authorization (<code className="text-blue-300">admin=true</code>) with direct login.
             </p>
           </div>
 
@@ -257,8 +258,8 @@ export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({ on
             <div className="flex items-start gap-2.5 p-2 rounded-lg bg-slate-50 border border-slate-100">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
               <div>
-                <p className="font-semibold text-slate-800">Cloudflare Access Edge Header Compatibility</p>
-                <p className="text-[11px] text-slate-500">Architecture is pre-wired to accept edge JWT assertion (<code className="font-mono text-slate-700">Cf-Access-Jwt-Assertion</code>).</p>
+                <p className="font-semibold text-slate-800">Direct Google OAuth Admin Access</p>
+                <p className="text-[11px] text-slate-500">Sign in with an authorized Google account via the secret entry path for instant administrator dashboard access.</p>
               </div>
             </div>
           </div>

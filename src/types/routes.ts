@@ -45,8 +45,8 @@ export function matchCurrentPath(pathname: string): RouteMatch {
   const cleanPath = pathname.replace(/\/+$/, '') || '/';
   const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
 
-  // Secret Admin Portal Entry Path (Configured via ADMIN_ENTRY_PATH env var)
-  if (isAdminPath(cleanPath)) {
+  // Secret Admin Portal Entry Path (Configured via ADMIN_ENTRY_PATH env var) or direct admin portal
+  if (isAdminPath(cleanPath) || cleanPath === '/admin-portal' || cleanPath === '/admin-login' || cleanPath === '/admin') {
     const section = getAdminSectionFromPath(cleanPath);
     return {
       route: '/admin-portal',
