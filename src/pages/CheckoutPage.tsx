@@ -204,7 +204,9 @@ export const CheckoutPage: React.FC = () => {
           setCouponCode(upper);
           validateCouponOnServer(upper, initialGross);
         }
-      } catch {}
+      } catch (err) {
+        console.warn('[CheckoutPage] URL coupon parsing error:', err);
+      }
       // Log GA4 / Firebase Analytics checkout_started event
       trackCheckoutStarted({
         item_id: 'annual-pass',

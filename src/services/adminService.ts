@@ -258,13 +258,6 @@ class AdminService {
     } else {
       // Fallback for sandboxed preview sessions
       headers['Authorization'] = 'Bearer dev-admin-token-2026vivekkushwah@gmail.com';
-      headers['cf-access-authenticated-user-email'] = '2026vivekkushwah@gmail.com';
-    }
-
-    // Ensure Cloudflare Access assertion header is provided for environments requiring it
-    headers['cf-access-jwt-assertion'] = 'preview-cf-jwt-assertion';
-    if (!headers['cf-access-authenticated-user-email']) {
-      headers['cf-access-authenticated-user-email'] = '2026vivekkushwah@gmail.com';
     }
 
     return headers;

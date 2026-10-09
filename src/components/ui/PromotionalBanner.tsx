@@ -58,7 +58,9 @@ export const PromotionalBanner: React.FC<PromotionalBannerProps> = ({ placement,
     setDismissedIds(updated);
     try {
       sessionStorage.setItem(`mayf_dismissed_promos_${placement}`, JSON.stringify(updated));
-    } catch {}
+    } catch (err) {
+      console.warn('[PromotionalBanner] Failed to persist dismissed promotions in sessionStorage:', err);
+    }
   };
 
   const visiblePromotions = promotions.filter((p) => !dismissedIds.includes(p.id));
@@ -148,16 +150,15 @@ export const PromotionalBanner: React.FC<PromotionalBannerProps> = ({ placement,
                   >
                     <Tag className="w-3.5 h-3.5 shrink-0 opacity-80" />
                     <span>{promo.couponCode}</span>
-                    <button
-                      type="button"
-                      className="ml-1 p-0.5 rounded hover:bg-white/20 transition-colors"
+                    <span
+                      className="ml-1 p-0.5 rounded hover:bg-white/20 transition-colors inline-flex items-center"
                     >
                       {copiedCode === promo.couponCode ? (
                         <Check className="w-3.5 h-3.5 text-[#4ADE80]" />
                       ) : (
                         <Copy className="w-3.5 h-3.5 opacity-80" />
                       )}
-                    </button>
+                    </span>
                     {copiedCode === promo.couponCode && (
                       <span className="text-[10px] text-[#4ADE80] font-sans font-semibold">
                         Copied!

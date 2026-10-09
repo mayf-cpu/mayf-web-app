@@ -36,7 +36,7 @@ export const AdSensePlacement: React.FC<AdSensePlacementProps> = ({
       overForms,
     })
   ) {
-    if (process.env.NODE_ENV !== 'production') {
+    if (import.meta.env.DEV) {
       console.warn(
         `[AdSense Policy] Blocked placement attempt in prohibited educational/transactional zone. (Zone: ${zone})`
       );

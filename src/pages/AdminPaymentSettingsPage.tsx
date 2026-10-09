@@ -71,7 +71,9 @@ export const AdminPaymentSettingsPage: React.FC = () => {
         try {
           const t = await firebaseUser.getIdToken();
           setAuthToken(t);
-        } catch {}
+        } catch (err) {
+          console.warn('[AdminPaymentSettingsPage] Token resolution error:', err);
+        }
       }
     }
     loadToken();

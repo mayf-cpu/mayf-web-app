@@ -5,9 +5,8 @@
  * - The administrator URL is an additional barrier (obscurity as one layer),
  *   but NEVER the sole security mechanism.
  * - Authorization strictly enforces:
- *   1. Cloudflare Access edge verification headers (when protected at edge).
- *   2. Firebase Google Authentication.
- *   3. Firebase custom claims: admin=true / superAdmin=true.
+ *   1. Direct Firebase Google Authentication.
+ *   2. Firebase custom claims: admin=true / superAdmin=true.
  *   4. Independent server-side verification on EVERY admin API call.
  *   5. Response header: X-Robots-Tag: noindex, nofollow.
  *   6. robots.txt exclusion for crawlers.

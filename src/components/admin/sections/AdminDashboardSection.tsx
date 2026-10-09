@@ -67,7 +67,7 @@ export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({ on
             </h2>
             <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
               Multi-tiered administrative security: Custom entry path isolation, Firebase Google auth,
-              server-verified custom claims (<code className="text-blue-300">admin=true</code>), and Cloudflare Access edge token compatibility.
+              and server-verified custom claims (<code className="text-blue-300">admin=true</code>).
             </p>
           </div>
 
@@ -257,8 +257,8 @@ export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({ on
             <div className="flex items-start gap-2.5 p-2 rounded-lg bg-slate-50 border border-slate-100">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
               <div>
-                <p className="font-semibold text-slate-800">Cloudflare Access Edge Header Compatibility</p>
-                <p className="text-[11px] text-slate-500">Architecture is pre-wired to accept edge JWT assertion (<code className="font-mono text-slate-700">Cf-Access-Jwt-Assertion</code>).</p>
+                <p className="font-semibold text-slate-800">Direct Firebase Administrator Auth</p>
+                <p className="text-[11px] text-slate-500">Admin URL protected directly by Firebase Auth and custom claims without Cloudflare Access edge interception.</p>
               </div>
             </div>
           </div>

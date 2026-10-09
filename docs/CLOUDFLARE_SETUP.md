@@ -94,3 +94,20 @@ In the Cloudflare Dashboard under **Speed > Optimization**:
 - **Early Hints (103)**: **ON** (automatically sends preconnects and stylesheet hints)
 - **HTTP/3 (with QUIC)**: **ON**
 - **0-RTT Connection Resumption**: **ON**
+
+---
+
+## 6. Cloudflare Access / Zero Trust Status
+
+- **Status**: **Explicitly Excluded from Admin URL**
+- **Scope**: Cloudflare Access / Zero Trust login protection is NOT deployed in front of the administrator URL (`/mgmt-sec-k92a`).
+- **Preserved Edge Features**:
+  - Cloudflare DNS (Orange Cloud)
+  - Cloudflare CDN & Global Edge Proxy
+  - Cloudflare HTTPS (Full Strict & HSTS)
+  - Cloudflare WAF & Rate Limiting
+  - Cloudflare Turnstile Bot Defense
+  - Cloudflare Edge Caching (Cache Rules & Dynamic Bypass)
+  - Cloudflare Performance Optimizations (Brotli, HTTP/3, Early Hints)
+- **Admin Auth Mechanism**: Direct Firebase Authentication with server-verified custom claims (`admin=true` / `superAdmin=true`).
+

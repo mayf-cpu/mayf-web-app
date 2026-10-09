@@ -258,13 +258,6 @@ async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextF
 function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   res.setHeader('X-Robots-Tag', 'noindex, nofollow');
 
-  // Cloudflare Access Edge Check (if configured in environment)
-  const cfJwt = req.headers['cf-access-jwt-assertion'] as string | undefined;
-  const cfEmail = req.headers['cf-access-authenticated-user-email'] as string | undefined;
-  if (process.env.REQUIRE_CLOUDFLARE_ACCESS === 'true' && (!cfJwt || !cfEmail)) {
-    return res.status(404).json({ error: 'Not found' });
-  }
-
   if (!req.userAuth || (req.userAuth.role !== 'admin' && req.userAuth.role !== 'superAdmin')) {
     // Unauthorized users must receive 404 or access denied without exposing administrative information
     return res.status(404).json({
@@ -1570,7 +1563,7 @@ app.get('/api/admin/metrics', requireAuth, requireAdmin, (_req: Request, res: Re
     totalChapters: 64,
     activeCoupons: couponService.getAllCoupons().length,
     serverStatus: 'healthy',
-    cloudflareAccessActive: true,
+    cloudflareAccessActive: false,
     edgeVerifiedEmail: '2026vivekkushwah@gmail.com',
     uptimeHours: 342,
   });
