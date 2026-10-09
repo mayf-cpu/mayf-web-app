@@ -10,6 +10,7 @@ import { SiteSettingsProvider } from './context/SiteSettingsContext';
 import { AdSenseProvider } from './context/AdSenseContext';
 import { BroadcastProvider } from './context/BroadcastContext';
 import { AdConsentBanner } from './components/adsense/AdConsentBanner';
+import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { LoadingSpinner } from './components/ui/LoadingState';
 
@@ -101,6 +102,7 @@ export default function App() {
                 <Suspense fallback={<LoadingSpinner message="Loading Maths at Your Fingertips..." />}>
                   <AppRouter />
                   <AdConsentBanner />
+                  <OnboardingWizard />
                 </Suspense>
               </NavigationProvider>
             </BroadcastProvider>

@@ -50,6 +50,7 @@ import {
   Camera,
   Image as ImageIcon,
   X,
+  Compass,
 } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
 import { SeoHead } from '../components/common/SeoHead';
@@ -58,6 +59,7 @@ import { useNavigation, Link } from '../context/NavigationContext';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { MathRenderer } from '../components/ui/MathRenderer';
+import { openOnboardingTour } from '../components/onboarding/OnboardingWizard';
 import { LoadingSpinner } from '../components/ui/LoadingState';
 import { TurnstileModal } from '../components/ui/TurnstileModal';
 import {
@@ -582,6 +584,18 @@ export const StudentDashboard: React.FC = () => {
                   <span>Ask Doubt</span>
                 </Button>
               </Link>
+
+              {/* Platform Tour Wizard Button */}
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs border-[#E2E8F0] text-slate-700 hover:text-blue-600 hover:border-blue-300"
+                onClick={() => openOnboardingTour()}
+                title="Replay educational platform tour"
+              >
+                <Compass className="w-3.5 h-3.5 mr-1 text-blue-600" />
+                <span>Tour</span>
+              </Button>
 
             </div>
 

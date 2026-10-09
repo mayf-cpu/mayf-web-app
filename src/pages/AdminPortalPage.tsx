@@ -48,7 +48,8 @@ export const AdminPortalPage: React.FC = () => {
     let isMounted = true;
 
     async function checkServerAuthorization() {
-      if (!user && !firebaseUser) {
+      const isMockStudent = !firebaseUser && (!user || user.uid === 'mayf-student-1001' || user.email === 'arjun.sharma@mayf.co.in');
+      if (isMockStudent) {
         setServerAuthorized(null);
         setVerifyingServer(false);
         return;
@@ -132,7 +133,8 @@ export const AdminPortalPage: React.FC = () => {
   }
 
   // 2. Unauthenticated state: User must sign in with Google via Firebase Auth
-  if (!user && !firebaseUser) {
+  const isMockStudentUser = !firebaseUser && (!user || user.uid === 'mayf-student-1001' || user.email === 'arjun.sharma@mayf.co.in');
+  if (isMockStudentUser) {
     return (
       <div className="min-h-screen bg-[#F7F9FB] flex flex-col justify-between text-[#191C1E] antialiased">
         <SeoHead

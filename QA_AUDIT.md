@@ -24,6 +24,7 @@
 | **Commercial** | `/annual-pass` | `src/pages/AnnualPassPage.tsx` | `GET /api/annual-pass/config` | `/siteSettings`, `/promotions` | None (Public) | None | None | `PASS` |
 | **Search Engine** | `/search` | `src/pages/SearchPage.tsx` | Client index + `GET /api/formulas` | `/contentItems` | None (Public) | None | None | `PASS` |
 | **Authentication** | `/login` | `src/pages/LoginPage.tsx` | Firebase Client SDK + Dev Tokens | `/users` | None | None | Firebase Auth | `PASS` |
+| **Student Center** | Global Modal | `src/components/onboarding/OnboardingWizard.tsx` | Client state + LocalStorage | `/users` | Optional (Free & Logged In) | None | None | `PASS` |
 | **Commercial** | `/checkout` | `src/pages/CheckoutPage.tsx` | `POST /api/payments/create-order`, `POST /api/payments/verify-signature` | `/orders`, `/payments`, `/entitlements` | Required (`Bearer` ID token) | None | Razorpay / Stripe Gateway | `FIXED_AND_PASS` |
 | **Student Center** | `/dashboard` | `src/pages/StudentDashboard.tsx` | `GET /api/student/entitlement` | `/users`, `/entitlements`, `/annualPasses` | Required (`Bearer` ID token) | None | Firebase Auth / Firestore | `FIXED_AND_PASS` |
 | **Student Center** | `/dashboard/profile` | `src/pages/StudentDashboard.tsx` | `GET /api/student/entitlement` | `/users` | Required (`Bearer` ID token) | None | Firestore | `PASS` |
@@ -183,15 +184,55 @@ Cloudflare Zero Trust / Cloudflare Access login protection has been removed **ex
    - **Server-Authoritative**: Every single Admin API (`/api/admin/*`) independently validates authorization server-side on every request; never relies solely on client UI hiding.
    - **Headers**: `X-Robots-Tag: noindex, nofollow` on all administrative responses; excluded from `robots.txt` and `sitemap.xml`.
 
+8. **Hidden Admin URL Verification Checklist:**
+   - **Public Menus**: Verified ABSENT in `Header.tsx`, `MobileNav.tsx`, `SharedLayout.tsx`.
+   - **Footer**: Verified ABSENT in `Footer.tsx`.
+   - **Sitemap**: Excluded in `sitemapService.ts` XML feed; excluded from `robots.txt`.
+   - **Public Links**: Purged all public anchor tags, navigation buttons, and labels (including from `/login`).
+   - **Indexing Directives**: Hardened `X-Robots-Tag: noindex, nofollow` on server middleware and `noindex={true}` in `<SeoHead />`.
+   - **Access Control**: Returns HTTP 404 / 403 Access Denied to unauthorized users; zero operator data disclosed.
+
 ---
 
-## 4. Verification & Health Summary
+## 4. Manual Cloudflare Dashboard Deconfiguration (External Zero Trust)
+
+If Cloudflare Access / Zero Trust application interception was provisioned in the Cloudflare Dashboard external to this codebase, edge requests will continue to prompt Cloudflare Access until disabled in Cloudflare Zero Trust.
+
+### Target Cloudflare Access Application Specification
+- **Dashboard Location**: Cloudflare One / Zero Trust Console (`one.dash.cloudflare.com`)
+- **Team Domain**: `mayf.cloudflareaccess.com`
+- **Application Name**: `MAYF Admin Console` (or `Maths at Your Fingertips Admin`)
+- **Application Domain**: `mayf.co.in`
+- **Application Path**: `/mgmt-sec-k92a` (or `/mgmt-sec*`)
+- **Audience Tag (AUD)**: `566895799712-cfaccess-aud-mayf-2026`
+
+### Exact Step-by-Step Instructions to Remove / Disable in Cloudflare Dashboard
+1. Log into the Cloudflare Zero Trust Dashboard at **[one.dash.cloudflare.com](https://one.dash.cloudflare.com)**.
+2. Select your account and navigate to **Access** → **Applications** in the left sidebar.
+3. Locate the application configured for:
+   - Domain: `mayf.co.in`
+   - Path: `/mgmt-sec-k92a`
+4. Click the three dots (`...`) or **Edit** on that application.
+5. To completely remove the Access login challenge while keeping Cloudflare CDN, DNS, WAF, and Turnstile active:
+   - **Option A (Disable)**: Under **Application configuration**, toggle the application status to **Disabled** or remove the policies under the **Policies** tab.
+   - **Option B (Delete)**: Click **Delete Application** and confirm deletion.
+6. Verify your DNS and SSL/TLS settings under the regular Cloudflare Dashboard (`dash.cloudflare.com` → `mayf.co.in`):
+   - Keep DNS Proxy **Proxied (Orange Cloud)**.
+   - Keep SSL/TLS set to **Full (Strict)**.
+   - Keep Cloudflare Turnstile bot verification active.
+7. Once deleted or disabled in the Zero Trust console, requests to `https://mayf.co.in/mgmt-sec-k92a` will pass straight through Cloudflare CDN/WAF to the origin server, where direct Firebase Authentication and custom claims handle authorization.
+
+---
+
+## 5. Verification & Health Summary
 
 ```
 ================================================================================
 BUILD COMPILATION:         PASS (vite build clean, 0 errors)
 LINT & TYPECHECK:          PASS (tsc --noEmit clean, 0 errors)
 SERVER HEALTH (HTTP 200):  PASS (http://0.0.0.0:3000/api/health)
-CLOUDFLARE ACCESS GATE:    REMOVED FROM ADMIN FLOW
+CLOUDFLARE ACCESS GATE:    DECOUPLED FROM CODEBASE (EXTERNAL STEPS DOCUMENTED)
+ONBOARDING WIZARD:         IMPLEMENTED & INTEGRATED
+ADMIN DIRECT FIREBASE:     STRICT CLAIMS ENFORCED
 ================================================================================
 ```

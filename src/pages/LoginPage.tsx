@@ -21,12 +21,6 @@ export const LoginPage: React.FC = () => {
 
   // If already logged in, show quick dashboard access
   if (user) {
-    const isAdminUser =
-      Boolean(entitlements.isAdmin || entitlements.isSuperAdmin) ||
-      ['ntnagrawal146@gmail.com', '2026vivekkushwah@gmail.com', 'admin@mayf.co.in'].includes(
-        (user.email || '').toLowerCase().trim()
-      );
-
     return (
       <SharedLayout>
         <SeoHead
@@ -45,17 +39,6 @@ export const LoginPage: React.FC = () => {
             {user.email} · {user.studentClass} ({user.board})
           </p>
           <div className="pt-2 flex flex-col gap-2.5">
-            {isAdminUser && (
-              <Button
-                variant="accent"
-                fullWidth
-                size="lg"
-                onClick={() => navigate('/mgmt-sec-k92a')}
-                className="font-bold bg-[#00687A] text-white hover:bg-[#005564]"
-              >
-                Go to Administrator Portal (/mgmt-sec-k92a)
-              </Button>
-            )}
             <Button
               variant="primary"
               fullWidth
