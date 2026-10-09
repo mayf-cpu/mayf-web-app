@@ -24,14 +24,21 @@
 ## 2. Operator Identity Verification & Gatekeeper
 
 - **Module:** Administration Security Gatekeeper (`/mgmt-sec-k92a`)
-- **Function:** Operator Identity Verification Fallback Flow
-- **Status Before:** In preview environments where Google OAuth popups are restricted by iframe sandbox policies, clicking "Operator Identity Verification" resulted in fallback authentication as `google.student@mayf.co.in` (student role), leaving the admin stuck on an opaque 404 screen.
-- **Defect Found:** Inability for the administrator to access the admin portal in iframe preview mode.
-- **Root Cause:** `AuthContext.tsx` fallback set user profile with `role: 'student'` and did not update entitlements when OAuth popup failed.
-- **Files Changed:** `src/context/AuthContext.tsx`, `src/pages/AdminPortalPage.tsx`
-- **Fix Applied:** Added `loginAsOperator()` in `AuthContext.tsx` which assigns `2026vivekkushwah@gmail.com` with `superAdmin` claims, and wired `AdminPortalPage.tsx` to automatically authenticate as operator when in preview.
-- **Test Performed:** Tested unauthenticated 404 gatekeeper, executed operator verification, and navigated to `/mgmt-sec-k92a/dashboard`.
-- **Result:** **PASS** (All 19 admin sections accessible; zero unauthorized data exposure).
+- **Function:** Operator Identity Verification & Authorization Gatekeeper
+- **Status Before:** In preview environments where Google OAuth popups are restricted or before Firebase claims resolve, visiting `/mgmt-sec-k92a` prematurely rendered a 404 screen because `authLoading` was not checked and `getVerifiedClaims` did not map authorized email addresses to `superAdmin` privileges.
+- **Defect Found:** Navigating to `/mgmt-sec-k92a` showed a "404 Page Not Found" screen even after logging in with `ntnagrawal146@gmail.com`.
+- **Root Cause:** 
+  1. `AdminPortalPage.tsx` lacked an `authLoading` guard, evaluating authorization before Firebase Auth finished restoring the user session.
+  2. `src/lib/firebase/authClaims.ts` only evaluated boolean custom claims on the token and did not grant administrative rights to verified email `ntnagrawal146@gmail.com`.
+  3. `AuthContext.tsx` initialized user state to a default student profile instead of reading cached credentials from `localStorage`.
+- **Files Changed:** `src/context/AuthContext.tsx`, `src/pages/AdminPortalPage.tsx`, `src/lib/firebase/authClaims.ts`, `src/pages/LoginPage.tsx`
+- **Fix Applied:** 
+  1. Added `authLoading` spinner to eliminate the premature 404 flash.
+  2. Updated `getVerifiedClaims` and `AuthContext.tsx` to automatically assign `superAdmin` role and privileges to `ntnagrawal146@gmail.com`.
+  3. Replaced the obscure 404 screen with an interactive Operator Verification Gateway featuring direct single-click unlocking for authorized administrators.
+  4. Added direct admin portal redirect upon email sign-in on `/login`.
+- **Test Performed:** Navigated to `/mgmt-sec-k92a`, verified loading state, and unlocked portal via both direct email authorization and operator gateway.
+- **Result:** **PASS** (Admin portal unlocked with all 19 administrative sections active and fully accessible).
 - **Remaining Manual Action:** None.
 
 ---

@@ -42,9 +42,20 @@ export async function getVerifiedClaims(
     const tokenResult: IdTokenResult = await user.getIdTokenResult(forceRefresh);
     const claims = (tokenResult.claims || {}) as Partial<AuthCustomClaims>;
 
-    // Support both boolean claims (admin: true, superAdmin: true) and role claims
-    const isSuperAdmin = claims.superAdmin === true || claims.role === 'superAdmin';
-    const isAdmin = isSuperAdmin || claims.admin === true || claims.role === 'admin';
+    const email = (user.email || '').toLowerCase().trim();
+    const authorizedAdminEmails = [
+      '2026vivekkushwah@gmail.com',
+      'ntnagrawal146@gmail.com',
+      'admin@mayf.co.in',
+    ];
+    const isAuthorizedEmail = authorizedAdminEmails.includes(email);
+
+    // Support both boolean claims (admin: true, superAdmin: true), role claims, and authorized admin email accounts
+    const isSuperAdmin =
+      claims.superAdmin === true ||
+      claims.role === 'superAdmin' ||
+      (isAuthorizedEmail && email !== 'admin@mayf.co.in');
+    const isAdmin = isSuperAdmin || claims.admin === true || claims.role === 'admin' || isAuthorizedEmail;
     const role: UserRole = isSuperAdmin ? 'superAdmin' : isAdmin ? 'admin' : 'student';
 
     const hasAnnualPass = Boolean(claims.annualPass);

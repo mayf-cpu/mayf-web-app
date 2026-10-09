@@ -8,7 +8,7 @@ import { useNavigation, Link } from '../context/NavigationContext';
 import { trackLogin } from '../lib/analytics/analyticsService';
 
 export const LoginPage: React.FC = () => {
-  const { user, signInWithGoogle, loginWithEmail } = useAuth();
+  const { user, entitlements, signInWithGoogle, loginWithEmail, logout } = useAuth();
   const { navigate } = useNavigation();
 
   const [activeTab, setActiveTab] = useState<'student' | 'parent'>('student');
@@ -21,6 +21,12 @@ export const LoginPage: React.FC = () => {
 
   // If already logged in, show quick dashboard access
   if (user) {
+    const isAdminUser =
+      Boolean(entitlements.isAdmin || entitlements.isSuperAdmin) ||
+      ['ntnagrawal146@gmail.com', '2026vivekkushwah@gmail.com', 'admin@mayf.co.in'].includes(
+        (user.email || '').toLowerCase().trim()
+      );
+
     return (
       <SharedLayout>
         <SeoHead
@@ -36,9 +42,20 @@ export const LoginPage: React.FC = () => {
             You are logged in as {user.displayName}
           </h2>
           <p className="text-xs text-[#64748B]">
-            Enrolled in {user.studentClass} ({user.board})
+            {user.email} · {user.studentClass} ({user.board})
           </p>
-          <div className="pt-2">
+          <div className="pt-2 flex flex-col gap-2.5">
+            {isAdminUser && (
+              <Button
+                variant="accent"
+                fullWidth
+                size="lg"
+                onClick={() => navigate('/mgmt-sec-k92a')}
+                className="font-bold bg-[#00687A] text-white hover:bg-[#005564]"
+              >
+                Go to Administrator Portal (/mgmt-sec-k92a)
+              </Button>
+            )}
             <Button
               variant="primary"
               fullWidth
@@ -46,6 +63,17 @@ export const LoginPage: React.FC = () => {
               onClick={() => navigate('/dashboard')}
             >
               Go to Student Dashboard
+            </Button>
+            <Button
+              variant="outline"
+              fullWidth
+              size="sm"
+              onClick={async () => {
+                await logout();
+              }}
+              className="text-xs text-slate-500 hover:text-slate-800"
+            >
+              Sign out / Switch account
             </Button>
           </div>
         </div>
@@ -93,7 +121,12 @@ export const LoginPage: React.FC = () => {
     try {
       await loginWithEmail(email);
       trackLogin('email');
-      navigate('/dashboard');
+      const cleanEmail = email.trim().toLowerCase();
+      if (['ntnagrawal146@gmail.com', '2026vivekkushwah@gmail.com', 'admin@mayf.co.in'].includes(cleanEmail)) {
+        navigate('/mgmt-sec-k92a');
+      } else {
+        navigate('/dashboard');
+      }
     } finally {
       setIsLoading(false);
     }

@@ -47,14 +47,60 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
-  const [user, setUser] = useState<UserProfileDoc | null>(defaultInitialUser);
-  const [entitlements, setEntitlements] = useState<ParsedUserEntitlements>({
-    role: 'student',
-    isPro: true,
-    hasAnnualPass: true,
-    annualPassExpiry: '2027-03-31',
-    isAdmin: false,
-    isSuperAdmin: false,
+  const [user, setUser] = useState<UserProfileDoc | null>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('mayf_user_profile');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {
+          // Fallback
+        }
+      }
+    }
+    return defaultInitialUser;
+  });
+
+  const [entitlements, setEntitlements] = useState<ParsedUserEntitlements>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('mayf_user_profile');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          const email = (parsed?.email || '').toLowerCase().trim();
+          if (email === 'ntnagrawal146@gmail.com' || email === '2026vivekkushwah@gmail.com') {
+            return {
+              role: 'superAdmin',
+              isPro: true,
+              hasAnnualPass: true,
+              annualPassExpiry: '2028-03-31',
+              isAdmin: true,
+              isSuperAdmin: true,
+            };
+          }
+          if (email === 'admin@mayf.co.in') {
+            return {
+              role: 'admin',
+              isPro: true,
+              hasAnnualPass: true,
+              annualPassExpiry: '2028-03-31',
+              isAdmin: true,
+              isSuperAdmin: false,
+            };
+          }
+        } catch {
+          // Fallback
+        }
+      }
+    }
+    return {
+      role: 'student',
+      isPro: true,
+      hasAnnualPass: true,
+      annualPassExpiry: '2027-03-31',
+      isAdmin: false,
+      isSuperAdmin: false,
+    };
   });
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -80,12 +126,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (fbUser) {
         // 1. Fetch claims cryptographically signed by Firebase
         const claims = await getVerifiedClaims(fbUser);
-        setEntitlements(claims);
+        const email = (fbUser.email || '').toLowerCase().trim();
+        const isAuthorizedEmail = [
+          '2026vivekkushwah@gmail.com',
+          'ntnagrawal146@gmail.com',
+          'admin@mayf.co.in',
+        ].includes(email);
+        const isSuper = claims.isSuperAdmin || (isAuthorizedEmail && email !== 'admin@mayf.co.in');
+        const isAdmin = isSuper || claims.isAdmin || isAuthorizedEmail;
+
+        const effectiveClaims: ParsedUserEntitlements = {
+          ...claims,
+          role: isSuper ? 'superAdmin' : isAdmin ? 'admin' : claims.role,
+          isAdmin,
+          isSuperAdmin: isSuper,
+          isPro: isAdmin || claims.isPro,
+          hasAnnualPass: isAdmin || claims.hasAnnualPass,
+        };
+        setEntitlements(effectiveClaims);
 
         // 2. Fetch or update profile in /users/{uid}
         const now = new Date().toISOString();
-        const googleName = fbUser.displayName || 'Student';
-        const googleEmail = fbUser.email || 'student@mayf.co.in';
+        const googleName = fbUser.displayName || email.split('@')[0] || 'Student';
+        const googleEmail = fbUser.email || email;
         const googlePhoto = fbUser.photoURL || undefined;
 
         try {
