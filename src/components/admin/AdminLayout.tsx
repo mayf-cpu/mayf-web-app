@@ -123,7 +123,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     <div className="min-h-screen bg-[#0F172A] text-slate-100 flex flex-col antialiased selection:bg-blue-600 selection:text-white">
       {/* Top Authoritative Header */}
       <header className="sticky top-0 z-40 bg-[#1E293B]/95 backdrop-blur-md border-b border-slate-800 px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <button
             ref={menuButtonRef}
             aria-expanded={mobileMenuOpen}
@@ -143,7 +143,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
               <span className="font-heading font-bold text-sm tracking-tight text-white block">
                 MAYF Admin
               </span>
-              <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1">
+              <span className="hidden sm:flex text-[10px] font-mono text-emerald-400 items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 Manage your learning website
               </span>
@@ -152,11 +152,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
         </div>
 
         {/* Top Badges & Operator Profile */}
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
           {/* Admin Role Claim Badge */}
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-purple-900/50 border border-purple-700/60 text-[11px] font-mono font-bold text-purple-300">
             <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
-            <span>{entitlements.isSuperAdmin ? 'Super administrator' : 'Administrator'}</span>
+            <span className="hidden sm:inline">{entitlements.isSuperAdmin ? 'Super administrator' : 'Administrator'}</span>
+            <span className="sm:hidden">{entitlements.isSuperAdmin ? 'Super admin' : 'Admin'}</span>
           </div>
 
           {/* User Email & Exit */}

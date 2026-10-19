@@ -219,8 +219,8 @@ export class StripeAdapter implements PaymentProviderAdapter {
       payloadString = JSON.stringify(rawPayload);
     }
 
-    const eventId = payloadJson?.id || `evt_stripe_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-    const eventType = payloadJson?.type || 'checkout.session.completed';
+    const eventId = payloadJson?.id || crypto.createHash('sha256').update(payloadString).digest('hex');
+    const eventType = payloadJson?.type || 'unknown';
 
     // Strictly mandate cryptographic signature header on all webhooks
     if (!signatureHeader) {
@@ -245,21 +245,23 @@ export class StripeAdapter implements PaymentProviderAdapter {
 
     const parts = signatureHeader.split(',');
     let timestamp = '';
-    let v1Sig = '';
+    const v1Signatures: string[] = [];
 
     for (const part of parts) {
       const [k, v] = part.split('=');
+      if (!v) continue;
       if (k.trim() === 't') timestamp = v.trim();
-      if (k.trim() === 'v1') v1Sig = v.trim();
+      if (k.trim() === 'v1') v1Signatures.push(v.trim());
     }
 
-    if (!timestamp || !v1Sig) {
+    if (!/^\d+$/.test(timestamp) || !v1Signatures.length ||
+        Math.abs(Math.floor(Date.now() / 1000) - Number(timestamp)) > 300) {
       return {
         isValid: false,
         provider: 'stripe',
         eventId,
         eventType,
-        error: 'Malformed Stripe webhook signature header format',
+        error: 'Malformed or expired Stripe webhook signature header',
       };
     }
 
@@ -269,13 +271,11 @@ export class StripeAdapter implements PaymentProviderAdapter {
       .update(signedPayload)
       .digest('hex');
 
-    const sigBuf = Buffer.from(v1Sig);
     const compBuf = Buffer.from(computedSignature);
-
-    let isSigValid = false;
-    if (sigBuf.length === compBuf.length) {
-      isSigValid = crypto.timingSafeEqual(sigBuf, compBuf);
-    }
+    const isSigValid = v1Signatures.some((signature) => {
+      const sigBuf = Buffer.from(signature);
+      return sigBuf.length === compBuf.length && crypto.timingSafeEqual(sigBuf, compBuf);
+    });
 
     if (!isSigValid) {
       return {
@@ -288,14 +288,15 @@ export class StripeAdapter implements PaymentProviderAdapter {
     }
 
     const sessionObj = payloadJson?.data?.object;
-    const providerOrderId = sessionObj?.id || sessionObj?.client_reference_id;
+    const providerOrderId = eventType.startsWith('checkout.session.') ? sessionObj?.id : undefined;
     const providerPaymentId = sessionObj?.payment_intent || sessionObj?.id;
-    const rawAmount = sessionObj?.amount_total;
+    const rawAmount = sessionObj?.amount_total ?? sessionObj?.amount_received ?? sessionObj?.amount;
 
     let status: 'paid' | 'failed' | 'pending' = 'pending';
-    if (eventType === 'checkout.session.completed' || eventType === 'payment_intent.succeeded') {
+    if ((eventType === 'checkout.session.completed' && sessionObj?.payment_status === 'paid') ||
+        eventType === 'checkout.session.async_payment_succeeded' || eventType === 'payment_intent.succeeded') {
       status = 'paid';
-    } else if (eventType === 'payment_intent.payment_failed') {
+    } else if (eventType === 'payment_intent.payment_failed' || eventType === 'checkout.session.async_payment_failed') {
       status = 'failed';
     }
 
@@ -307,8 +308,8 @@ export class StripeAdapter implements PaymentProviderAdapter {
       providerOrderId,
       providerPaymentId,
       status,
-      rawAmount: rawAmount ? rawAmount / 100 : undefined,
-      currency: sessionObj?.currency?.toUpperCase() || 'USD',
+      rawAmount: typeof rawAmount === 'number' ? rawAmount / 100 : undefined,
+      currency: sessionObj?.currency?.toUpperCase(),
       metadata: sessionObj?.metadata || {},
     };
   }

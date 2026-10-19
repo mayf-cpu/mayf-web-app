@@ -130,7 +130,7 @@ export class PaymentService {
     this.ordersStore.set(seed2.orderId, seed2);
 
     // Seed idempotency log for initial orders
-    this.processedWebhookEvents.set('rzp_evt_seed_99201', {
+    this.processedWebhookEvents.set('razorpay:rzp_evt_seed_99201', {
       id: 'rzp_evt_seed_99201',
       provider: 'razorpay',
       eventType: 'payment.captured',
@@ -267,15 +267,24 @@ export class PaymentService {
     }
 
     // Ownership check: Prevent payment verification spoofing across different user accounts
-    if (req.userId && order.userId !== req.userId) {
+    if (!req.userId || order.userId !== req.userId) {
       return {
         success: false,
         error: 'Unauthorized: Payment order does not belong to the authenticated student account.',
       };
     }
 
-    // Gateway order ID consistency check
-    if (order.providerOrderId && req.providerOrderId && order.providerOrderId !== req.providerOrderId) {
+    // Select the gateway from the stored order, never from callback input.
+    if (req.provider && req.provider !== order.provider) {
+      return { success: false, error: 'Payment verification failed: Provider mismatch.' };
+    }
+
+    const callbackOrderId = order.provider === 'stripe'
+      ? req.stripeSessionId || req.providerOrderId
+      : req.providerOrderId;
+    if (!order.providerOrderId || callbackOrderId !== order.providerOrderId ||
+        (req.providerOrderId && req.providerOrderId !== order.providerOrderId) ||
+        (req.stripeSessionId && req.stripeSessionId !== order.providerOrderId)) {
       return {
         success: false,
         error: 'Payment verification failed: Provider order ID mismatch.',
@@ -290,8 +299,11 @@ export class PaymentService {
       };
     }
 
-    const adapter = this.getAdapter(req.provider || order.provider);
-    const verification = await adapter.verifyPaymentSignature(req);
+    const adapter = this.getAdapter(order.provider);
+    const verification = await adapter.verifyPaymentSignature({
+      ...req, provider: order.provider, providerOrderId: order.providerOrderId,
+      stripeSessionId: order.provider === 'stripe' ? order.providerOrderId : undefined,
+    });
 
     if (!verification.valid) {
       order.status = 'failed';
@@ -346,10 +358,11 @@ export class PaymentService {
     }
 
     const eventId = webhookResult.eventId;
+    const eventKey = `${provider}:${eventId}`;
 
     // Idempotency check: if already processed, return immediately
-    if (this.processedWebhookEvents.has(eventId)) {
-      const existing = this.processedWebhookEvents.get(eventId)!;
+    if (this.processedWebhookEvents.has(eventKey)) {
+      const existing = this.processedWebhookEvents.get(eventKey)!;
       return {
         success: true,
         status: 'duplicate_ignored',
@@ -362,7 +375,7 @@ export class PaymentService {
     let targetOrder: StoredOrder | undefined;
     if (webhookResult.providerOrderId) {
       for (const order of this.ordersStore.values()) {
-        if (order.providerOrderId === webhookResult.providerOrderId) {
+        if (order.provider === provider && order.providerOrderId === webhookResult.providerOrderId) {
           targetOrder = order;
           break;
         }
@@ -376,7 +389,17 @@ export class PaymentService {
     const now = new Date().toISOString();
 
     if (targetOrder) {
+      if (targetOrder.provider !== provider ||
+          (webhookResult.providerOrderId && webhookResult.providerOrderId !== targetOrder.providerOrderId)) {
+        return { success: false, status: 'failed', message: 'Webhook does not match the stored payment provider and order.' };
+      }
       if (webhookResult.status === 'paid') {
+        const expectedAmount = Math.round((targetOrder.grossAmount - targetOrder.discount + (targetOrder.tax || 0)) * 100);
+        if (!Number.isFinite(webhookResult.rawAmount) ||
+            Math.round(webhookResult.rawAmount! * 100) !== expectedAmount ||
+            webhookResult.currency?.toUpperCase() !== targetOrder.currency.toUpperCase()) {
+          return { success: false, status: 'failed', message: 'Webhook payment amount or currency does not match the stored order.' };
+        }
         targetOrder.status = 'paid';
         targetOrder.providerPaymentId = webhookResult.providerPaymentId || targetOrder.providerPaymentId;
         if (!targetOrder.paidAt) {
@@ -389,7 +412,7 @@ export class PaymentService {
       }
 
       // Record in idempotency log
-      this.processedWebhookEvents.set(eventId, {
+      this.processedWebhookEvents.set(eventKey, {
         id: eventId,
         provider,
         eventType: webhookResult.eventType,
@@ -409,23 +432,11 @@ export class PaymentService {
         orderId: targetOrder.orderId,
       };
     } else {
-      // Order not found, but log webhook record
-      this.processedWebhookEvents.set(eventId, {
-        id: eventId,
-        provider,
-        eventType: webhookResult.eventType,
-        providerOrderId: webhookResult.providerOrderId,
-        providerPaymentId: webhookResult.providerPaymentId,
-        status: 'processed',
-        receivedAt: now,
-        processedAt: now,
-        message: `Webhook "${webhookResult.eventType}" processed but no matching order found for providerOrderId: ${webhookResult.providerOrderId}.`,
-      });
-
+      // Do not consume the event: an order may become available on a retry.
       return {
-        success: true,
-        status: 'processed',
-        message: `Processed event "${webhookResult.eventType}", no local order matched.`,
+        success: false,
+        status: 'failed',
+        message: 'Webhook order not found; retry after order reconciliation.',
       };
     }
   }
@@ -566,10 +577,21 @@ export class PaymentService {
     }
 
     const eventId = params.simulateDuplicate
-      ? 'rzp_evt_test_duplicate_id'
+      ? `evt_test_duplicate_${params.orderId}`
       : `evt_sim_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
 
-    const rawPayload = {
+    const rawPayload = params.provider === 'stripe' ? {
+      id: eventId,
+      type: params.eventType,
+      data: { object: {
+        id: targetOrder.providerOrderId,
+        payment_intent: `pi_sim_${eventId}`,
+        payment_status: params.eventType === 'checkout.session.completed' ? 'paid' : 'unpaid',
+        amount_total: Math.round((targetOrder.grossAmount - targetOrder.discount + (targetOrder.tax || 0)) * 100),
+        currency: targetOrder.currency.toLowerCase(),
+        metadata: { orderId: targetOrder.orderId },
+      } },
+    } : {
       event_id: eventId,
       event: params.eventType || 'payment.captured',
       payload: {
@@ -577,7 +599,7 @@ export class PaymentService {
           entity: {
             id: `pay_sim_${Date.now().toString(36)}`,
             order_id: targetOrder.providerOrderId,
-            amount: Math.round(targetOrder.grossAmount - targetOrder.discount + (targetOrder.tax || 0)) * 100,
+            amount: Math.round((targetOrder.grossAmount - targetOrder.discount + (targetOrder.tax || 0)) * 100),
             currency: targetOrder.currency,
           },
         },
@@ -590,10 +612,12 @@ export class PaymentService {
       : (this.settings.razorpayWebhookSecret || 'rzp_whsec_mayf_prod_992');
 
     const rawBodyString = JSON.stringify(rawPayload);
-    const signature = crypto.createHmac('sha256', secret).update(rawBodyString).digest('hex');
+    const timestamp = Math.floor(Date.now() / 1000);
+    const signedPayload = params.provider === 'stripe' ? `${timestamp}.${rawBodyString}` : rawBodyString;
+    const signature = crypto.createHmac('sha256', secret).update(signedPayload).digest('hex');
 
     const headers: Record<string, string> = params.provider === 'stripe'
-      ? { 'stripe-signature': `t=${Math.floor(Date.now() / 1000)},v1=${signature}` }
+      ? { 'stripe-signature': `t=${timestamp},v1=${signature}` }
       : { 'x-razorpay-signature': signature };
 
     const outcome = await this.handleWebhook(params.provider, headers, rawBodyString);
