@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   LayoutDashboard,
   BookOpen,
@@ -20,14 +20,12 @@ import {
   BarChart3,
   Settings,
   ShieldCheck,
-  Cloud,
   LogOut,
   Menu,
   X,
   ExternalLink,
-  Lock,
 } from 'lucide-react';
-import { AdminSection, ADMIN_SECTIONS, getAdminUrl } from '../../config/adminConfig';
+import { AdminSection, ADMIN_SECTIONS } from '../../config/adminConfig';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigation } from '../../context/NavigationContext';
 
@@ -45,6 +43,28 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   const { user, entitlements, logout } = useAuth();
   const { navigate } = useNavigation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const [showAllSections, setShowAllSections] = useState(false);
+  const [sectionSearch, setSectionSearch] = useState('');
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const everydaySections: AdminSection[] = ['dashboard', 'content', 'students', 'orders', 'import', 'notifications'];
+  const query = sectionSearch.trim().toLowerCase();
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMobileMenuOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [mobileMenuOpen]);
+
+  const visibleSections = ADMIN_SECTIONS.filter((section) => query
+    ? `${section.title} ${section.description}`.toLowerCase().includes(query)
+    : showAllSections || everydaySections.includes(section.id) || section.id === currentSection);
 
   // Group sections by category
   const categories = ['Overview', 'Academics', 'Commercial', 'Engagement', 'Platform'] as const;
@@ -105,6 +125,9 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
       <header className="sticky top-0 z-40 bg-[#1E293B]/95 backdrop-blur-md border-b border-slate-800 px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <button
+            ref={menuButtonRef}
+            aria-expanded={mobileMenuOpen}
+            aria-controls="admin-navigation"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             className="md:hidden p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
             aria-label="Toggle admin navigation menu"
@@ -118,11 +141,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             </div>
             <div>
               <span className="font-heading font-bold text-sm tracking-tight text-white block">
-                MAYF Admin Console
+                MAYF Admin
               </span>
               <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                Defence in Depth · RBAC Active
+                Manage your learning website
               </span>
             </div>
           </div>
@@ -130,22 +153,16 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
         {/* Top Badges & Operator Profile */}
         <div className="flex items-center gap-3">
-          {/* Firebase Auth Protection Badge */}
-          <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-800 border border-slate-700 text-[11px] font-mono text-slate-300">
-            <Lock className="w-3.5 h-3.5 text-blue-400" />
-            <span>Firebase Auth Protected</span>
-          </div>
-
           {/* Admin Role Claim Badge */}
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-purple-900/50 border border-purple-700/60 text-[11px] font-mono font-bold text-purple-300">
             <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
-            <span>{entitlements.isSuperAdmin ? 'superAdmin=true' : 'admin=true'}</span>
+            <span>{entitlements.isSuperAdmin ? 'Super administrator' : 'Administrator'}</span>
           </div>
 
           {/* User Email & Exit */}
           <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-slate-800 text-xs">
             <span className="font-mono text-slate-300 text-[11px] truncate max-w-[160px]">
-              {user?.email || '2026vivekkushwah@gmail.com'}
+              {user?.email || user?.displayName || 'Signed in'}
             </span>
           </div>
 
@@ -153,6 +170,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             onClick={() => navigate('/')}
             className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
             title="View Public Learning Site"
+            aria-label="View learning website"
           >
             <ExternalLink className="w-4 h-4" />
           </button>
@@ -161,15 +179,38 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
       {/* Main Body with Sidebar */}
       <div className="flex-1 flex max-w-[1600px] w-full mx-auto">
+        {mobileMenuOpen && (
+          <button
+            type="button"
+            className="fixed inset-x-0 top-16 bottom-0 z-20 bg-slate-950/60 md:hidden"
+            aria-label="Close admin navigation"
+            onClick={() => { setMobileMenuOpen(false); menuButtonRef.current?.focus(); }}
+          />
+        )}
         {/* Sidebar for Desktop */}
         <aside
+          id="admin-navigation"
+          aria-label="Admin navigation"
           className={`fixed md:sticky top-16 z-30 h-[calc(100vh-4rem)] w-64 bg-[#1E293B] border-r border-slate-800 flex flex-col justify-between overflow-y-auto transition-transform duration-200 ${
-            mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+            mobileMenuOpen ? 'translate-x-0 visible' : '-translate-x-full invisible md:visible md:translate-x-0'
           }`}
         >
           <div className="p-3 space-y-4">
+            <div className="space-y-3">
+              <label htmlFor="admin-section-search" className="block text-sm font-semibold text-slate-200">Find a tool</label>
+              <input id="admin-section-search" type="search" value={sectionSearch}
+                onChange={(event) => setSectionSearch(event.target.value)} placeholder="Search all admin tools…"
+                className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2.5 text-sm text-white focus-visible:outline-2 focus-visible:outline-blue-400" />
+              <button type="button" aria-pressed={showAllSections} onClick={() => setShowAllSections(!showAllSections)}
+                className="w-full rounded-lg border border-slate-600 px-3 py-2.5 text-sm text-slate-200 hover:bg-slate-700">
+                {showAllSections ? 'Show everyday tools' : `Show all ${ADMIN_SECTIONS.length} tools`}
+              </button>
+              <p className="text-xs text-slate-400">{query ? 'Searching all tools' : showAllSections ? 'All tools' : 'Everyday tools · all others are one click away'}</p>
+            </div>
+            {visibleSections.length === 0 && <p role="status" className="p-3 text-sm text-slate-300">No matching tools. Try content, payments, or settings.</p>}
             {categories.map((cat) => {
-              const catSections = ADMIN_SECTIONS.filter((s) => s.category === cat);
+              const catSections = visibleSections.filter((s) => s.category === cat);
+              if (!catSections.length) return null;
               return (
                 <div key={cat} className="space-y-1">
                   <div className="px-3 py-1 text-[10px] font-heading font-extrabold uppercase tracking-wider text-slate-400">
@@ -181,7 +222,9 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
                       <button
                         key={sec.id}
                         onClick={() => handleSelect(sec.id)}
-                        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-heading font-medium transition-colors text-left cursor-pointer ${
+                        aria-current={isActive ? 'page' : undefined}
+                        title={sec.description}
+                        className={`w-full flex items-center gap-2.5 px-3 py-3 rounded-lg text-sm font-heading font-medium transition-colors text-left cursor-pointer ${
                           isActive
                             ? 'bg-blue-600 text-white font-bold shadow-xs'
                             : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
@@ -201,20 +244,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
           {/* Sidebar Footer */}
           <div className="p-3 border-t border-slate-800 space-y-2">
-            <div className="p-2.5 rounded-lg bg-slate-900/70 border border-slate-800/80 text-[10px] font-mono text-slate-400 space-y-0.5">
-              <div className="text-emerald-400 font-semibold flex items-center gap-1">
-                <Lock className="w-3 h-3" />
-                <span>Zero-Trust Endpoint</span>
-              </div>
-              <div className="truncate text-slate-500">X-Robots-Tag: noindex</div>
-            </div>
-
             <button
               onClick={() => logout().then(() => navigate('/'))}
               className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-rose-400 hover:text-white hover:bg-rose-950/40 border border-rose-900/30 transition-colors cursor-pointer"
             >
               <LogOut className="w-3.5 h-3.5" />
-              <span>Sign Out of Console</span>
+              <span>Sign out</span>
             </button>
           </div>
         </aside>

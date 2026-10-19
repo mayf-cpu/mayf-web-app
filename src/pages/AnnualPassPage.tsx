@@ -95,8 +95,8 @@ export const AnnualPassPage: React.FC = () => {
           description: pageDesc,
           offers: {
             '@type': 'Offer',
-            price: '999',
-            priceCurrency: 'INR',
+            price: String(config.salePrice),
+            priceCurrency: config.currency,
             availability: 'https://schema.org/InStock',
             url: 'https://mayf.co.in/annual-pass',
           },

@@ -1,5 +1,5 @@
-import React from 'react';
-import { Search, Sparkles, User, ShieldCheck } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Search, Sparkles } from 'lucide-react';
 import { Link, useNavigation } from '../../context/NavigationContext';
 import { useAuth } from '../../context/AuthContext';
 import { useSiteSettings } from '../../context/SiteSettingsContext';
@@ -10,6 +10,21 @@ export const Header: React.FC = () => {
   const { currentRoute } = useNavigation();
   const { user } = useAuth();
   const { settings } = useSiteSettings();
+
+  const [passPrice, setPassPrice] = useState<string | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/annual-pass/config', { signal: controller.signal })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => {
+        const config = data?.settings;
+        if (data?.success && config?.enabled && typeof config.salePrice === 'number' && Number.isFinite(config.salePrice) && config.salePrice >= 0) {
+          setPassPrice(new Intl.NumberFormat('en-IN', { style: 'currency', currency: config.currency || 'INR', maximumFractionDigits: 2 }).format(config.salePrice));
+        }
+      })
+      .catch(() => { /* Keep the pass link usable when pricing is unavailable. */ });
+    return () => controller.abort();
+  }, []);
 
   const siteName = settings?.brand?.siteName || 'Maths at Your Fingertips';
   const logoUrl = settings?.brand?.logoUrl;
@@ -27,7 +42,7 @@ export const Header: React.FC = () => {
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#E2E8F0]">
       {/* Universal Top Bar Contract: Exactly 3 Zones on one row */}
-      <div className="max-w-[1140px] mx-auto px-3 sm:px-6 h-16 flex items-center justify-between gap-2 sm:gap-4 overflow-hidden">
+      <div className="max-w-[1140px] mx-auto px-3 sm:px-6 min-h-16 py-2 flex flex-wrap items-center justify-between gap-2 sm:gap-4">
         
         {/* Zone 1: Single text element wordmark with responsive truncation */}
         <Link
@@ -57,7 +72,7 @@ export const Header: React.FC = () => {
 
         {/* Zone 2: 4–6 text navigation links with subtle hover underlines */}
         <nav
-          className="hidden md:flex items-center gap-6 lg:gap-8 text-sm font-medium text-[#475569]"
+          className="hidden md:flex order-last w-full justify-center border-t border-slate-100 pt-2 items-center gap-6 lg:gap-8 text-sm font-medium text-[#475569]"
           aria-label="Main Navigation"
         >
           {navLinks.map((link) => {
@@ -130,7 +145,7 @@ export const Header: React.FC = () => {
             <Button size="sm" variant="accent" className="font-bold min-h-[38px] px-2.5 sm:px-3 text-xs">
               <Sparkles className="w-3.5 h-3.5 mr-1" />
               <span>
-                <span className="hidden min-[380px]:inline">Pass </span>₹999
+                {passPrice ? `Pass ${passPrice}` : 'Annual Pass'}
               </span>
             </Button>
           </Link>

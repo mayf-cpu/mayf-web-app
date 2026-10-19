@@ -196,44 +196,8 @@ export async function verifyStudentSessionToken(bearerToken?: string): Promise<T
     } catch (e: any) {
       console.warn('[Firebase Admin] verifyIdToken note:', e?.code || e?.message);
 
-      // If verifyIdToken failed due to service account credential / audience mismatch,
-      // and token is a genuine Google-issued Firebase JWT that has not expired:
-      try {
-        const parts = cleanToken.split('.');
-        const payloadJson = Buffer.from(parts[1], 'base64').toString('utf8');
-        const payload = JSON.parse(payloadJson);
-        const nowSec = Math.floor(Date.now() / 1000);
-
-        const isGoogleIssuer = typeof payload.iss === 'string' && payload.iss.startsWith('https://securetoken.google.com/');
-        const isNotExpired = typeof payload.exp === 'number' && payload.exp > nowSec;
-        const isEmailVerified = payload.email_verified === true;
-        const email = (payload.email || '').toLowerCase().trim();
-
-        if (isGoogleIssuer && isNotExpired && isEmailVerified && email) {
-          const isSuperAdminClaim = payload.superAdmin === true || payload.role === 'superAdmin';
-          const isAdminClaim = isSuperAdminClaim || payload.admin === true || payload.role === 'admin';
-          const isAuthorizedEmail = adminEmails.includes(email);
-
-          const isSuperAdmin =
-            isSuperAdminClaim ||
-            (isAuthorizedEmail && (email === '2026vivekkushwah@gmail.com' || email === 'ntnagrawal146@gmail.com'));
-          const isAdmin = isAdminClaim || isAuthorizedEmail;
-          const role = isSuperAdmin ? 'superAdmin' : isAdmin ? 'admin' : 'student';
-
-          return {
-            valid: true,
-            uid: payload.user_id || payload.sub,
-            email: payload.email,
-            role,
-            admin: isAdmin,
-            superAdmin: isSuperAdmin,
-            pro: isAdmin || isSuperAdmin,
-            annualPass: isAdmin || isSuperAdmin,
-          };
-        }
-      } catch {
-        // Fall through to strict rejection
-      }
+      // Never trust decoded claims after cryptographic verification fails.
+      // Configuration errors must be corrected instead of granting access.
 
       return {
         valid: false,
