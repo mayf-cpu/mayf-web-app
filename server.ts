@@ -20,6 +20,7 @@ import crypto from 'crypto';
 import { getDownloadableItem } from './src/lib/download/downloadRegistry';
 import { FORMULA_DECK_ITEMS } from './src/data/formulaDeckData';
 import { paymentService } from './src/lib/payments/paymentService';
+import { validateAnnualPassCart } from './src/lib/payments/checkoutPolicy';
 import { DurablePaymentRepository } from './src/lib/payments/durablePaymentRepository';
 import { settleVerifiedAnnualPassWebhook } from './src/lib/payments/durableWebhookProcessor';
 import { entitlementService } from './src/lib/payments/entitlementService';
@@ -891,32 +892,29 @@ async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
     const passSettings = entitlementService.getSettings();
     const authoritativePassPrice = isUsd ? 29 : (passSettings.salePrice || 999);
 
-    let authoritativeGross = authoritativePassPrice;
-    if (items && Array.isArray(items) && items.length > 0) {
-      authoritativeGross = items.reduce((sum: number, it: any) => {
-        if (it.annualPass || it.id?.includes('pass')) {
-          return sum + authoritativePassPrice;
-        }
-        const unitPrice = Math.max(Number(it.unitPrice) || 0, isUsd ? 9 : 199);
-        const qty = Math.max(1, Math.min(10, Number(it.quantity) || 1));
-        return sum + (unitPrice * qty);
-      }, 0);
+    // Until catalogue prices are resolved from the authoritative CMS,
+    // checkout supports ONLY one Annual Pass. Never accept a client
+    // supplied unitPrice for a paid product.
+    if (!validateAnnualPassCart(items)) {
+      return res.status(400).json({
+        success: false,
+        code: 'UNSUPPORTED_CHECKOUT_ITEMS',
+        error: 'Only a single Annual Pass can be purchased at present.',
+      });
     }
-
+    const authoritativeGross = authoritativePassPrice;
     const chosenCoupon = coupon || couponCode;
 
     const result = await paymentService.createOrder({
       userId,
-      items: items.length > 0 ? items : [
-        {
-          id: 'item-annual-pass',
-          title: 'Maths at Your Fingertips Annual Pass (Class 5–10)',
-          unitPrice: authoritativeGross,
-          quantity: 1,
-          annualPass: true,
-          description: '1-Year Unlimited Access to All Formula Decks, Chapter Materials, & AI Teacher',
-        },
-      ],
+      items: [{
+        id: 'item-annual-pass',
+        title: 'Maths at Your Fingertips Annual Pass (Class 5–10)',
+        unitPrice: authoritativeGross,
+        quantity: 1,
+        annualPass: true,
+        description: '1-Year Unlimited Access to All Formula Decks, Chapter Materials, & AI Teacher',
+      }],
       grossAmount: authoritativeGross,
       coupon: chosenCoupon,
       currency,
