@@ -10,7 +10,9 @@ const mf = new Miniflare(convertV4MiniflareOptions({
 try {
   for (const [route, status] of [
     ['/api/health', 200], ['/api/admin/verify-access', 401],
-    ['/api/admin/content', 401], ['/api/not-a-real-route', 404],
+    ['/api/admin/content', 401], ['/api/formulas', 200],
+    ['/api/downloads/file/definitely-not-a-real-token', 404],
+    ['/api/not-a-real-route', 404],
   ]) {
     const response = await mf.dispatchFetch(`http://localhost${route}`);
     assert.equal(response.status, status, route);
