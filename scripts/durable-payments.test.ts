@@ -88,7 +88,52 @@ test('the same gateway payment cannot settle a second order under a different ev
   const secondEntitlement = { ...entitlement, id: 'ent-2', userId: 'student-2', orderId: 'ord-2' };
   await assert.rejects(repo.settleVerifiedPayment({
     ...payment, orderId: 'ord-2', eventId: 'evt-2', entitlement: secondEntitlement,
-  }), /already belongs to another order/);
+  }), /payment claim conflicts with this order/);
   assert.equal((await repo.getOrder('ord-2'))?.status, 'created');
   assert.equal(docs.has('paymentEntitlements/ent-2'), false);
+});
+
+test('already-paid order cannot be settled with a different gateway transaction', async () => {
+  const { repo, docs } = fixture();
+  await repo.createOrder(order);
+  await repo.settleVerifiedPayment(payment);
+  // A later independently signed transaction must not overwrite a settled order.
+  await assert.rejects(repo.settleVerifiedPayment({
+    ...payment, providerPaymentId: 'pay-other', eventId: 'evt-other',
+    entitlement: { ...entitlement, paymentId: 'pay-other', id: 'ent-other' },
+  }), /different transaction/);
+  assert.equal((await repo.getOrder(order.orderId))?.providerPaymentId, 'pay-1');
+  assert.equal(docs.has('paymentEntitlements/ent-other'), false);
+});
+
+test('missing Firestore revision fails closed before making payment writes', async () => {
+  const { repo, docs } = fixture();
+  await repo.createOrder(order);
+  const existing = docs.get('paymentOrders/ord-1')!;
+  // Simulate a malformed repository read with no updateTime.
+  const store = {
+    collection: (collection: string) => ({ doc: (id: string) => ({
+      get: async () => {
+        if (collection === 'paymentOrders') return {
+          exists: true, data: () => structuredClone(existing.data), updateTime: undefined,
+        };
+        return { exists: false, data: () => undefined, updateTime: undefined };
+      },
+    }) }),
+    commit: async () => { throw new Error('Must not commit'); },
+  };
+  const brokenRepo = new DurablePaymentRepository(store as unknown as FirestoreDocumentStore);
+  await assert.rejects(brokenRepo.settleVerifiedPayment(payment), /revision unavailable/);
+});
+
+test('missing gateway identifiers fail closed and cannot write payment records', async () => {
+  const { repo, docs } = fixture();
+  await repo.createOrder(order);
+  for (const override of [
+    { providerOrderId: '' }, { providerPaymentId: '' }, { eventId: '' }, { orderId: '' },
+  ]) {
+    await assert.rejects(repo.settleVerifiedPayment({ ...payment, ...override }), /identifiers are required/);
+  }
+  assert.equal(docs.size, 1);
+  assert.equal((await repo.getOrder(order.orderId))?.status, 'created');
 });

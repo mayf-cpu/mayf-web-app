@@ -47,6 +47,9 @@ export class DurablePaymentRepository {
     paidAt: string;
   }): Promise<'settled' | 'duplicate'> {
     const { orderId, provider, providerOrderId, providerPaymentId, eventId, entitlement, paidAt } = args;
+    if (!orderId?.trim() || !providerOrderId?.trim() || !providerPaymentId?.trim() || !eventId?.trim()) {
+      throw new Error('Verified payment identifiers are required');
+    }
     const eventKey = validId(provider + ':' + eventId);
     // A provider transaction must be credited to at most one order, even if
     // the gateway sends different event IDs for the same payment.
@@ -56,8 +59,10 @@ export class DurablePaymentRepository {
 
     const existingClaim = await this.store.collection(PAYMENT_CLAIM_COLLECTION).doc(paymentClaimId).get();
     if (existingClaim.exists) {
-      if (existingClaim.data()?.orderId === orderId) return 'duplicate';
-      throw new Error('Provider payment already belongs to another order');
+      const claim = existingClaim.data();
+      if (claim?.orderId === orderId && claim?.providerOrderId === providerOrderId &&
+          claim?.providerPaymentId === providerPaymentId) return 'duplicate';
+      throw new Error('Provider payment claim conflicts with this order');
     }
 
     const orderRef = await this.store.collection(ORDER_COLLECTION).doc(validId(orderId)).get();
@@ -67,7 +72,11 @@ export class DurablePaymentRepository {
         entitlement.orderId !== orderId || entitlement.paymentId !== providerPaymentId) {
       throw new Error('Verified payment does not match stored order or entitlement');
     }
-    if (order.status === 'paid') return 'duplicate';
+    if (order.status === 'paid') {
+      if (order.providerPaymentId === providerPaymentId) return 'duplicate';
+      throw new Error('Order already paid with a different transaction');
+    }
+    if (!orderRef.updateTime) throw new Error('Order revision unavailable; cannot safely settle payment');
     if (order.status !== 'created' && order.status !== 'pending') throw new Error('Order is not payable');
 
     const entitlementId = validId(entitlement.id);
