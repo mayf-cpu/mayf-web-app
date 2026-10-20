@@ -32,9 +32,9 @@ export class DurableEntitlementReader {
     const active = passes[0];
     if (!active) return { active: false, daysRemaining: 0, reason: 'No active Annual Pass found for student' };
 
-    // A refund may roll back a renewal cursor while older immutable pass
-    // documents retain the original, longer expiry. Never grant beyond the
-    // authoritative per-student cursor when one exists.
+    // The per-student cursor is the authoritative expiry after sequential
+    // renewals and refunds. Individual order entitlements retain their own
+    // expiry snapshots, which can be shorter after another renewal.
     const cursorDoc = await this.store.collection('paymentRenewalCursors').doc(userId).get();
     let effectiveExpiry = Date.parse(active.expiresAt);
     if (cursorDoc.exists) {
@@ -43,7 +43,9 @@ export class DurableEntitlementReader {
       if (cursor?.userId !== userId || !Number.isFinite(cursorExpiry)) {
         throw new Error('Annual Pass renewal cursor is invalid');
       }
-      effectiveExpiry = Math.min(effectiveExpiry, cursorExpiry);
+      // A cursor created by a paid renewal may extend beyond every individual
+      // entitlement document. Do not truncate it to an old entitlement snapshot.
+      effectiveExpiry = cursorExpiry;
     }
     if (effectiveExpiry <= nowMs) {
       return { active: false, daysRemaining: 0, reason: 'Annual Pass has expired or been refunded' };
