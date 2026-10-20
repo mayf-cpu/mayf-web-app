@@ -325,6 +325,12 @@ export async function processRegistryRow(
   // private R2 object. Never expose a public storage link for paid content.
   const slug = row.slug || row.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
   const firestoreId = row.firestore_id || `cnt-${row.content_type}-${slug}`;
+  if (!/^[A-Za-z0-9_-]{1,150}$/.test(firestoreId)) throw new Error('Invalid CMS content ID');
+  const db = getAdminFirestore();
+  if (!db) throw new Error('CMS database unavailable');
+  const existing = await db.collection('contentItems').doc(firestoreId).get();
+  if (existing.exists && !existing.updateTime) throw new Error('CMS revision unavailable');
+  const previous = existing.exists ? existing.data() || {} : {};
   const storageResult = await copyDriveFileToProductionStorage(
     row.drive_file_id,
     row.thumbnail_drive_file_id,
@@ -386,13 +392,6 @@ export async function processRegistryRow(
 
   // The R2 transfer alone is not a completed import. The CMS record must be
   // committed durably before the job can be reported as imported.
-  const db = getAdminFirestore();
-  if (!db) throw new Error('CMS Firestore database is unavailable; import not published');
-  if (!/^[A-Za-z0-9_-]{1,150}$/.test(firestoreId)) {
-    throw new Error('Invalid CMS content ID for durable import');
-  }
-  const existing = await db.collection('contentItems').doc(firestoreId).get();
-  const previous = existing.exists ? existing.data() || {} : {};
   const publication = importPublicationPolicy(previous, existing.exists, isPubliclyVisible);
   await db.commit([{
     collection: 'contentItems', id: firestoreId,
