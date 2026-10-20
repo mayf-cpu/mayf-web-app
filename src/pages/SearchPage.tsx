@@ -9,7 +9,7 @@ import { SearchResultItem } from '../lib/search/searchInterface';
 import { trackSearch } from '../lib/analytics/analyticsService';
 
 export const SearchPage: React.FC = () => {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(() => new URLSearchParams(window.location.search).get('q') || '');
   const [results, setResults] = useState<SearchResultItem[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -24,19 +24,22 @@ export const SearchPage: React.FC = () => {
   ];
 
   useEffect(() => {
+    let cancelled = false;
     if (!query.trim()) {
+      setIsSearching(false);
       setResults([]);
       setSuggestions([]);
       return;
     }
 
+    setIsSearching(true);
     const timer = setTimeout(async () => {
-      setIsSearching(true);
       try {
         const [items, auto] = await Promise.all([
           searchService.search({ query, limit: 15 }),
           searchService.autocomplete(query, 5),
         ]);
+        if (cancelled) return;
         setResults(items);
         setSuggestions(auto);
 
@@ -47,12 +50,14 @@ export const SearchPage: React.FC = () => {
             results_count: items.length,
           });
         }
+      } catch {
+        if (!cancelled) { setResults([]); setSuggestions([]); }
       } finally {
-        setIsSearching(false);
+        if (!cancelled) setIsSearching(false);
       }
     }, 150);
 
-    return () => clearTimeout(timer);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [query]);
 
   return (
@@ -73,7 +78,7 @@ export const SearchPage: React.FC = () => {
         <div>
           <div className="flex items-center gap-2 text-xs font-heading font-semibold text-[#00687A] mb-1">
             <Sparkles className="w-3.5 h-3.5 text-[#06B6D4]" />
-            <span>Pluggable Search Service · Normalized Tokens & Prefixes</span>
+            <span>Find formulas, chapters and study material</span>
           </div>
           <h1 className="font-heading font-extrabold text-2xl sm:text-3xl text-[#0F172A] tracking-tight">
             Curriculum & Formula Search
