@@ -937,6 +937,16 @@ app.post('/api/orders/create', requireAuth, handleCreateOrder);
  * Strictly validates user ownership to prevent payment spoofing!
  */
 async function handleVerifyPayment(req: AuthenticatedRequest, res: Response) {
+  // Browser-side verification still relies on volatile orders/entitlements.
+  // Keep it disabled in production until it uses the same atomic settlement
+  // pipeline as signed webhooks; otherwise it can report access prematurely.
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(503).json({
+      success: false,
+      code: 'PAYMENT_VERIFICATION_UNAVAILABLE',
+      error: 'Payment verification is being upgraded. Please contact support if already charged.',
+    });
+  }
   try {
     const {
       orderId,
