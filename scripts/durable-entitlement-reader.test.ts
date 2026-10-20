@@ -52,3 +52,13 @@ test('refunded renewal cursor caps outdated active entitlement expiry', async ()
   const refunded = await reader([pass], '2026-10-20T00:00:00.000Z').checkActiveAnnualPass('student-a', now);
   assert.equal(refunded.active, false);
 });
+
+test('multiple paid renewals extend access beyond an older entitlement snapshot', async () => {
+  const result = await reader([pass], '2028-10-01T00:00:00.000Z').checkActiveAnnualPass(
+    'student-a', new Date('2027-11-01T00:00:00.000Z'),
+  );
+  // An old order can already have expired, but the student's renewal cursor
+  // still reflects additional legitimately paid subscription days.
+  assert.equal(result.active, true);
+  assert.equal(result.entitlement?.expiresAt, '2028-10-01T00:00:00.000Z');
+});
