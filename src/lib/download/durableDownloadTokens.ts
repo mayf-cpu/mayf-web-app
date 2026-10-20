@@ -1,36 +1,58 @@
-/** Durable short-lived download authorization in Cloudflare R2.
- * Per-token conditional writes prevent concurrent single-use redemption.
- */
-export interface TokenObject {
-  text(): Promise<string>;
-}
-export interface TokenBucket {
-  put(key: string, value: string, options?: { onlyIf?: { etagDoesNotMatch?: string; etagMatches?: string }; customMetadata?: Record<string,string> }): Promise<unknown>;
-  get(key: string): Promise<(TokenObject & { etag?: string }) | null>;
-  delete(key: string): Promise<void>;
-}
+/** Durable cross-worker download tokens using Firestore revision preconditions. */
+import type { FirestoreDocumentStore } from '../firebase/documentStore';
+
 export type StoredDownloadToken = {
-  contentId: string; fileName: string; accessType: 'free' | 'paid'; uid: string | null;
-  clientIpHash: string; expiresAt: number;
+  contentId: string;
+  fileName: string;
+  accessType: 'free' | 'paid';
+  uid: string | null;
+  clientIpHash: string;
+  expiresAt: number;
+  used: boolean;
 };
-let bucket: TokenBucket | null = null;
-export function configureDownloadTokenBucket(value: TokenBucket | null) { bucket = value; }
-export function downloadTokenStoreReady(): boolean { return bucket !== null; }
-function key(token: string) {
+const COLLECTION = 'downloadAuthorizations';
+function tokenId(token: string): string {
   if (!/^[a-f0-9]{64}$/.test(token)) throw new Error('Invalid download token');
-  return 'download-tokens/' + token;
+  return token;
 }
-export async function createDownloadToken(token: string, record: StoredDownloadToken): Promise<void> {
-  if (!bucket) throw new Error('Download token storage unavailable');
-  if (!Number.isFinite(record.expiresAt) || record.expiresAt <= Date.now()) throw new Error('Invalid expiration');
-  // Token IDs are random and collision-resistant; conditional create avoids overwrites.
-  await bucket.put(key(token), JSON.stringify(record), { onlyIf: { etagDoesNotMatch: '*' } });
-}
-export async function readDownloadToken(token: string): Promise<StoredDownloadToken | null> {
-  if (!bucket) return null;
-  const stored = await bucket.get(key(token));
-  if (!stored) return null;
-  const record = JSON.parse(await stored.text()) as StoredDownloadToken;
-  if (!record || !Number.isFinite(record.expiresAt) || record.expiresAt <= Date.now()) return null;
-  return record;
+export class DurableDownloadTokens {
+  constructor(private readonly store: Pick<FirestoreDocumentStore, 'collection' | 'commit'>) {}
+
+  async create(token: string, data: Omit<StoredDownloadToken, 'used'>): Promise<void> {
+    const id = tokenId(token);
+    if (!Number.isFinite(data.expiresAt) || data.expiresAt <= Date.now() ||
+        data.expiresAt > Date.now() + 120000 ||
+        !data.contentId || !data.clientIpHash) throw new Error('Invalid authorization');
+    await this.store.commit([{ collection: COLLECTION, id, data: { ...data, used: false } }]);
+  }
+
+  /** Returns null for expired, consumed, or invalid records. */
+  async peek(token: string, now = Date.now()): Promise<StoredDownloadToken | null> {
+    const doc = await this.store.collection(COLLECTION).doc(tokenId(token)).get();
+    const record = doc.data() as StoredDownloadToken | undefined;
+    if (!doc.exists || !record || record.used || !Number.isFinite(record.expiresAt) ||
+        record.expiresAt <= now) return null;
+    return record;
+  }
+
+  /**
+   * Atomically consume the token. Only one parallel commit may succeed.
+   * The caller should verify PDF bytes BEFORE consuming.
+   */
+  async consume(token: string, expected: StoredDownloadToken, now = Date.now()): Promise<void> {
+    const id = tokenId(token);
+    const doc = await this.store.collection(COLLECTION).doc(id).get();
+    if (!doc.exists || !doc.updateTime) throw new Error('Download authorization missing');
+    const data = doc.data() as StoredDownloadToken;
+    if (data.used || data.expiresAt <= now ||
+        data.contentId !== expected.contentId ||
+        data.clientIpHash !== expected.clientIpHash ||
+        data.uid !== expected.uid) {
+      throw new Error('Download authorization expired, used, or changed');
+    }
+    await this.store.commit([{
+      collection: COLLECTION, id, updateTime: doc.updateTime,
+      data: { ...data, used: true },
+    }]);
+  }
 }
