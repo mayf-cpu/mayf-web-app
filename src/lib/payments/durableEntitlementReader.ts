@@ -14,16 +14,15 @@ export type EntitlementCheck = {
 };
 
 export class DurableEntitlementReader {
-  constructor(private readonly store: Pick<FirestoreDocumentStore, 'list'>) {}
+  constructor(private readonly store: Pick<FirestoreDocumentStore, 'queryEqual'>) {}
 
   async checkActiveAnnualPass(userId: string, now = new Date()): Promise<EntitlementCheck> {
     if (!userId?.trim()) return { active: false, daysRemaining: 0, reason: 'User ID missing' };
     const nowMs = now.getTime();
     if (!Number.isFinite(nowMs)) throw new Error('Invalid entitlement check time');
 
-    // This collection scan is temporary. Before production deployment replace
-    // it with indexed, user-scoped lookup to avoid unbounded database reads.
-    const records = await this.store.list('paymentEntitlements');
+    // Query only records owned by the authenticated student.
+    const records = await this.store.queryEqual('paymentEntitlements', 'userId', userId);
     const passes = records.map(doc => doc.data as Entitlement)
       .filter(e => e && e.userId === userId && e.type === 'annual_pass' &&
         e.status === 'active' &&
