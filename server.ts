@@ -1596,12 +1596,13 @@ async function refreshAdminUsers(_req: Request, _res: Response, next: NextFuncti
 }
 app.get('/api/admin/metrics', requireAuth, requireAdmin, refreshAdminUsers, (req: AuthenticatedRequest, res: Response) => {
   const users = adminUserManager.searchStudents({ includeDisabled: true });
-  const paid = paymentService.getAllOrders().filter(order => order.status === 'paid');
   return res.json({
     totalStudents: users.filter(user => user.role === 'student').length,
     activeAnnualPasses: users.filter(user => user.hasAnnualPass).length,
-    totalRevenue: paid.reduce((sum, order) => sum + order.grossAmount, 0),
-    aiDoubtsSolved: 0, totalFormulas: FORMULA_DECK_ITEMS.length, totalChapters: contentCmsManager.exportState().length,
+    totalRevenue: null,
+    aiDoubtsSolved: null,
+    aiTeacherConfigured: Boolean(geminiApiKey),
+    firebaseConfigured: getFirebaseAdminConfig().isReady, totalFormulas: FORMULA_DECK_ITEMS.length, totalChapters: contentCmsManager.exportState().length,
     activeCoupons: couponService.getAllCoupons().filter(coupon => coupon.enabled).length,
     serverStatus: 'healthy', cloudflareAccessActive: false, edgeVerifiedEmail: req.userAuth?.email,
     uptimeHours: Math.floor(process.uptime() / 3600),

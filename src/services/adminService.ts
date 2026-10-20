@@ -15,8 +15,10 @@ import { DashboardAnalyticsData } from '../lib/analytics/analyticsTypes';
 export interface AdminMetrics {
   totalStudents: number;
   activeAnnualPasses: number;
-  totalRevenue: number;
-  aiDoubtsSolved: number;
+  totalRevenue: number | null;
+  aiDoubtsSolved: number | null;
+  aiTeacherConfigured?: boolean;
+  firebaseConfigured?: boolean;
   totalFormulas: number;
   totalChapters: number;
   activeCoupons: number;

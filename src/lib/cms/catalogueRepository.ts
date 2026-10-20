@@ -32,7 +32,9 @@ export class CatalogueRepository {
               ...loaded![i].filter(doc => !nextIds.has(doc.id)).map(doc => ({ collection, id: doc.id, updateTime: doc.updateTime })),
             ];
           });
-          if (!marker?.exists) changes.push({ collection: 'catalogueState', id: 'initialized', data: { initialized: true }, updateTime: undefined });
+          // Serialize catalogue-wide invariants (unique slugs and category references)
+          // even when concurrent operations modify different document IDs.
+          changes.push({ collection: 'catalogueState', id: 'initialized', data: { initialized: true }, updateTime: marker?.updateTime });
           await db.commit(changes);
         }
         if ((result as any)?.failed) this.states.forEach(({ state }, i) => state.importState(before[i]));

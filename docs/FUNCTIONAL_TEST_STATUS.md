@@ -2,8 +2,15 @@
 
 ## Current repair pass
 
-Resumed authenticated testing: Google sign-in succeeded for the owner-confirmed backup administrator, but `/api/admin/verify-access` rejected the account because the default approved-email list omitted it. Added verified-email administrator access for that account consistently in server verification, actual-user listing and client claims. The two existing owner accounts retain their existing super-administrator mapping. Explicit ADMIN_AUTHORIZED_EMAILS overrides remain authoritative and can revoke default email access. New server/client regressions cover this configuration (40 tests total); live access must be checked after preview deployment.
+Authenticated live preview checks now pass for the owner-confirmed backup administrator. Real Google sign-in grants Administrator access. Content create, edit, reload persistence, archive, restore, publish and hide were exercised through the admin UI. Public slug lookup returned the published resource and rejected the hidden resource. The clearly labelled QA resource is retained in the recoverable archive; it was not permanently purged.
 
+This batch fixes the create form reporting a resource as visible while saving a draft status, removes invented Drive IDs from new resources, prevents duplicate save submissions and keeps student onboarding out of the admin panel. Dashboard cards no longer claim fabricated conversion, success rates, revenue or infrastructure guarantees. Unconnected reporting is labelled explicitly.
+
+Catalogue mutations now conditionally update a shared revision document in the same atomic commit. Concurrent changes to different records cannot bypass catalogue-wide invariants such as unique slugs. A two-isolate concurrent-insert regression verifies that one competing write is rejected rather than falsely reporting success.
+
+42 regression tests, TypeScript, the production build and four workerd API checks pass for this batch. These automated checks use fixtures where applicable; they do not establish payment, media or external integration readiness.
+
+The approved backup account receives verified-email administrator access consistently in server verification, actual-user listing and client claims. The two existing owner accounts retain their super-administrator mapping. Explicit ADMIN_AUTHORIZED_EMAILS overrides remain authoritative.
 
 Additional browser finding: navigation from an already open tab during preview deployment failed to fetch an old lazy-loaded chunk, then the root error fallback crashed because it used a NavigationProvider-dependent layout outside that provider. The fallback now renders independently and reloads the document to obtain current assets. A provider-free rendering regression test passes. After reloading, the Formula Deck displays 26 formulas and its Class 5 filter displays two formulas.
 
