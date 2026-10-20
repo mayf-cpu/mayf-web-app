@@ -4,7 +4,7 @@ import { FirestoreDocumentStore } from '../src/lib/firebase/documentStore';
 
 test('Firestore query filters entitlements by authenticated user ID on the server', async t => {
   let requestBody: any;
-  t.mock.method(globalThis, 'fetch', async (_url, options: any) => {
+  t.mock.method(globalThis, 'fetch', async (_url: string | URL | Request, options: any) => {
     requestBody = JSON.parse(options.body);
     return new Response(JSON.stringify([
       { document: { name: 'projects/p/databases/(default)/documents/paymentEntitlements/e1',
