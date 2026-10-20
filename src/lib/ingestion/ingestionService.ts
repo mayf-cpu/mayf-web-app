@@ -319,19 +319,18 @@ export async function processRegistryRow(
     return { success: false, error: failedJob.errorMessage, job: failedJob };
   }
 
-  // 1. Copy Google Drive file to Production Cloud Storage
-  // (Ensuring Google Drive is NEVER the permanent delivery source)
+  // Determine the stable content ID before copying: it also identifies the
+  // private R2 object. Never expose a public storage link for paid content.
   const slug = row.slug || row.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  const firestoreId = row.firestore_id || `cnt-${row.content_type}-${slug}`;
   const storageResult = await copyDriveFileToProductionStorage(
     row.drive_file_id,
     row.thumbnail_drive_file_id,
     slug,
     row.content_type,
-    row.access_type
+    row.access_type,
+    firestoreId,
   );
-
-  // 2. Generate or preserve Firestore document ID (Idempotency)
-  const firestoreId = row.firestore_id || `cnt-${row.content_type}-${slug}`;
 
   // 3. Construct Firestore ContentItem payload
   // CRITICAL: Respect visibility (Visible = true, Hidden = false)
