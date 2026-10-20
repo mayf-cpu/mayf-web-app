@@ -827,6 +827,16 @@ app.get('/api/admin/downloads/audit-logs', requireAuth, requireAdmin, (_req: Req
  * ENFORCES AUTHORITATIVE SERVER PRICING TO PREVENT PRICE MANIPULATION!
  */
 async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
+  // A Cloudflare isolate can be restarted between payment creation and confirmation.
+  // Until orders, webhooks and entitlements are durably transactional, do not
+  // accept new live checkouts that could charge a student without granting access.
+  if (isProduction) {
+    return res.status(503).json({
+      success: false,
+      code: 'CHECKOUT_TEMPORARILY_UNAVAILABLE',
+      error: 'Purchases are temporarily unavailable while secure payment records are being configured. No payment has been initiated.',
+    });
+  }
   try {
     const {
       amount,
