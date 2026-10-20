@@ -20,6 +20,7 @@ import crypto from 'crypto';
 import { getDownloadableItem } from './src/lib/download/downloadRegistry';
 import { FORMULA_DECK_ITEMS } from './src/data/formulaDeckData';
 import { paymentService } from './src/lib/payments/paymentService';
+import { validateAnnualPassCart } from './src/lib/payments/checkoutPolicy';
 import { DurablePaymentRepository } from './src/lib/payments/durablePaymentRepository';
 import { settleVerifiedAnnualPassWebhook } from './src/lib/payments/durableWebhookProcessor';
 import { entitlementService } from './src/lib/payments/entitlementService';
@@ -894,8 +895,7 @@ async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
     // Until catalogue prices are resolved from the authoritative CMS,
     // checkout supports ONLY one Annual Pass. Never accept a client
     // supplied unitPrice for a paid product.
-    if (!Array.isArray(items) || items.length > 1 ||
-        (items.length === 1 && (items[0]?.annualPass !== true || Number(items[0]?.quantity ?? 1) !== 1))) {
+    if (!validateAnnualPassCart(items)) {
       return res.status(400).json({
         success: false,
         code: 'UNSUPPORTED_CHECKOUT_ITEMS',
