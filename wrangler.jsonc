@@ -9,6 +9,12 @@
     ]
   },
   "previews": {},
+  "r2_buckets": [
+    {
+      "binding": "MAYF_PDF_BUCKET",
+      "bucket_name": "mayf-study-materials"
+    }
+  ],
   "main": "worker.ts",
   "compatibility_flags": [
     "nodejs_compat"
