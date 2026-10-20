@@ -22,7 +22,10 @@ export interface FirebaseAdminConfig {
 function serviceAccountFields(): { project_id?: string; client_email?: string; private_key?: string } {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   if (!raw) return {};
-  try { return JSON.parse(raw); } catch { return {}; }
+  try {
+    const value = JSON.parse(raw);
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  } catch { return {}; }
 }
 
 export function getFirebaseAdminConfig(): FirebaseAdminConfig {
@@ -37,6 +40,24 @@ export function getFirebaseAdminConfig(): FirebaseAdminConfig {
     clientEmail,
     hasPrivateKey: Boolean(privateKey && privateKey.length > 20),
     isReady: Boolean(privateKey && privateKey.length > 20 && projectId && clientEmail),
+  };
+}
+
+/** Safe presence diagnostics; never include credential values or token material. */
+export function getFirebaseAdminDiagnostics() {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  let jsonReadable = false;
+  if (raw) {
+    try { const value = JSON.parse(raw); jsonReadable = Boolean(value && typeof value === 'object' && !Array.isArray(value)); }
+    catch { /* Report format only, without logging secret text. */ }
+  }
+  const account = serviceAccountFields();
+  return {
+    serviceAccountJsonPresent: Boolean(raw),
+    serviceAccountJsonReadable: jsonReadable,
+    projectIdPresent: Boolean(process.env.FIREBASE_ADMIN_PROJECT_ID || account.project_id),
+    clientEmailPresent: Boolean(process.env.FIREBASE_ADMIN_CLIENT_EMAIL || account.client_email),
+    privateKeyPresent: Boolean(process.env.FIREBASE_ADMIN_PRIVATE_KEY || account.private_key),
   };
 }
 

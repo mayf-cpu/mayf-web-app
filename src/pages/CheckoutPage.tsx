@@ -340,10 +340,12 @@ export const CheckoutPage: React.FC = () => {
           const rzp = new window.Razorpay(options);
           rzp.open();
         } catch (rzpErr) {
+          if (import.meta.env.PROD) throw new Error('The payment window could not open. Please allow popups and try again.');
           console.warn('[Razorpay] Script pop-up prevented, displaying sandbox verification portal:', rzpErr);
           setShowSandboxModal(true);
         }
       } else {
+        if (import.meta.env.PROD) throw new Error('The selected payment gateway is unavailable. Please try again later.');
         // In iframe preview or test mode where external popup is restricted
         setShowSandboxModal(true);
       }

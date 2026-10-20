@@ -1,6 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { GoogleGenAI } from '@google/genai';
-import { getFirebaseAdminConfig, verifyStudentSessionToken } from './src/lib/firebase/admin';
+import { getFirebaseAdminConfig, getFirebaseAdminDiagnostics, verifyStudentSessionToken } from './src/lib/firebase/admin';
 import {
   INGESTION_JOBS_STORE,
   verifyWebhookSecret,
@@ -332,6 +332,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
     serverTimestamp: new Date().toISOString(),
     // Configuration presence is not proof of a successful external connection.
     firebaseConfigured: getFirebaseAdminConfig().isReady,
+    firebaseConfiguration: getFirebaseAdminDiagnostics(),
     services: {
       geminiAiTeacher: Boolean(geminiApiKey),
       cloudflareTurnstile: Boolean(process.env.TURNSTILE_SECRET_KEY),

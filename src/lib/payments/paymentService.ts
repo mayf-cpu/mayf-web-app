@@ -1,3 +1,4 @@
+import { isProductionPaymentRuntime } from './runtime';
 /**
  * Provider-Independent Payment Service
  * Maths at Your Fingertips (mayf.co.in)
@@ -47,18 +48,18 @@ export class PaymentService {
 
     this.settings = {
       activeProvider: 'razorpay',
-      testMode: process.env.APP_ENV !== 'production',
-      razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_mayf2026demo',
-      razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || 'rzp_sec_sandbox_k98a7sd6f',
-      razorpayWebhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || 'rzp_whsec_mayf_prod_992',
-      stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_mayf2026intl',
-      stripeSecretKey: process.env.STRIPE_SECRET_KEY || 'sk_test_sandbox_intlk98a7',
-      stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || 'whsec_stripe_mayf_prod_881',
+      testMode: !isProductionPaymentRuntime(),
+      razorpayKeyId: process.env.RAZORPAY_KEY_ID || (isProductionPaymentRuntime() ? '' : 'rzp_test_mayf2026demo'),
+      razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || (isProductionPaymentRuntime() ? '' : 'rzp_sec_sandbox_k98a7sd6f'),
+      razorpayWebhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || (isProductionPaymentRuntime() ? '' : 'rzp_whsec_mayf_prod_992'),
+      stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || (isProductionPaymentRuntime() ? '' : 'pk_test_mayf2026intl'),
+      stripeSecretKey: process.env.STRIPE_SECRET_KEY || (isProductionPaymentRuntime() ? '' : 'sk_test_sandbox_intlk98a7'),
+      stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || (isProductionPaymentRuntime() ? '' : 'whsec_stripe_mayf_prod_881'),
       taxRatePercentage: 18, // 18% GST standard educational rate in India (or 0% exempt)
       allowCouponDiscounts: true,
     };
 
-    this.seedInitialOrders();
+    if (!isProductionPaymentRuntime()) this.seedInitialOrders();
   }
 
   /**
@@ -571,6 +572,7 @@ export class PaymentService {
     message: string;
     order?: StoredOrder;
   }> {
+    if (isProductionPaymentRuntime()) throw new Error('Webhook simulation is available only in local development.');
     const targetOrder = this.ordersStore.get(params.orderId);
     if (!targetOrder) {
       throw new Error(`Order ${params.orderId} not found`);
@@ -608,8 +610,8 @@ export class PaymentService {
 
     // Generate valid HMAC signature with the webhook secret
     const secret = params.provider === 'stripe'
-      ? (this.settings.stripeWebhookSecret || 'whsec_stripe_mayf_prod_881')
-      : (this.settings.razorpayWebhookSecret || 'rzp_whsec_mayf_prod_992');
+      ? (this.settings.stripeWebhookSecret || (isProductionPaymentRuntime() ? '' : 'whsec_stripe_mayf_prod_881'))
+      : (this.settings.razorpayWebhookSecret || (isProductionPaymentRuntime() ? '' : 'rzp_whsec_mayf_prod_992'));
 
     const rawBodyString = JSON.stringify(rawPayload);
     const timestamp = Math.floor(Date.now() / 1000);

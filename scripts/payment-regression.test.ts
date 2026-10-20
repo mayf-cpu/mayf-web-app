@@ -149,3 +149,25 @@ test('admin webhook simulations retain valid signed payloads for both providers'
     assert.equal((await service.simulateWebhook(input)).status, 'duplicate_ignored');
   }
 });
+
+test('NODE_ENV production alone rejects simulations and contains no seeded orders', async () => {
+  const beforeNode = process.env.NODE_ENV;
+  const beforeApp = process.env.APP_ENV;
+  process.env.NODE_ENV = 'production';
+  delete process.env.APP_ENV;
+  try {
+    const service = new PaymentService();
+    assert.equal(service.getAllOrders().length, 0);
+    await assert.rejects(service.simulateWebhook({ provider: 'razorpay', eventType: 'payment.captured', orderId: 'seed' }), /local development/);
+    const razorpay = new RazorpayAdapter({ testMode: true, secretKey: 'private-test-secret' });
+    const result = await razorpay.verifyPaymentSignature({
+      orderId: 'local', userId: 'owner', provider: 'razorpay', providerOrderId: 'order_example', providerPaymentId: 'pay_example', signature: 'sig_rzp_valid_anything',
+    });
+    assert.equal(result.valid, false);
+    const stripe = new StripeAdapter({ testMode: true });
+    assert.equal((await stripe.verifyPaymentSignature({ orderId: 'local', userId: 'owner', provider: 'stripe', providerOrderId: 'cs_test_mayf_example', providerPaymentId: 'pi_example', stripeSessionId: 'cs_test_mayf_example' })).valid, false);
+  } finally {
+    if (beforeNode === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = beforeNode;
+    if (beforeApp === undefined) delete process.env.APP_ENV; else process.env.APP_ENV = beforeApp;
+  }
+});

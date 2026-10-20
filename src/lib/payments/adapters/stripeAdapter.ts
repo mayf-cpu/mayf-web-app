@@ -1,3 +1,4 @@
+import { isProductionPaymentRuntime } from '../runtime';
 /**
  * Stripe Payment Adapter (Secondary International Gateway)
  * Maths at Your Fingertips (mayf.co.in)
@@ -30,10 +31,10 @@ export class StripeAdapter implements PaymentProviderAdapter {
   private testMode: boolean;
 
   constructor(config?: Partial<PaymentAdapterConfig>) {
-    this.publishableKey = config?.keyId || process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_mayf2026intl';
-    this.secretKey = config?.secretKey || process.env.STRIPE_SECRET_KEY || 'sk_test_sandbox_intlk98a7';
-    this.webhookSecret = config?.webhookSecret || process.env.STRIPE_WEBHOOK_SECRET || 'whsec_stripe_mayf_prod_881';
-    this.testMode = config?.testMode ?? (process.env.APP_ENV !== 'production');
+    this.publishableKey = config?.keyId || process.env.STRIPE_PUBLISHABLE_KEY || (isProductionPaymentRuntime() ? '' : 'pk_test_mayf2026intl');
+    this.secretKey = config?.secretKey || process.env.STRIPE_SECRET_KEY || (isProductionPaymentRuntime() ? '' : 'sk_test_sandbox_intlk98a7');
+    this.webhookSecret = config?.webhookSecret || process.env.STRIPE_WEBHOOK_SECRET || (isProductionPaymentRuntime() ? '' : 'whsec_stripe_mayf_prod_881');
+    this.testMode = config?.testMode ?? (!isProductionPaymentRuntime());
   }
 
   configure(config: PaymentAdapterConfig): void {
@@ -101,6 +102,9 @@ export class StripeAdapter implements PaymentProviderAdapter {
       }
     }
 
+    if (!providerOrderId && isProductionPaymentRuntime()) {
+      throw new Error('Payment gateway could not create an order. Check its configuration and try again.');
+    }
     if (!providerOrderId) {
       // Deterministic Stripe Checkout Session ID format: cs_test_XXXXXXXXXXXXXXXX
       const randomEntropy = crypto.randomBytes(8).toString('hex');
@@ -170,7 +174,7 @@ export class StripeAdapter implements PaymentProviderAdapter {
     }
 
     // In sandbox test mode, validate format
-    if (this.testMode) {
+    if (this.testMode && !isProductionPaymentRuntime()) {
       if (targetSessionId.startsWith('cs_') || targetSessionId.startsWith('pi_') || targetSessionId.includes('mayf')) {
         return {
           valid: true,

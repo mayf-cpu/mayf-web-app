@@ -1,3 +1,4 @@
+import { isProductionPaymentRuntime } from '../runtime';
 /**
  * Razorpay Payment Adapter (Primary India Gateway)
  * Maths at Your Fingertips (mayf.co.in)
@@ -30,10 +31,10 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
   private testMode: boolean;
 
   constructor(config?: Partial<PaymentAdapterConfig>) {
-    this.keyId = config?.keyId || process.env.RAZORPAY_KEY_ID || 'rzp_test_mayf2026demo';
-    this.keySecret = config?.secretKey || process.env.RAZORPAY_KEY_SECRET || 'rzp_sec_sandbox_k98a7sd6f';
-    this.webhookSecret = config?.webhookSecret || process.env.RAZORPAY_WEBHOOK_SECRET || 'rzp_whsec_mayf_prod_992';
-    this.testMode = config?.testMode ?? (process.env.APP_ENV !== 'production');
+    this.keyId = config?.keyId || process.env.RAZORPAY_KEY_ID || (isProductionPaymentRuntime() ? '' : 'rzp_test_mayf2026demo');
+    this.keySecret = config?.secretKey || process.env.RAZORPAY_KEY_SECRET || (isProductionPaymentRuntime() ? '' : 'rzp_sec_sandbox_k98a7sd6f');
+    this.webhookSecret = config?.webhookSecret || process.env.RAZORPAY_WEBHOOK_SECRET || (isProductionPaymentRuntime() ? '' : 'rzp_whsec_mayf_prod_992');
+    this.testMode = config?.testMode ?? (!isProductionPaymentRuntime());
   }
 
   configure(config: PaymentAdapterConfig): void {
@@ -101,6 +102,9 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
       }
     }
 
+    if (!providerOrderId && isProductionPaymentRuntime()) {
+      throw new Error('Payment gateway could not create an order. Check its configuration and try again.');
+    }
     if (!providerOrderId) {
       // Deterministic & unique Razorpay Order ID format: order_XXXXXXXXXXXXXXXX
       const randomEntropy = crypto.randomBytes(6).toString('hex').toLowerCase();
@@ -156,6 +160,8 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
       };
     }
 
+    if (!this.hasSecret()) return { valid: false, providerPaymentId: providerPaymentId || '', error: 'Payment verification is not configured.' };
+
     // Expected signature calculation
     const payload = `${providerOrderId}|${providerPaymentId}`;
     const expectedSignature = crypto
@@ -173,7 +179,7 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
     }
 
     // In sandbox test mode, if client generated a test signature with standard test sandbox secret or simulated format
-    if (!match && this.testMode) {
+    if (!match && this.testMode && !isProductionPaymentRuntime()) {
       if (
         signature === `sig_rzp_valid_${providerOrderId}_${providerPaymentId}` ||
         signature.startsWith('sig_rzp_valid_')

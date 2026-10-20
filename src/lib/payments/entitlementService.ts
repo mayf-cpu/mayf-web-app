@@ -1,3 +1,4 @@
+import { isProductionPaymentRuntime } from './runtime';
 /**
  * Authoritative Annual Pass & Entitlement Service
  * Maths at Your Fingertips (mayf.co.in)
@@ -66,7 +67,7 @@ export class EntitlementService {
       updatedBy: 'system_init',
     };
 
-    this.seedInitialEntitlements();
+    if (!isProductionPaymentRuntime()) this.seedInitialEntitlements();
   }
 
   /**
