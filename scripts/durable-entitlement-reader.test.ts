@@ -10,10 +10,13 @@ const pass = {
   grantedBy: 'payment', orderId: 'ord-a', paymentId: 'pay-a',
   createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z',
 };
-function reader(items: Record<string, unknown>[]) {
+function reader(items: Record<string, unknown>[], expiry?: string) {
   return new DurableEntitlementReader({
     queryEqual: async (_collection: string, _field: string, userId: string) => items.filter(data => data.userId === userId).map((data, i) => ({ id: 'doc-' + i, data, updateTime: '' })),
-  } as Pick<FirestoreDocumentStore, 'queryEqual'>);
+    collection: () => ({ doc: () => ({ get: async () => expiry === undefined
+      ? { exists: false, data: () => undefined }
+      : { exists: true, data: () => ({ userId: 'student-a', expiresAt: expiry }) } }) }),
+  } as unknown as Pick<FirestoreDocumentStore, 'queryEqual' | 'collection'>);
 }
 test('valid persisted annual pass survives independently of in-memory service', async () => {
   const result = await reader([pass]).checkActiveAnnualPass('student-a', now);
@@ -36,6 +39,16 @@ test('other students, revoked, expired and future passes never provide access', 
 test('database failure does not silently grant a paid pass', async () => {
   const broken = new DurableEntitlementReader({
     queryEqual: async () => { throw new Error('Firestore is offline'); },
-  } as Pick<FirestoreDocumentStore, 'queryEqual'>);
+    collection: () => ({ doc: () => ({ get: async () => { throw new Error('Firestore is offline'); } }) }),
+  } as unknown as Pick<FirestoreDocumentStore, 'queryEqual' | 'collection'>);
   await assert.rejects(broken.checkActiveAnnualPass('student-a', now), /Firestore is offline/);
+});
+
+test('refunded renewal cursor caps outdated active entitlement expiry', async () => {
+  const result = await reader([pass], '2026-11-01T00:00:00.000Z').checkActiveAnnualPass('student-a', now);
+  assert.equal(result.active, true);
+  assert.equal(result.entitlement?.expiresAt, '2026-11-01T00:00:00.000Z');
+  assert.equal(result.daysRemaining, 11);
+  const refunded = await reader([pass], '2026-10-20T00:00:00.000Z').checkActiveAnnualPass('student-a', now);
+  assert.equal(refunded.active, false);
 });
