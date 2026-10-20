@@ -141,8 +141,9 @@ export class DurablePaymentRepository {
     eventId: string;
     entitlement: Entitlement;
     paidAt: string;
+    durationDays?: number;
   }): Promise<'settled' | 'duplicate'> {
-    const { orderId, provider, providerOrderId, providerPaymentId, eventId, entitlement, paidAt } = args;
+    const { orderId, provider, providerOrderId, providerPaymentId, eventId, entitlement, paidAt, durationDays } = args;
     if (!orderId?.trim() || !providerOrderId?.trim() || !providerPaymentId?.trim() || !eventId?.trim()) {
       throw new Error('Verified payment identifiers are required');
     }
@@ -195,7 +196,8 @@ export class DurablePaymentRepository {
     }
     // The orchestrator supplies the pass duration. Compute the expiry again
     // from the cursor, preserving remaining time on the student's paid pass.
-    const termMs = proposedMs - Math.max(paidMs, startsMs);
+    const termMs = durationDays === undefined ? proposedMs - startsMs : durationDays * 86400000;
+    if (!Number.isSafeInteger(termMs) || termMs <= 0) throw new Error('Invalid pass term');
     const cursorExpiryMs = cursor?.expiresAt ? Date.parse(cursor.expiresAt) : NaN;
     if (cursor && (!Number.isFinite(cursorExpiryMs) || !cursorRef.updateTime)) {
       throw new Error('Renewal cursor is corrupt or missing its revision');
