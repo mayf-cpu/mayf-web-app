@@ -10,8 +10,7 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import type { App } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import type { Auth, UserRecord } from 'firebase-admin/auth';
-import { initializeFirestore } from 'firebase-admin/firestore';
-import type { Firestore } from 'firebase-admin/firestore';
+import { FirestoreDocumentStore } from './documentStore';
 
 export interface FirebaseAdminConfig {
   projectId: string;
@@ -20,10 +19,18 @@ export interface FirebaseAdminConfig {
   isReady: boolean;
 }
 
+function serviceAccountFields(): { project_id?: string; client_email?: string; private_key?: string } {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  if (!raw) return {};
+  try { return JSON.parse(raw); } catch { return {}; }
+}
+
 export function getFirebaseAdminConfig(): FirebaseAdminConfig {
-  const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || 'maths-at-your-fingertips';
-  const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL || 'firebase-adminsdk@maths-at-your-fingertips.iam.gserviceaccount.com';
-  const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY;
+  const account = serviceAccountFields();
+  const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID || account.project_id || process.env.VITE_FIREBASE_PROJECT_ID || 'maths-at-your-fingertips';
+  const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL || account.client_email || '';
+
+  const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY || account.private_key;
 
   return {
     projectId,
@@ -35,7 +42,7 @@ export function getFirebaseAdminConfig(): FirebaseAdminConfig {
 
 let adminAppInstance: App | null = null;
 let adminAuthInstance: Auth | null = null;
-let adminFirestoreInstance: Firestore | null = null;
+let adminFirestoreInstance: FirestoreDocumentStore | null = null;
 
 function formatPrivateKey(rawKey?: string): string | undefined {
   if (!rawKey) return undefined;
@@ -61,7 +68,7 @@ export function getFirebaseAdminApp(): App | null {
   }
 
   const config = getFirebaseAdminConfig();
-  const rawKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY;
+  const rawKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY || serviceAccountFields().private_key;
 
   if (rawKey && config.clientEmail && config.projectId) {
     try {
@@ -115,7 +122,7 @@ export function getAdminAuth(): Auth | null {
 /**
  * Returns the Firebase Admin Firestore client.
  */
-export function getAdminFirestore(): Firestore | null {
+export function getAdminFirestore(): FirestoreDocumentStore | null {
   // Workers has no Google VM metadata credentials. Require explicit server credentials.
   if (!getFirebaseAdminConfig().isReady && !process.env.FIRESTORE_EMULATOR_HOST) return null;
   if (adminFirestoreInstance) {
@@ -124,7 +131,11 @@ export function getAdminFirestore(): Firestore | null {
   const app = getFirebaseAdminApp();
   if (!app) return null;
   try {
-    adminFirestoreInstance = initializeFirestore(app, { preferRest: true });
+    adminFirestoreInstance = new FirestoreDocumentStore(getFirebaseAdminConfig().projectId, async () => {
+      const credential = app.options.credential;
+      if (!credential) throw new Error('Firebase service credentials are missing');
+      return (await credential.getAccessToken()).access_token;
+    });
     return adminFirestoreInstance;
   } catch (error: any) {
     console.warn('[Firebase Admin] getFirestore warning:', error?.message);
@@ -175,7 +186,7 @@ export async function verifyStudentSessionToken(bearerToken?: string): Promise<T
       const email = (decoded.email || '').toLowerCase().trim();
       const isSuperAdminClaim = decoded.superAdmin === true || decoded.role === 'superAdmin';
       const isAdminClaim = isSuperAdminClaim || decoded.admin === true || decoded.role === 'admin';
-      const isAuthorizedEmail = Boolean(email && adminEmails.includes(email));
+      const isAuthorizedEmail = Boolean(decoded.email_verified && email && adminEmails.includes(email));
 
       // Administrative rights require genuine verified custom claims or authorized email verified by Firebase
       const isSuperAdmin =

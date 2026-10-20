@@ -19,7 +19,7 @@
  */
 
 import { ContentItem, StudentClass, ContentType, ContentAccessType } from '../firebase/types';
-import { SEED_CONTENT_ITEMS } from '../catalogue/catalogueService';
+import { SEED_CONTENT_ITEMS } from '../catalogue/seedContent';
 import { INGESTION_JOBS_STORE } from '../ingestion/ingestionService';
 import { paymentService } from '../payments/paymentService';
 import { auditLogService } from '../audit/auditLogger';

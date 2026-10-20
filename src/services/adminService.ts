@@ -252,8 +252,8 @@ class AdminService {
       } catch (e) {
         console.warn('[AdminService] Could not retrieve ID token:', e);
       }
-    } else {
-      // Fallback for sandboxed preview sessions
+    } else if (import.meta.env.DEV) {
+      // Fallback for local development sessions only
       headers['Authorization'] = 'Bearer dev-admin-token-2026vivekkushwah@gmail.com';
     }
 

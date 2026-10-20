@@ -48,3 +48,16 @@ test('production rejects development tokens', async () => {
     else process.env.NODE_ENV = previous;
   }
 });
+
+test('allowlisted administrator email requires a verified email token', async t => {
+  const auth = getAdminAuth();
+  assert.ok(auth);
+  const verifier = t.mock.method(auth, 'verifyIdToken', async () => ({
+    uid: 'owner', email: 'ntnagrawal146@gmail.com', email_verified: false,
+  }));
+  assert.equal((await verifyStudentSessionToken('header.payload.signature')).role, 'student');
+  verifier.mock.mockImplementation(async () => ({
+    uid: 'owner', email: 'ntnagrawal146@gmail.com', email_verified: true,
+  }));
+  assert.equal((await verifyStudentSessionToken('header.payload.signature')).role, 'superAdmin');
+});

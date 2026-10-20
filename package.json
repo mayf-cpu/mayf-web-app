@@ -10,7 +10,8 @@
     "start": "node --import tsx server-node.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:worker": "wrangler deploy --dry-run --outdir .worker-test && node scripts/worker-smoke.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -36,6 +37,10 @@
     "esbuild": "^0.28.2",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "wrangler": "4.151.2"
+  },
+  "overrides": {
+    "iconv-lite": "0.7.0"
   }
 }

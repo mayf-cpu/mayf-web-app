@@ -44,10 +44,12 @@ const defaultInitialUser: UserProfileDoc = {
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const isProductionClient = import.meta.env.PROD;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [user, setUser] = useState<UserProfileDoc | null>(() => {
+    if (isProductionClient) return null;
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('mayf_user_profile');
       if (saved) {
@@ -62,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const [entitlements, setEntitlements] = useState<ParsedUserEntitlements>(() => {
+    if (isProductionClient) return defaultAnonymousEntitlements;
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('mayf_user_profile');
       if (saved) {
@@ -227,6 +230,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(fallbackProfile);
         }
       } else {
+        if (isProductionClient) { setUser(null); setEntitlements(defaultAnonymousEntitlements); }
         // When unauthenticated: Keep user profile null or in fallback state
         // Notice: Free study material will still work completely without authentication!
       }
@@ -247,6 +251,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await signInWithGooglePopup();
     } catch (error: any) {
+      if (isProductionClient) throw error;
       console.warn('[MAYF Auth] Google sign-in note, enabling sandbox user:', error);
       // Fallback for sandboxed preview environments without external OAuth popups
       const now = new Date().toISOString();
@@ -288,6 +293,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const loginWithEmail = async (email: string) => {
+    if (isProductionClient) throw new Error('Email sign-in is not configured. Please use Sign in with Google.');
     setLoading(true);
     try {
       const normalizedEmail = (email || '').trim().toLowerCase();
@@ -324,6 +330,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const loginAsOperator = async (targetEmail: string = 'ntnagrawal146@gmail.com') => {
+    if (isProductionClient) throw new Error('Please sign in with your administrator Google account.');
     setLoading(true);
     try {
       const isVivek = targetEmail.toLowerCase() === '2026vivekkushwah@gmail.com';

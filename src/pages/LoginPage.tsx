@@ -18,11 +18,13 @@ export const LoginPage: React.FC = () => {
   const [otpSent, setOtpSent] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
 
   // If already logged in, show quick dashboard access
   if (user) {
     return (
       <SharedLayout>
+      {loginError && <p role="alert" className="p-3 text-sm text-rose-700 bg-rose-50 rounded-lg">{loginError}</p>}
         <SeoHead
           title="Account Sign In"
           description="Student and parent authentication portal"
@@ -65,11 +67,14 @@ export const LoginPage: React.FC = () => {
   }
 
   const handleGoogleSignIn = async () => {
+    setLoginError(null);
     setIsLoading(true);
     try {
       await signInWithGoogle();
       trackLogin('google');
       navigate('/dashboard');
+    } catch (error: any) {
+      setLoginError(error?.message || 'Sign-in failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -87,11 +92,14 @@ export const LoginPage: React.FC = () => {
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoginError(null);
     setIsLoading(true);
     try {
       await loginWithEmail(phoneNumber.includes('@') ? phoneNumber : `student.${phoneNumber.slice(-4)}@mayf.co.in`);
       trackLogin('phone');
       navigate('/dashboard');
+    } catch (error: any) {
+      setLoginError(error?.message || 'Sign-in failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -100,6 +108,7 @@ export const LoginPage: React.FC = () => {
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
+    setLoginError(null);
     setIsLoading(true);
     try {
       await loginWithEmail(email);
@@ -110,6 +119,8 @@ export const LoginPage: React.FC = () => {
       } else {
         navigate('/dashboard');
       }
+    } catch (error: any) {
+      setLoginError(error?.message || 'Sign-in failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -117,6 +128,7 @@ export const LoginPage: React.FC = () => {
 
   return (
     <SharedLayout>
+      {loginError && <p role="alert" className="p-3 text-sm text-rose-700 bg-rose-50 rounded-lg">{loginError}</p>}
       <SeoHead
         title="Account Sign In & Student Access"
         description="Secure authentication portal for students and parents."

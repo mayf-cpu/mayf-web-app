@@ -1,6 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { GoogleGenAI } from '@google/genai';
-import { verifyStudentSessionToken } from './src/lib/firebase/admin';
+import { getFirebaseAdminConfig, verifyStudentSessionToken } from './src/lib/firebase/admin';
 import {
   INGESTION_JOBS_STORE,
   verifyWebhookSecret,
@@ -330,12 +330,13 @@ app.get('/api/health', (_req: Request, res: Response) => {
     version: '1.1.0-firebase-backend',
     environment: process.env.APP_ENV || process.env.NODE_ENV || 'development',
     serverTimestamp: new Date().toISOString(),
-    collectionsConfigured: 21,
+    // Configuration presence is not proof of a successful external connection.
+    firebaseConfigured: getFirebaseAdminConfig().isReady,
     services: {
       geminiAiTeacher: Boolean(geminiApiKey),
       cloudflareTurnstile: Boolean(process.env.TURNSTILE_SECRET_KEY),
-      firebaseAdmin: Boolean(process.env.FIREBASE_ADMIN_PROJECT_ID),
-      firebaseAppCheck: true,
+      firebaseAdmin: getFirebaseAdminConfig().isReady,
+      firebaseAppCheck: process.env.REQUIRE_APP_CHECK === 'true',
     },
   });
 });

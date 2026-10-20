@@ -10,8 +10,6 @@
  */
 
 import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import {
   AnalyticsEventType,
   DashboardAnalyticsData,
@@ -22,9 +20,7 @@ import {
   SearchTrendItem,
 } from './analyticsTypes';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const STORAGE_FILE = path.join(__dirname, 'analytics_aggregates.json');
+const STORAGE_FILE = process.env.ANALYTICS_STORAGE_FILE; // Optional Node-only persistence; Workers has no writable app filesystem.
 
 interface StoredAggregates {
   totalUsers: number;
@@ -217,7 +213,7 @@ class AggregateMetricsService {
 
   private loadAggregates(): StoredAggregates {
     try {
-      if (fs.existsSync(STORAGE_FILE)) {
+      if (STORAGE_FILE && fs.existsSync(STORAGE_FILE)) {
         const data = fs.readFileSync(STORAGE_FILE, 'utf-8');
         return JSON.parse(data);
       }
@@ -230,6 +226,7 @@ class AggregateMetricsService {
   }
 
   private persistAggregates(data: StoredAggregates): void {
+    if (!STORAGE_FILE) return;
     try {
       fs.writeFileSync(STORAGE_FILE, JSON.stringify(data, null, 2), 'utf-8');
     } catch (e) {
