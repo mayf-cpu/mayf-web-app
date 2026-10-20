@@ -47,6 +47,27 @@ export class FirestoreDocumentStore {
     } while (pageToken);
     return documents;
   }
+  /** Server-side equality query; never fetch every student's documents for access checks. */
+  async queryEqual(collectionId: string, field: string, value: string): Promise<{ id: string; data: Record<string, any>; updateTime: string }[]> {
+    if (!collectionId || collectionId.includes('/') || !/^[a-zA-Z][a-zA-Z0-9_]*$/.test(field) ||
+        !value?.trim()) throw new Error('Invalid Firestore query');
+    const response = await fetch(this.baseUrl + ':runQuery', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await this.accessToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ structuredQuery: {
+        from: [{ collectionId }],
+        where: { fieldFilter: { field: { fieldPath: field }, op: 'EQUAL', value: { stringValue: value } } },
+      } }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) throw new Error(`Firestore query failed (${response.status})`);
+    const results = await response.json() as any[];
+    return results.filter(row => row.document).map(row => ({
+      id: decodeURIComponent(row.document.name.split('/').pop()),
+      data: decodeFields(row.document.fields || {}),
+      updateTime: row.document.updateTime,
+    }));
+  }
   async commit(changes: { collection: string; id: string; data?: Record<string, any>; updateTime?: string }[]): Promise<void> {
     if (!changes.length) return;
     if (changes.length > 450) throw new Error('Too many catalogue changes in one operation');
