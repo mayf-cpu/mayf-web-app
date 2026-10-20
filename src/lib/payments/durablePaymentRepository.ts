@@ -88,7 +88,17 @@ export class DurablePaymentRepository {
     const pass = passRef.data() as Entitlement;
     if (pass.orderId !== orderId || pass.userId !== order.userId || pass.paymentId !== providerPaymentId ||
         pass.status !== 'active') throw new Error('Refund entitlement does not match the order');
+    const cursorId = validId(order.userId);
+    const cursorRef = await this.store.collection(RENEWAL_CURSOR_COLLECTION).doc(cursorId).get();
+    const cursor = cursorRef.exists ? cursorRef.data() : undefined;
+    if (!cursor || !cursorRef.updateTime || cursor.userId !== order.userId || cursor.lastOrderId !== orderId ||
+        typeof cursor.previousExpiresAt !== 'string' || !Number.isFinite(Date.parse(cursor.previousExpiresAt))) {
+      throw new Error('Refund requires manual reconciliation: renewal cursor is missing or newer purchases exist');
+    }
     await this.store.commit([
+      { collection: RENEWAL_CURSOR_COLLECTION, id: cursorId, updateTime: cursorRef.updateTime,
+        data: { ...cursor, expiresAt: cursor.previousExpiresAt, lastOrderId: cursor.previousOrderId || null,
+          previousExpiresAt: cursor.previousExpiresAt, updatedAt: refundedAt } },
       { collection: ORDER_COLLECTION, id: validId(orderId), updateTime: orderRef.updateTime,
         data: { ...order, status: 'refunded', refundedAt, refundId } },
       { collection: ENTITLEMENT_COLLECTION, id: entitlementId, updateTime: passRef.updateTime,
@@ -218,7 +228,9 @@ export class DurablePaymentRepository {
       { collection: ENTITLEMENT_COLLECTION, id: entitlementId, data: finalEntitlement },
       { collection: RENEWAL_CURSOR_COLLECTION, id: cursorId,
         ...(cursorRef.updateTime ? { updateTime: cursorRef.updateTime } : {}),
-        data: { userId: order.userId, expiresAt, lastOrderId: orderId, updatedAt: paidAt } },
+        data: { userId: order.userId, expiresAt, lastOrderId: orderId,
+          previousOrderId: cursor?.lastOrderId || null,
+          previousExpiresAt: new Date(baseMs).toISOString(), updatedAt: paidAt } },
       { collection: PAYMENT_CLAIM_COLLECTION, id: paymentClaimId,
         data: { provider, providerPaymentId, orderId, createdAt: paidAt } },
     ]);

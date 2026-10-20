@@ -236,3 +236,32 @@ test('simultaneous renewal settlements cannot both commit against the same curso
     docs.get('paymentOrders/' + id)?.data.status === 'paid');
   assert.equal(succeededOrder.length, 1);
 });
+
+test('refunding latest pass restores the prior expiry cursor atomically', async () => {
+  const { repo, docs } = fixture();
+  await repo.createOrder(order);
+  await repo.createOrder({ ...order, orderId: 'ord-second', providerOrderId: 'gateway-second' });
+  await repo.settleVerifiedPayment({ ...payment, durationDays: 365,
+    entitlement: { ...entitlement, id: 'payment-ord-1' } });
+  await repo.settleVerifiedPayment({
+    ...payment, orderId: 'ord-second', providerOrderId: 'gateway-second',
+    providerPaymentId: 'pay-second', eventId: 'evt-second', durationDays: 365,
+    entitlement: { ...entitlement, id: 'payment-ord-second',
+      orderId: 'ord-second', paymentId: 'pay-second' },
+  });
+  const refund = {
+    orderId: 'ord-second', provider: 'razorpay' as const, providerOrderId: 'gateway-second',
+    providerPaymentId: 'pay-second', refundId: 'rfnd-second', eventId: 'evt-refund-second',
+    refundAmount: 100, currency: 'INR', refundedAt: '2026-10-22T00:00:00Z',
+  };
+  await assert.rejects(repo.recordVerifiedFullRefund({
+    ...refund, orderId: 'ord-1', providerOrderId: 'gateway-1',
+    providerPaymentId: 'pay-1', refundId: 'rfnd-first',
+  }), /manual reconciliation/);
+  assert.equal((await repo.getOrder('ord-1'))?.status, 'paid');
+  assert.equal(await repo.recordVerifiedFullRefund(refund), 'refunded');
+  assert.equal(docs.get('paymentRenewalCursors/student-1')?.data.expiresAt,
+    '2027-10-21T12:00:00.000Z');
+  assert.equal(docs.get('paymentEntitlements/payment-ord-second')?.data.status, 'revoked');
+  assert.equal(await repo.recordVerifiedFullRefund(refund), 'duplicate');
+});
