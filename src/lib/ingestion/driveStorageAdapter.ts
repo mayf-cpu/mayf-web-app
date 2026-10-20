@@ -67,6 +67,11 @@ export async function copyDriveFileToProductionStorage(
   const bucket = getPdfBucket();
   if (!bucket?.put) throw new Error('Private R2 PDF bucket is not configured for uploads');
   const key = keyForPdf(contentId);
+  // Never replace bytes behind an already published CMS record. An R2 upload
+  // and Firestore catalogue commit cannot be atomic across providers.
+  if (await bucket.head(key)) {
+    throw new Error('PDF already exists in private storage; replacement requires an explicit versioned publishing workflow.');
+  }
   const token = await getDriveAccessToken(getServiceAccount());
   const url = 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(driveFileId) + '?alt=media';
   const response = await fetch(url, {
