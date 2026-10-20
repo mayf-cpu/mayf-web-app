@@ -891,18 +891,18 @@ async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
     const passSettings = entitlementService.getSettings();
     const authoritativePassPrice = isUsd ? 29 : (passSettings.salePrice || 999);
 
-    let authoritativeGross = authoritativePassPrice;
-    if (items && Array.isArray(items) && items.length > 0) {
-      authoritativeGross = items.reduce((sum: number, it: any) => {
-        if (it.annualPass || it.id?.includes('pass')) {
-          return sum + authoritativePassPrice;
-        }
-        const unitPrice = Math.max(Number(it.unitPrice) || 0, isUsd ? 9 : 199);
-        const qty = Math.max(1, Math.min(10, Number(it.quantity) || 1));
-        return sum + (unitPrice * qty);
-      }, 0);
+    // Until catalogue prices are resolved from the authoritative CMS,
+    // checkout supports ONLY one Annual Pass. Never accept a client
+    // supplied unitPrice for a paid product.
+    if (!Array.isArray(items) || items.length > 1 ||
+        (items.length === 1 && (items[0]?.annualPass !== true || Number(items[0]?.quantity ?? 1) !== 1))) {
+      return res.status(400).json({
+        success: false,
+        code: 'UNSUPPORTED_CHECKOUT_ITEMS',
+        error: 'Only a single Annual Pass can be purchased at present.',
+      });
     }
-
+    const authoritativeGross = authoritativePassPrice;
     const chosenCoupon = coupon || couponCode;
 
     const result = await paymentService.createOrder({
