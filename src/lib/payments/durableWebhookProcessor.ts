@@ -26,7 +26,7 @@ function requirePaidReceipt(receipt: WebhookVerificationResult): asserts receipt
 }
 
 export async function settleVerifiedAnnualPassWebhook(
-  repository: Pick<DurablePaymentRepository, 'getOrderByProviderOrderId' | 'settleVerifiedPayment'>,
+  repository: Pick<DurablePaymentRepository, 'getOrderByProviderOrderId' | 'settleVerifiedPayment' | 'findLatestPaidPass'>,
   receipt: WebhookVerificationResult,
   durationDays: number,
   now = new Date(),
@@ -51,8 +51,14 @@ export async function settleVerifiedAnnualPassWebhook(
       receipt.currency.toUpperCase() !== order.currency.toUpperCase()) {
     throw new Error('Gateway amount or currency does not match authoritative order');
   }
+  // Renewal expiry must be computed from the latest unexpired paid pass,
+  // rather than restarting the clock on each successful purchase.
+  const previous = await repository.findLatestPaidPass(order.userId);
+  const nowMs = now.getTime();
+  const priorExpiry = previous && previous.status === 'active' ? Date.parse(previous.expiresAt) : NaN;
+  const expiryBase = Number.isFinite(priorExpiry) && priorExpiry > nowMs ? priorExpiry : nowMs;
   const started = now.toISOString();
-  const expires = new Date(now.getTime() + durationDays * 86400000).toISOString();
+  const expires = new Date(expiryBase + durationDays * 86400000).toISOString();
   const entitlement: Entitlement = {
     id: 'payment-' + order.orderId,
     userId: order.userId,
