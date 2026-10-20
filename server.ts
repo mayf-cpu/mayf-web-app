@@ -20,6 +20,7 @@ import crypto from 'crypto';
 import { getDownloadableItem } from './src/lib/download/downloadRegistry';
 import { FORMULA_DECK_ITEMS } from './src/data/formulaDeckData';
 import { paymentService } from './src/lib/payments/paymentService';
+import { isProductionPaymentRuntime } from './src/lib/payments/runtime';
 import { validateAnnualPassCart } from './src/lib/payments/checkoutPolicy';
 import { DurablePaymentRepository } from './src/lib/payments/durablePaymentRepository';
 import { processVerifiedRazorpayFullRefund } from './src/lib/payments/durableRefundProcessor';
@@ -53,7 +54,7 @@ for (const [paths, initialize] of [
   });
 }
 // Environment constraint: Dev server must run on port 3000
-const isProduction = process.env.NODE_ENV === 'production';
+const isProduction = isProductionPaymentRuntime();
 
 // Administrator Entry Path (configurable via environment variable)
 const ADMIN_ENTRY_PATH = process.env.ADMIN_ENTRY_PATH || process.env.VITE_ADMIN_ENTRY_PATH || '/mgmt-sec-k92a';
@@ -212,7 +213,7 @@ interface AuthenticatedRequest extends Request {
 async function getAuthoritativePassStatus(uid: string) {
   const firestore = getAdminFirestore();
   if (firestore) return new DurableEntitlementReader(firestore).checkActiveAnnualPass(uid);
-  if (process.env.NODE_ENV !== 'production') return entitlementService.checkActiveEntitlement(uid);
+  if (!isProductionPaymentRuntime()) return entitlementService.checkActiveEntitlement(uid);
   return { active: false, daysRemaining: 0, reason: 'Premium verification is temporarily unavailable' };
 }
 
@@ -374,7 +375,7 @@ app.post('/api/turnstile/verify', asyncRoute(async (req: Request, res: Response)
 
     const secretKey = process.env.TURNSTILE_SECRET_KEY || '1x0000000000000000000000000000000AA';
 
-    const isProd = process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'production';
+    const isProd = isProductionPaymentRuntime();
     if (!isProd && (token.startsWith('cf-test-') || token === '1x00000000000000000000AA' || secretKey.startsWith('1x0000'))) {
       return res.json({
         success: true,
@@ -434,7 +435,7 @@ async function verifyTurnstileTokenServer(token: string, remoteIp?: string): Pro
   const secretKey = process.env.TURNSTILE_SECRET_KEY || '1x0000000000000000000000000000000AA';
 
   // Support local test and development keys without breaking ONLY in non-production
-  const isProd = process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'production';
+  const isProd = isProductionPaymentRuntime();
   if (!isProd && (token.startsWith('cf-test-') || token === '1x00000000000000000000AA' || secretKey.startsWith('1x0000'))) {
     return { success: true };
   }
@@ -955,7 +956,7 @@ async function handleVerifyPayment(req: AuthenticatedRequest, res: Response) {
   // Browser-side verification still relies on volatile orders/entitlements.
   // Keep it disabled in production until it uses the same atomic settlement
   // pipeline as signed webhooks; otherwise it can report access prematurely.
-  if (process.env.NODE_ENV === 'production') {
+  if (isProductionPaymentRuntime()) {
     return res.status(503).json({
       success: false,
       code: 'PAYMENT_VERIFICATION_UNAVAILABLE',
@@ -1081,7 +1082,7 @@ app.post('/api/payments/webhook/stripe', asyncRoute(async (req: Request, res: Re
 app.get('/api/student/orders', requireAuth, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.userAuth!.uid;
   const db = getAdminFirestore();
-  if (!db && process.env.NODE_ENV === 'production') {
+  if (!db && isProductionPaymentRuntime()) {
     return res.status(503).json({ success: false, error: 'Payment history is temporarily unavailable' });
   }
   const userOrders = db
@@ -1123,7 +1124,7 @@ app.post('/api/admin/payments/settings', requireAuth, requireAdmin, (req: Reques
  */
 app.get('/api/admin/payments/orders', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
   const db = getAdminFirestore();
-  if (!db && process.env.NODE_ENV === 'production') {
+  if (!db && isProductionPaymentRuntime()) {
     return res.status(503).json({ success: false, error: 'Payment ledger is temporarily unavailable' });
   }
   const orders = db
@@ -1167,7 +1168,7 @@ app.get('/api/admin/payments/webhook-logs', requireAuth, requireAdmin, (_req: Re
 app.post('/api/admin/payments/simulate-webhook', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   // This diagnostic mutates only the legacy in-memory payment service.
   // Never allow a simulated event to appear as a real payment in production.
-  if (process.env.NODE_ENV === 'production') {
+  if (isProductionPaymentRuntime()) {
     return res.status(403).json({
       success: false,
       code: 'PAYMENT_SIMULATION_DISABLED',
