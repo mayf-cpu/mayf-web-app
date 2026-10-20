@@ -92,10 +92,6 @@ class ContentCmsManager {
       const lastSync = matchingJob?.updatedAt || seed.updatedAt || '2026-04-01T10:05:22Z';
       const isVisible = seed.visible !== false;
 
-      // Calculate sales metrics
-      const mockSalesCount = seed.accessType === 'paid' ? 45 + (index * 23) : 0;
-      const mockRevenue = mockSalesCount * (seed.price || 499);
-
       const item: CmsContentItem = {
         ...seed,
         status: isVisible ? 'published' : 'hidden',
