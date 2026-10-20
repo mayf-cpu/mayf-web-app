@@ -12,6 +12,7 @@ export const SearchPage: React.FC = () => {
   const [query, setQuery] = useState(() => new URLSearchParams(window.location.search).get('q') || '');
   const [results, setResults] = useState<SearchResultItem[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
   const popularSearches = [
@@ -25,6 +26,7 @@ export const SearchPage: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false;
+    setSearchError(null);
     if (!query.trim()) {
       setIsSearching(false);
       setResults([]);
@@ -50,7 +52,8 @@ export const SearchPage: React.FC = () => {
             results_count: items.length,
           });
         }
-      } catch {
+      } catch (error: any) {
+        if (!cancelled) setSearchError(error?.message || "Search is temporarily unavailable. Please try again.");
         if (!cancelled) { setResults([]); setSuggestions([]); }
       } finally {
         if (!cancelled) setIsSearching(false);
@@ -156,7 +159,8 @@ export const SearchPage: React.FC = () => {
               {isSearching && <span className="text-[#1D4ED8]">Indexing matches...</span>}
             </div>
 
-            {results.length === 0 && !isSearching ? (
+            {searchError && <p role="alert" className="p-4 text-sm text-rose-700 bg-rose-50 rounded-xl">{searchError}</p>}
+            {results.length === 0 && !isSearching && !searchError ? (
               <div className="text-xs text-[#94A3B8] italic p-6 bg-white rounded-lg border border-[#E2E8F0] text-center">
                 No matching formula cards or study modules found for "{query}".
               </div>

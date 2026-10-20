@@ -1,3 +1,6 @@
+import { filterCatalogue } from './src/lib/catalogue/catalogueQuery';
+import { catalogueRepository, catalogueRoute } from './src/lib/cms/catalogueRepository';
+import { isAllowedRequestOrigin } from './src/lib/security/requestOrigin';
 import publicFirebaseConfig from './src/config/firebasePublicConfig.json';
 import express, { Request, Response, NextFunction } from 'express';
 import { GoogleGenAI } from '@google/genai';
@@ -30,20 +33,18 @@ import { sitemapService } from './src/lib/seo/sitemapService';
 import { aggregateMetricsService } from './src/lib/analytics/aggregateMetricsService';
 
 const app = express();
-let initialization: Promise<unknown> | undefined;
-app.use(async (_req, res, next) => {
-  try {
-    initialization ??= Promise.all([
-      siteSettingsService.initFromFirestore(), homepageLayoutService.initFromFirestore(),
-      adSenseService.initFromFirestore(), broadcastService.initStore(),
-    ]);
-    await initialization;
-    next();
-  } catch {
-    initialization = undefined;
-    res.status(503).json({ error: 'Backend initialization unavailable' });
-  }
-});
+// Refresh settings on their own routes so one integration cannot block unrelated APIs.
+for (const [paths, initialize] of [
+  [['/api/site-settings', '/api/admin/site-settings'], async () => { await siteSettingsService.initFromFirestore(); await homepageLayoutService.initFromFirestore(); }],
+  [['/api/homepage/layout', '/api/admin/homepage/layout'], () => homepageLayoutService.initFromFirestore()],
+  [['/api/adsense', '/api/admin/adsense'], () => adSenseService.initFromFirestore()],
+  [['/api/broadcasts', '/api/admin/broadcasts'], () => broadcastService.initStore()],
+] as [string[], () => Promise<void>][]) {
+  app.use(paths, async (_req, res, next) => {
+    try { await initialize(); next(); }
+    catch { res.status(503).json({ error: 'Firebase storage unavailable. Check Firestore database and service-account permissions.' }); }
+  });
+}
 // Environment constraint: Dev server must run on port 3000
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -139,14 +140,7 @@ app.use((req, res, next) => {
       const origin = (req.headers.origin as string) || (req.headers.referer as string) || '';
       if (origin) {
         try {
-          const parsedOrigin = new URL(origin);
-          const hostname = parsedOrigin.hostname.toLowerCase();
-          const isAllowedHost =
-            hostname === 'localhost' ||
-            hostname === '127.0.0.1' ||
-            hostname === 'mayf.co.in' ||
-            hostname.endsWith('.mayf.co.in') ||
-            hostname.endsWith('.run.app');
+          const isAllowedHost = isAllowedRequestOrigin(origin, req.headers.host);
 
           if (!isAllowedHost) {
             console.warn(`[Security Alert] CSRF Origin Mismatch blocked: ${origin} on ${req.method} ${req.path}`);
@@ -2053,7 +2047,29 @@ app.post('/api/admin/orders/:orderId/refund', requireAuth, requireAdmin, (req: A
  * 19. List Content CMS Items
  * Supports search, classLevel, contentType, accessType, visibility, tab, sortBy
  */
-app.get('/api/admin/content', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+function publicContent(item: any) {
+  const { sourceDriveId, sourceDriveFileId, sales, archivedBy, archivedReason, ...publicItem } = item;
+  if (item.accessType !== 'free') {
+    publicItem.files = [];
+    publicItem.embedUrl = '';
+    publicItem.galleryImages = [];
+  }
+  return publicItem;
+}
+app.get('/api/catalogue', catalogueRoute(false, (req, res) => {
+  const pageSize = Math.max(1, Math.min(20, Number(req.query.pageSize) || 20));
+  const offset = Math.max(0, Math.floor(Number(req.query.offset) || 0));
+  const filters = { ...req.query, featuredOnly: req.query.featuredOnly === 'true' };
+  const result = filterCatalogue(contentCmsManager.exportState() as any, filters as any, { offset } as any, pageSize);
+  res.setHeader?.('Cache-Control', 'no-store');
+  return res.json({ ...result, items: result.items.map(publicContent) });
+}));
+app.get('/api/catalogue/by-slug/:slug', catalogueRoute(false, (req, res) => {
+  const item = contentCmsManager.exportState().find(item => item.slug === req.params.slug && item.visible && (!item.status || item.status === 'published') && !item.isDeleted);
+  return item ? res.json({ item: publicContent(item) }) : res.status(404).json({ error: 'Resource not found' });
+}));
+
+app.get('/api/admin/content', requireAuth, requireAdmin, catalogueRoute(false, (req: AuthenticatedRequest, res: Response) => {
   try {
     const {
       search,
@@ -2084,12 +2100,12 @@ app.get('/api/admin/content', requireAuth, requireAdmin, (req: AuthenticatedRequ
     console.error('[Admin Content CMS] List error:', error);
     return res.status(500).json({ success: false, error: error?.message || 'Failed to list content items' });
   }
-});
+}));
 
 /**
  * 20. Get Single Content CMS Item
  */
-app.get('/api/admin/content/:id', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/admin/content/:id', requireAuth, requireAdmin, catalogueRoute(false, (req: AuthenticatedRequest, res: Response) => {
   try {
     const item = contentCmsManager.getItem(req.params.id);
     if (!item) {
@@ -2099,12 +2115,12 @@ app.get('/api/admin/content/:id', requireAuth, requireAdmin, (req: Authenticated
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error?.message || 'Failed to fetch content item' });
   }
-});
+}));
 
 /**
  * 21. Create Content Item
  */
-app.post('/api/admin/content', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/content', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2122,12 +2138,12 @@ app.post('/api/admin/content', requireAuth, requireAdmin, (req: AuthenticatedReq
     console.error('[Admin Content CMS] Create error:', error);
     return res.status(400).json({ success: false, error: error?.message || 'Failed to create content item' });
   }
-});
+}));
 
 /**
  * 22. Edit / Update Content Item
  */
-app.put('/api/admin/content/:id', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.put('/api/admin/content/:id', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2145,12 +2161,12 @@ app.put('/api/admin/content/:id', requireAuth, requireAdmin, (req: Authenticated
     console.error('[Admin Content CMS] Update error:', error);
     return res.status(400).json({ success: false, error: error?.message || 'Failed to update content item' });
   }
-});
+}));
 
 /**
  * 23. Publish Content Item
  */
-app.post('/api/admin/content/:id/publish', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/content/:id/publish', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2167,12 +2183,12 @@ app.post('/api/admin/content/:id/publish', requireAuth, requireAdmin, (req: Auth
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to publish item' });
   }
-});
+}));
 
 /**
  * 24. Unpublish Content Item (Revert to Draft)
  */
-app.post('/api/admin/content/:id/unpublish', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/content/:id/unpublish', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2189,12 +2205,12 @@ app.post('/api/admin/content/:id/unpublish', requireAuth, requireAdmin, (req: Au
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to unpublish item' });
   }
-});
+}));
 
 /**
  * 25. Hide Content Item
  */
-app.post('/api/admin/content/:id/hide', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/content/:id/hide', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2211,12 +2227,12 @@ app.post('/api/admin/content/:id/hide', requireAuth, requireAdmin, (req: Authent
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to hide item' });
   }
-});
+}));
 
 /**
  * 26. Unhide Content Item
  */
-app.post('/api/admin/content/:id/unhide', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/content/:id/unhide', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2233,12 +2249,12 @@ app.post('/api/admin/content/:id/unhide', requireAuth, requireAdmin, (req: Authe
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to unhide item' });
   }
-});
+}));
 
 /**
  * 27. Safe Delete / Archive Content Item (Prefer soft-delete first!)
  */
-app.post('/api/admin/content/:id/archive', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/content/:id/archive', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const { reason } = req.body || {};
     const actor = {
@@ -2256,12 +2272,12 @@ app.post('/api/admin/content/:id/archive', requireAuth, requireAdmin, (req: Auth
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to archive item' });
   }
-});
+}));
 
 /**
  * 28. Restore Content Item from Archive
  */
-app.post('/api/admin/content/:id/restore', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/content/:id/restore', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2278,12 +2294,12 @@ app.post('/api/admin/content/:id/restore', requireAuth, requireAdmin, (req: Auth
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to restore item' });
   }
-});
+}));
 
 /**
  * 29. Content Deletion Endpoint (Safe deletion preferred by default, permanent purge if requested)
  */
-app.delete('/api/admin/content/:id', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/admin/content/:id', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const { reason, purge } = req.body || {};
     const actor = {
@@ -2315,12 +2331,12 @@ app.delete('/api/admin/content/:id', requireAuth, requireAdmin, (req: Authentica
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to delete/archive content' });
   }
-});
+}));
 
 /**
  * 30. Duplicate Content Item
  */
-app.post('/api/admin/content/:id/duplicate', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/content/:id/duplicate', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2337,12 +2353,12 @@ app.post('/api/admin/content/:id/duplicate', requireAuth, requireAdmin, (req: Au
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to duplicate content item' });
   }
-});
+}));
 
 /**
  * 31. Feature Toggle Content Item
  */
-app.post('/api/admin/content/:id/feature', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/content/:id/feature', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const { featured } = req.body;
     const actor = {
@@ -2360,12 +2376,12 @@ app.post('/api/admin/content/:id/feature', requireAuth, requireAdmin, (req: Auth
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to toggle featured status' });
   }
-});
+}));
 
 /**
  * 32. Reorder Content Items
  */
-app.post('/api/admin/content/reorder', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/content/reorder', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const { orderMapping } = req.body;
     if (!orderMapping || !Array.isArray(orderMapping)) {
@@ -2387,7 +2403,7 @@ app.post('/api/admin/content/reorder', requireAuth, requireAdmin, (req: Authenti
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to reorder content items' });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Hierarchical Categories Management Endpoints
@@ -2399,7 +2415,7 @@ app.post('/api/admin/content/reorder', requireAuth, requireAdmin, (req: Authenti
  * 33. List Hierarchical Categories
  * Query: ?format=tree|flat, ?includeDisabled=true|false
  */
-app.get('/api/admin/categories', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/admin/categories', requireAuth, requireAdmin, catalogueRoute(false, (req: AuthenticatedRequest, res: Response) => {
   try {
     const { format = 'tree', includeDisabled = 'true' } = req.query;
     const includeDisabledBool = includeDisabled !== 'false';
@@ -2417,12 +2433,12 @@ app.get('/api/admin/categories', requireAuth, requireAdmin, (req: AuthenticatedR
     console.error('[Admin Categories] List error:', error);
     return res.status(500).json({ success: false, error: error?.message || 'Failed to list categories' });
   }
-});
+}));
 
 /**
  * 34. Get Single Category Details
  */
-app.get('/api/admin/categories/:id', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/admin/categories/:id', requireAuth, requireAdmin, catalogueRoute(false, (req: AuthenticatedRequest, res: Response) => {
   try {
     const category = categoryManager.getById(req.params.id);
     if (!category) {
@@ -2433,24 +2449,24 @@ app.get('/api/admin/categories/:id', requireAuth, requireAdmin, (req: Authentica
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error?.message || 'Failed to get category' });
   }
-});
+}));
 
 /**
  * 35. Can-Delete Safety Pre-check
  */
-app.get('/api/admin/categories/:id/can-delete', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/admin/categories/:id/can-delete', requireAuth, requireAdmin, catalogueRoute(false, (req: AuthenticatedRequest, res: Response) => {
   try {
     const result = categoryManager.canDelete(req.params.id);
     return res.json({ success: true, ...result });
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error?.message || 'Failed to evaluate delete safety' });
   }
-});
+}));
 
 /**
  * 36. Create Hierarchical Category
  */
-app.post('/api/admin/categories', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/categories', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2468,12 +2484,12 @@ app.post('/api/admin/categories', requireAuth, requireAdmin, (req: Authenticated
     console.error('[Admin Categories] Create error:', error);
     return res.status(400).json({ success: false, error: error?.message || 'Failed to create category' });
   }
-});
+}));
 
 /**
  * 37. Rename / Update Category
  */
-app.put('/api/admin/categories/:id', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.put('/api/admin/categories/:id', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2510,12 +2526,12 @@ app.put('/api/admin/categories/:id', requireAuth, requireAdmin, (req: Authentica
     console.error('[Admin Categories] Update error:', error);
     return res.status(400).json({ success: false, error: error?.message || 'Failed to update category' });
   }
-});
+}));
 
 /**
  * 38. Move Category (Change Parent)
  */
-app.post('/api/admin/categories/:id/move', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/categories/:id/move', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2533,12 +2549,12 @@ app.post('/api/admin/categories/:id/move', requireAuth, requireAdmin, (req: Auth
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to move category' });
   }
-});
+}));
 
 /**
  * 39. Reorder Category
  */
-app.post('/api/admin/categories/:id/reorder', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/categories/:id/reorder', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2558,12 +2574,12 @@ app.post('/api/admin/categories/:id/reorder', requireAuth, requireAdmin, (req: A
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to reorder category' });
   }
-});
+}));
 
 /**
  * 40. Disable / Enable Category
  */
-app.post('/api/admin/categories/:id/toggle-disable', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/categories/:id/toggle-disable', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2581,13 +2597,13 @@ app.post('/api/admin/categories/:id/toggle-disable', requireAuth, requireAdmin, 
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to toggle category disabled status' });
   }
-});
+}));
 
 /**
  * 41. Delete Category Where Safe
  * PREVENTS deleting categories containing content unless content is reassigned!
  */
-app.delete('/api/admin/categories/:id', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/admin/categories/:id', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2607,7 +2623,7 @@ app.delete('/api/admin/categories/:id', requireAuth, requireAdmin, (req: Authent
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to delete category' });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Controlled Homepage Block Manager Endpoints

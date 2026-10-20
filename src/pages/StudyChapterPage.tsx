@@ -27,12 +27,14 @@ export const StudyChapterPage: React.FC = () => {
 
   const [contentItem, setContentItem] = useState<ContentItem | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isTurnstileOpen, setIsTurnstileOpen] = useState(false);
 
   useEffect(() => {
     async function loadItem() {
       setLoading(true);
+      setLoadError(null);
       try {
         const item = await fetchContentItemBySlug(slug);
         const resolved = item || (slug ? null : SEED_CONTENT_ITEMS[0]);
@@ -61,6 +63,9 @@ export const StudyChapterPage: React.FC = () => {
             },
           });
         }
+      } catch (error: any) {
+        setContentItem(null);
+        setLoadError(error?.message || "Unable to load this resource. Please try again.");
       } finally {
         setLoading(false);
       }
@@ -90,7 +95,8 @@ export const StudyChapterPage: React.FC = () => {
           <div className="w-14 h-14 rounded-full bg-[#EFF6FF] text-[#1D4ED8] flex items-center justify-center mx-auto">
             <BookOpen className="w-7 h-7" />
           </div>
-          <h1 className="font-heading font-extrabold text-2xl text-[#0F172A]">Module Not Found</h1>
+          <h1 className="font-heading font-extrabold text-2xl text-[#0F172A]">{loadError ? "Resource temporarily unavailable" : "Module Not Found"}</h1>
+          {loadError && <p role="alert" className="text-sm text-rose-700">{loadError}</p>}
           <p className="text-xs sm:text-sm text-[#64748B]">
             We could not find an educational resource for{' '}
             <code className="bg-[#F1F5F9] px-1.5 py-0.5 rounded font-mono text-xs text-[#0F172A]">{slug}</code>.

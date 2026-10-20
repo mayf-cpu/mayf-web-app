@@ -63,6 +63,9 @@ class CategoryManager {
   private categoriesMap: Map<string, HierarchicalCategory> = new Map();
   private initialized = false;
 
+  public exportState(): Record<string, any>[] { return structuredClone(Array.from(this.categoriesMap.values())); }
+  public importState(items: Record<string, any>[]): void { this.categoriesMap = new Map(items.map(item => [item.id, item as any])); }
+
   constructor() {
     this.initializeStore();
   }
@@ -480,7 +483,7 @@ class CategoryManager {
 
     const timestamp = new Date().toISOString();
     const slugBase = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-    const id = `cat-${slugBase}-${Date.now().toString().slice(-4)}`;
+    const id = `cat-${slugBase}-${crypto.randomUUID()}`;
 
     // Determine default sortOrder among siblings
     let maxSort = 0;

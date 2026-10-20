@@ -32,7 +32,7 @@ class AdSenseService {
   public async initFromFirestore(): Promise<void> {
     try {
       const db = getAdminFirestore();
-      if (!db) return;
+      if (!db) { if (process.env.NODE_ENV === 'production') throw new Error('Firebase storage is not configured'); return; }
 
       const docRef = db.collection('siteSettings').doc('adsense');
       const snap = await docRef.get();
@@ -52,6 +52,7 @@ class AdSenseService {
       }
     } catch (e: any) {
       console.warn('[AdSenseService] Firestore sync note, using authoritative memory cache:', e?.message || e);
+      throw e;
     }
   }
 
@@ -169,18 +170,19 @@ class AdSenseService {
       version: (this.currentSettings.version || 1) + 1,
     };
 
-    this.currentSettings = newSettings;
-    this.cacheTimestamp = Date.now();
-
     // Persist to Firestore /siteSettings/adsense
     try {
       const db = getAdminFirestore();
+      if (!db && process.env.NODE_ENV === 'production') throw new Error('Firebase storage is not configured');
       if (db) {
         await db.collection('siteSettings').doc('adsense').set(newSettings);
       }
     } catch (e: any) {
-      console.warn('[AdSenseService] Firestore persistence note:', e?.message || e);
+      throw e;
     }
+
+    this.currentSettings = newSettings;
+    this.cacheTimestamp = Date.now();
 
     // Audit Log
     auditLogService.log({

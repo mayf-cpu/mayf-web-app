@@ -43,7 +43,7 @@ class SiteSettingsService {
   public async initFromFirestore(): Promise<void> {
     try {
       const db = getAdminFirestore();
-      if (!db) return;
+      if (!db) { if (process.env.NODE_ENV === 'production') throw new Error('Firebase storage is not configured'); return; }
 
       const docRef = db.collection('siteSettings').doc('general');
       const snap = await docRef.get();
@@ -63,7 +63,8 @@ class SiteSettingsService {
         this.cacheTimestamp = Date.now();
       }
     } catch (e: any) {
-      console.warn('[SiteSettingsService] Firestore note, using authoritative memory cache:', e?.message || e);
+      throw new Error('Unable to read site settings from Firebase');
+      throw e;
     }
   }
 
@@ -210,18 +211,19 @@ class SiteSettingsService {
       updatedBy: actor.email,
     };
 
-    this.currentSettings = newSettings;
-    this.cacheTimestamp = Date.now();
-
     // Persist to Firestore /siteSettings/general
     try {
       const db = getAdminFirestore();
+      if (!db && process.env.NODE_ENV === 'production') throw new Error('Firebase storage is not configured');
       if (db) {
         await db.collection('siteSettings').doc('general').set(newSettings);
       }
     } catch (e: any) {
-      console.warn('[SiteSettingsService] Firestore persistence note:', e?.message || e);
+      throw e;
     }
+
+    this.currentSettings = newSettings;
+    this.cacheTimestamp = Date.now();
 
     // Keep homepage blocks synchronized with updated copy and social links
     this.syncWithHomepageBlocks(newSettings, actor).catch((err) => {

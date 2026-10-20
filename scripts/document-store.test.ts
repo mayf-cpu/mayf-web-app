@@ -23,3 +23,20 @@ test('Firestore uses server OAuth and surfaces rejected reads and writes', async
   assert.equal(headers.Authorization, 'Bearer test-access-token');
   assert.match(calls[0].url, /^https:\/\/firestore.googleapis.com\/v1\/projects\/test-project\//);
 });
+test('Firestore lists all pages and conditional commits reject concurrent changes', async t => {
+  const calls: { url: string; init?: RequestInit }[] = [];
+  let count = 0;
+  t.mock.method(globalThis, 'fetch', async (url: any, init: any) => {
+    calls.push({ url: String(url), init });
+    if (init.method === 'POST') return new Response('', { status: 409 });
+    count++;
+    return Response.json(count === 1 ? { documents: [{ name: 'projects/p/databases/(default)/documents/contentItems/a', fields: { title: { stringValue: 'A' } }, updateTime: 'revision-1' }], nextPageToken: 'next page' } : { documents: [] });
+  });
+  const store = new FirestoreDocumentStore('p', async () => 'test-token');
+  const documents = await store.list('contentItems');
+  assert.equal(documents.length, 1);
+  assert.match(calls[1].url, /pageToken=next\+page/);
+  await assert.rejects(store.commit([{ collection: 'contentItems', id: 'a', data: { title: 'B' }, updateTime: documents[0].updateTime }]), /Another administrator/);
+  const payload = JSON.parse(calls[2].init!.body as string);
+  assert.deepEqual(payload.writes[0].currentDocument, { updateTime: 'revision-1' });
+});
