@@ -57,7 +57,7 @@ test('durable repository atomically creates order and settles payment', async ()
   assert.equal(docs.get('paymentEntitlements/ent-1')?.data.userId, 'student-1');
   assert.equal(docs.size, 4);
   assert.equal(await repo.settleVerifiedPayment(payment), 'duplicate');
-  assert.equal(docs.size, 3);
+  assert.equal(docs.size, 4);
 });
 
 test('unknown orders and mismatched owner/provider/payment cannot grant access', async () => {
