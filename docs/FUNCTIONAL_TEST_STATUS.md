@@ -2,13 +2,17 @@
 
 ## Current repair pass
 
+Branding settings were saved through the authenticated UI and returned a Firestore success confirmation. Category hierarchy loads with 19 records; critical security settings correctly show read-only mode for the backup administrator.
+
+Category counts and legacy display-name references now respect class mappings. Rename preserves stable IDs and updates matching legacy references; delete/reassign updates ID-linked records too. Regression tests cover same-named categories across Class 8 and Class 10, protected deletion and reassignment.
+
 Authenticated live preview checks now pass for the owner-confirmed backup administrator. Real Google sign-in grants Administrator access. Content create, edit, reload persistence, archive, restore, publish and hide were exercised through the admin UI. Public slug lookup returned the published resource and rejected the hidden resource. The clearly labelled QA resource is retained in the recoverable archive; it was not permanently purged.
 
 This batch fixes the create form reporting a resource as visible while saving a draft status, removes invented Drive IDs from new resources, prevents duplicate save submissions and keeps student onboarding out of the admin panel. Dashboard cards no longer claim fabricated conversion, success rates, revenue or infrastructure guarantees. Unconnected reporting is labelled explicitly.
 
 Catalogue mutations now conditionally update a shared revision document in the same atomic commit. Concurrent changes to different records cannot bypass catalogue-wide invariants such as unique slugs. A two-isolate concurrent-insert regression verifies that one competing write is rejected rather than falsely reporting success.
 
-42 regression tests, TypeScript, the production build and four workerd API checks pass for this batch. These automated checks use fixtures where applicable; they do not establish payment, media or external integration readiness.
+44 regression tests, TypeScript, the production build and four workerd API checks pass for this batch. These automated checks use fixtures where applicable; they do not establish payment, media or external integration readiness.
 
 The approved backup account receives verified-email administrator access consistently in server verification, actual-user listing and client claims. The two existing owner accounts retain their super-administrator mapping. Explicit ADMIN_AUTHORIZED_EMAILS overrides remain authoritative.
 

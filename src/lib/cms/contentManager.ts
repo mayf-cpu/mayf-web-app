@@ -836,70 +836,55 @@ class ContentCmsManager {
   /**
    * COUNT CONTENT ITEMS LINKED TO A CATEGORY
    */
-  public countItemsWithCategory(categoryIdentifier: string): number {
-    const term = categoryIdentifier.toLowerCase().trim();
-    let count = 0;
-    for (const item of this.itemsStore.values()) {
-      if (
-        item.categoryId?.toLowerCase() === term ||
-        item.subcategoryId?.toLowerCase() === term ||
-        item.topic?.toLowerCase() === term ||
-        item.id === categoryIdentifier
-      ) {
-        count++;
-      }
-    }
-    return count;
+  private matchesCategory(item: CmsContentItem, name: string, id: string, grades?: string[]): boolean {
+    const fields = [item.categoryId, item.subcategoryId, item.topic];
+    const normalize = (value?: string) => value?.toLowerCase().trim();
+    if (fields.some(value => normalize(value) === normalize(id))) return true;
+    // Legacy records used a display name. Scope these matches to this class,
+    // because Algebra / Geometry occur in several independent class trees.
+    return (!grades?.length || item.classLevels?.some(grade => grades.includes(grade))) && fields.some(value => normalize(value) === normalize(name));
   }
 
-  /**
-   * REASSIGN CATEGORY ACROSS ALL LINKED CONTENT ITEMS
-   */
+  public countItemsWithCategory(name: string, id = name, grades?: string[]): number {
+    return [...this.itemsStore.values()].filter(item => this.matchesCategory(item, name, id, grades)).length;
+  }
+
+  /** Preserve stable category IDs and update legacy display-name references. */
   public reassignCategory(
-    oldCategoryTerm: string,
-    newCategoryName: string,
-    actor: { uid: string; email: string; role: 'admin' | 'superAdmin' }
+    oldName: string,
+    newName: string,
+    actor: { uid: string; email: string; role: 'admin' | 'superAdmin' },
+    oldId = oldName,
+    newId = newName,
+    grades?: string[]
   ): { reassignedCount: number } {
-    const oldTerm = oldCategoryTerm.toLowerCase().trim();
     let reassignedCount = 0;
-    const now = new Date().toISOString();
-
+    const normalize = (value?: string) => value?.toLowerCase().trim();
     for (const item of this.itemsStore.values()) {
+      if (!this.matchesCategory(item, oldName, oldId, grades)) continue;
       let modified = false;
-      if (item.categoryId?.toLowerCase() === oldTerm) {
-        item.categoryId = newCategoryName;
-        modified = true;
+      for (const field of ['categoryId', 'subcategoryId', 'topic'] as const) {
+        if (normalize(item[field]) === normalize(oldId)) {
+          item[field] = newId;
+          modified = true;
+        } else if ((!grades?.length || item.classLevels?.some(grade => grades.includes(grade))) && normalize(item[field]) === normalize(oldName)) {
+          item[field] = newName;
+          modified = true;
+        }
       }
-      if (item.subcategoryId?.toLowerCase() === oldTerm) {
-        item.subcategoryId = newCategoryName;
-        modified = true;
-      }
-      if (item.topic?.toLowerCase() === oldTerm) {
-        item.topic = newCategoryName;
-        modified = true;
-      }
-
       if (modified) {
-        item.updatedAt = now;
-        this.itemsStore.set(item.id, item);
+        item.updatedAt = new Date().toISOString();
         reassignedCount++;
       }
     }
-
     auditLogService.log({
-      action: 'CONTENT_UPDATED',
-      category: 'content',
-      actorUid: actor.uid,
-      actorEmail: actor.email,
-      actorRole: actor.role,
-      targetId: 'category_reassign_batch',
-      targetType: 'curriculum_content',
-      details: { oldCategory: oldCategoryTerm, newCategory: newCategoryName, reassignedCount },
-      status: 'success',
+      action: 'CONTENT_UPDATED', category: 'content', actorUid: actor.uid,
+      actorEmail: actor.email, actorRole: actor.role, targetId: 'category_reassign_batch',
+      targetType: 'curriculum_content', details: { oldCategory: oldName, newCategory: newName, reassignedCount }, status: 'success',
     });
-
     return { reassignedCount };
   }
+
 }
 
 export const contentCmsManager = new ContentCmsManager();
