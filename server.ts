@@ -1199,7 +1199,7 @@ app.get('/api/annual-pass/config', (_req: Request, res: Response) => {
     success: true,
     settings: entitlementService.getSettings(),
   });
-}));
+});
 
 /**
  * Student Active Entitlement Status & Expiry Check
