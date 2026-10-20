@@ -1,4 +1,5 @@
 import { isProductionPaymentRuntime } from './runtime';
+import type { DurablePaymentRepository } from './durablePaymentRepository';
 /**
  * Provider-Independent Payment Service
  * Maths at Your Fingertips (mayf.co.in)
@@ -42,7 +43,7 @@ export class PaymentService {
   // Payment Gateway Settings (Configurable by admin, secrets kept strictly server-side)
   private settings: PaymentGatewaySettings;
 
-  constructor() {
+  constructor(private readonly durableOrders?: Pick<DurablePaymentRepository, 'createOrder'>) {
     this.razorpayAdapter = new RazorpayAdapter();
     this.stripeAdapter = new StripeAdapter();
 
@@ -240,7 +241,13 @@ export class PaymentService {
     const providerResult = await adapter.createOrder(newOrder);
     newOrder.providerOrderId = providerResult.providerOrderId;
 
-    // Persist in orders store
+    // Never return checkout credentials before the order is durably recorded.
+    if (this.durableOrders) {
+      await this.durableOrders.createOrder(newOrder);
+    } else if (isProductionPaymentRuntime()) {
+      throw new Error('Payment checkout unavailable: durable order storage is not configured');
+    }
+    // Maintain the legacy index for existing development tests and readers.
     this.ordersStore.set(orderId, newOrder);
 
     return {
