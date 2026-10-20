@@ -40,8 +40,10 @@ export async function settleVerifiedAnnualPassWebhook(
   if (order.provider !== receipt.provider || order.providerOrderId !== receipt.providerOrderId) {
     throw new Error('Provider order mismatch');
   }
-  if (!order.items.some(item => item.annualPass === true)) {
-    throw new Error('This webhook processor only supports annual pass orders');
+  if (order.items.length !== 1 || order.items[0]?.annualPass !== true ||
+      order.items[0].quantity !== 1 || !Number.isFinite(order.items[0].unitPrice) ||
+      order.items[0].unitPrice <= 0 || order.items[0].unitPrice !== order.grossAmount) {
+    throw new Error('Stored order must contain exactly one authoritative Annual Pass item');
   }
   const expectedSubunits = Math.round((order.grossAmount - order.discount + (order.tax || 0)) * 100);
   if (!Number.isSafeInteger(expectedSubunits) || expectedSubunits <= 0 ||
