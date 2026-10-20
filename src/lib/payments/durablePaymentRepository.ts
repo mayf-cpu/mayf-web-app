@@ -120,6 +120,23 @@ export class DurablePaymentRepository {
     return matches[0] || null;
   }
 
+  /** List a student's persisted orders, scoped by verified Firebase UID. */
+  async getStudentOrders(userId: string): Promise<StoredOrder[]> {
+    if (!userId?.trim()) throw new Error('Student identifier is required');
+    const records = await this.store.queryEqual(ORDER_COLLECTION, 'userId', userId);
+    return records.map(item => item.data as StoredOrder)
+      .filter(order => order.userId === userId && typeof order.orderId === 'string')
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  }
+
+  /** Administrative ledger; never expose this method to student-scoped routes. */
+  async getAllOrders(): Promise<StoredOrder[]> {
+    const records = await this.store.list(ORDER_COLLECTION);
+    return records.map(item => item.data as StoredOrder)
+      .filter(order => typeof order.orderId === 'string')
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  }
+
   async getOrder(orderId: string): Promise<StoredOrder | null> {
     const doc = await this.store.collection(ORDER_COLLECTION).doc(validId(orderId)).get();
     return doc.exists ? doc.data() as StoredOrder : null;
