@@ -322,8 +322,8 @@ export async function adminSetCustomUserClaims(
     }
   }
 
-  // Gracefully report success for simulated store in development/preview
-  return { success: true };
+  // Never claim a Firebase mutation succeeded when no authoritative write occurred.
+  return { success: false, error: 'Unable to update Firebase custom claims. Check Firebase Admin configuration and permissions.' };
 }
 
 /**
@@ -340,7 +340,7 @@ export async function adminRevokeRefreshTokens(uid: string): Promise<boolean> {
       console.warn(`[Firebase Admin SDK] revokeRefreshTokens warning for ${uid}:`, e?.message);
     }
   }
-  return true;
+  return false;
 }
 
 /**
@@ -362,7 +362,7 @@ export async function adminUpdateUserDisabledStatus(
       console.warn(`[Firebase Admin SDK] updateUser disabled status warning for ${uid}:`, error?.message);
     }
   }
-  return { success: true };
+  return { success: false, error: 'Unable to update Firebase user status. Check Firebase Admin configuration and permissions.' };
 }
 
 /**
@@ -379,7 +379,7 @@ export async function adminDeleteAuthUser(uid: string): Promise<{ success: boole
       console.warn(`[Firebase Admin SDK] deleteUser warning for ${uid}:`, error?.message);
     }
   }
-  return { success: true };
+  return { success: false, error: 'Unable to delete Firebase user. Check Firebase Admin configuration and permissions.' };
 }
 
 /**
