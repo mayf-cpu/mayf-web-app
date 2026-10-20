@@ -907,16 +907,14 @@ async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
 
     const result = await paymentService.createOrder({
       userId,
-      items: items.length > 0 ? items : [
-        {
-          id: 'item-annual-pass',
-          title: 'Maths at Your Fingertips Annual Pass (Class 5–10)',
-          unitPrice: authoritativeGross,
-          quantity: 1,
-          annualPass: true,
-          description: '1-Year Unlimited Access to All Formula Decks, Chapter Materials, & AI Teacher',
-        },
-      ],
+      items: [{
+        id: 'item-annual-pass',
+        title: 'Maths at Your Fingertips Annual Pass (Class 5–10)',
+        unitPrice: authoritativeGross,
+        quantity: 1,
+        annualPass: true,
+        description: '1-Year Unlimited Access to All Formula Decks, Chapter Materials, & AI Teacher',
+      }],
       grossAmount: authoritativeGross,
       coupon: chosenCoupon,
       currency,
