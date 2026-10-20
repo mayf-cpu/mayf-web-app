@@ -19,6 +19,7 @@ test('Drive import verifies authenticated downloaded bytes before declaring an R
     private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
   });
   const valid = new TextEncoder().encode('%PDF-1.4\nfixture-data-123');
+  const original = Uint8Array.from(valid);
   const objects = new Map<string,Uint8Array>();
   const calls:string[] = [];
   configurePdfBucket({
@@ -48,7 +49,7 @@ test('Drive import verifies authenticated downloaded bytes before declaring an R
       copyDriveFileToProductionStorage('drive-id-123', undefined, 'topic', 'pdf', 'paid', 'cnt-pdf-topic'),
       /explicit versioned replacement required/,
     );
-    assert.deepEqual(objects.get('pdf/cnt-pdf-topic.pdf'), valid, 'existing published bytes stay unchanged');
+    assert.deepEqual(objects.get('pdf/cnt-pdf-topic.pdf'), original, 'existing published bytes stay unchanged');
   } finally {
     globalThis.fetch = oldFetch;
     if(oldCredentials === undefined) delete process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
