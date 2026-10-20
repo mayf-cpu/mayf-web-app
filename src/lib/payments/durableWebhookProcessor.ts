@@ -75,6 +75,6 @@ export async function settleVerifiedAnnualPassWebhook(
   return repository.settleVerifiedPayment({
     orderId: order.orderId, provider: order.provider,
     providerOrderId: order.providerOrderId, providerPaymentId: receipt.providerPaymentId,
-    eventId: receipt.eventId, entitlement, paidAt: started,
+    eventId: receipt.eventId, entitlement, paidAt: started, durationDays,
   });
 }
