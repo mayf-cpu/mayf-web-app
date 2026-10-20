@@ -1,10 +1,11 @@
+import { asyncRoute } from './src/lib/http/asyncRoute';
 import { filterCatalogue } from './src/lib/catalogue/catalogueQuery';
 import { catalogueRepository, catalogueRoute } from './src/lib/cms/catalogueRepository';
 import { isAllowedRequestOrigin } from './src/lib/security/requestOrigin';
 import publicFirebaseConfig from './src/config/firebasePublicConfig.json';
 import express, { Request, Response, NextFunction } from 'express';
 import { GoogleGenAI } from '@google/genai';
-import { getFirebaseAdminConfig, getFirebaseAdminDiagnostics, verifyStudentSessionToken } from './src/lib/firebase/admin';
+import { getAdminAuth, adminSetCustomUserClaims, getFirebaseAdminConfig, getFirebaseAdminDiagnostics, verifyStudentSessionToken } from './src/lib/firebase/admin';
 import {
   INGESTION_JOBS_STORE,
   verifyWebhookSecret,
@@ -36,7 +37,7 @@ const app = express();
 // Refresh settings on their own routes so one integration cannot block unrelated APIs.
 for (const [paths, initialize] of [
   [['/api/site-settings', '/api/admin/site-settings'], async () => { await siteSettingsService.initFromFirestore(); await homepageLayoutService.initFromFirestore(); }],
-  [['/api/homepage/layout', '/api/admin/homepage/layout'], () => homepageLayoutService.initFromFirestore()],
+  [['/api/homepage/layout', '/api/admin/layout/homepage'], () => homepageLayoutService.initFromFirestore()],
   [['/api/adsense', '/api/admin/adsense'], () => adSenseService.initFromFirestore()],
   [['/api/broadcasts', '/api/admin/broadcasts'], () => broadcastService.initStore()],
 ] as [string[], () => Promise<void>][]) {
@@ -341,7 +342,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
 // -------------------------------------------------------------
 // Cloudflare Turnstile Server-Side Verification
 // -------------------------------------------------------------
-app.post('/api/turnstile/verify', async (req: Request, res: Response) => {
+app.post('/api/turnstile/verify', asyncRoute(async (req: Request, res: Response) => {
   try {
     const { token } = req.body;
     if (!token) {
@@ -381,7 +382,7 @@ app.post('/api/turnstile/verify', async (req: Request, res: Response) => {
     console.error('[MAYF Server] Turnstile error:', error);
     return res.status(500).json({ success: false, error: 'Internal Turnstile verification failure' });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Secure Downloads System with Cloudflare Turnstile & Entitlement Gates
@@ -520,7 +521,7 @@ app.use((_req, _res, next) => {
  * Download Authorization Endpoint
  * Handles both FREE and PAID items with mandatory Turnstile verification.
  */
-app.post('/api/downloads/authorize', async (req: Request, res: Response) => {
+app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Response) => {
   const rawIp = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || '127.0.0.1');
 
   // Rate Limiting: max 10 authorization attempts per minute per IP
@@ -693,14 +694,14 @@ app.post('/api/downloads/authorize', async (req: Request, res: Response) => {
     console.error('[MAYF Server] Download authorization error:', error);
     return res.status(500).json({ success: false, error: 'Internal download authorization failure' });
   }
-});
+}));
 
 /**
  * Authorized Short-Lived Single-Use File Download Endpoint
  * Never exposes permanent public URLs or permanent redistribution links.
  * Enforces IP binding to prevent URL sharing.
  */
-app.get('/api/downloads/file/:token', async (req: Request, res: Response) => {
+app.get('/api/downloads/file/:token', asyncRoute(async (req: Request, res: Response) => {
   const { token } = req.params;
   const rawIp = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || '127.0.0.1');
 
@@ -800,7 +801,7 @@ app.get('/api/downloads/file/:token', async (req: Request, res: Response) => {
     `Verified by Professor Sigma. Maths at Your Fingertips (c) 2026 mayf.co.in.\n`;
 
   return res.send(Buffer.from(documentBody, 'utf-8'));
-});
+}));
 
 /**
  * Admin Download Audit Logs Endpoint
@@ -978,7 +979,7 @@ app.post('/api/payments/verify-and-grant', requireAuth, handleVerifyPayment);
  * 3. Razorpay Authoritative Webhook Endpoint
  * Verifies x-razorpay-signature HMAC and enforces idempotency
  */
-app.post('/api/payments/webhook/razorpay', async (req: Request, res: Response) => {
+app.post('/api/payments/webhook/razorpay', asyncRoute(async (req: Request, res: Response) => {
   try {
     const rawBody = (req as any).rawBody || JSON.stringify(req.body);
     const result = await paymentService.handleWebhook('razorpay', req.headers, rawBody);
@@ -1015,13 +1016,13 @@ app.post('/api/payments/webhook/razorpay', async (req: Request, res: Response) =
     console.error('[MAYF Webhook] Razorpay webhook handling error:', error);
     return res.status(500).json({ status: 'error', error: error?.message || 'Webhook processing failed' });
   }
-});
+}));
 
 /**
  * 4. Stripe Authoritative Webhook Endpoint
  * Verifies stripe-signature timestamped HMAC and enforces idempotency
  */
-app.post('/api/payments/webhook/stripe', async (req: Request, res: Response) => {
+app.post('/api/payments/webhook/stripe', asyncRoute(async (req: Request, res: Response) => {
   try {
     const rawBody = (req as any).rawBody || JSON.stringify(req.body);
     const result = await paymentService.handleWebhook('stripe', req.headers, rawBody);
@@ -1057,7 +1058,7 @@ app.post('/api/payments/webhook/stripe', async (req: Request, res: Response) => 
     console.error('[MAYF Webhook] Stripe webhook handling error:', error);
     return res.status(500).json({ status: 'error', error: error?.message || 'Webhook processing failed' });
   }
-});
+}));
 
 /**
  * 5. Student Orders Endpoint
@@ -1136,7 +1137,7 @@ app.get('/api/admin/payments/webhook-logs', requireAuth, requireAdmin, (_req: Re
 /**
  * 9. Admin Webhook Simulator & Idempotency Tester
  */
-app.post('/api/admin/payments/simulate-webhook', requireAuth, requireAdmin, async (req: Request, res: Response) => {
+app.post('/api/admin/payments/simulate-webhook', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   try {
     const { provider = 'razorpay', eventType = 'payment.captured', orderId, simulateDuplicate } = req.body;
     if (!orderId) {
@@ -1165,7 +1166,7 @@ app.post('/api/admin/payments/simulate-webhook', requireAuth, requireAdmin, asyn
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error?.message || 'Webhook simulation error' });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Configurable Annual Pass & Entitlement Management API
@@ -1339,7 +1340,7 @@ app.get('/api/admin/annual-pass/history', requireAuth, requireAdmin, (req: Reque
  * Never trusts client discounts. Evaluates start/end dates, min cart, max discount,
  * usage limits, per-user limits, and product scope (all / annual pass / selected).
  */
-app.post('/api/coupons/validate', async (req: Request, res: Response) => {
+app.post('/api/coupons/validate', asyncRoute(async (req: Request, res: Response) => {
   try {
     const { code, cartGrossAmount, cartAmount, amount, currency = 'INR', items = [], userId } = req.body;
 
@@ -1376,7 +1377,7 @@ app.post('/api/coupons/validate', async (req: Request, res: Response) => {
     console.error('[MAYF Coupons] Validation error:', error);
     return res.status(500).json({ success: false, error: error?.message || 'Failed to validate coupon' });
   }
-});
+}));
 
 /**
  * Public: Get Published Promotional Blocks for Homepage or Catalogue
@@ -1520,7 +1521,7 @@ app.delete('/api/admin/promotions/:id', requireAuth, requireAdmin, (req: Authent
 // Admin Privileged Custom Claims Setter
 // RBAC GATED: ONLY superAdmin can mint or adjust custom claims
 // -------------------------------------------------------------
-app.post('/api/admin/set-claims', requireAuth, requireSuperAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/set-claims', requireAuth, requireSuperAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { targetUid, role, pro, annualPass } = req.body;
     if (!targetUid) {
@@ -1559,7 +1560,7 @@ app.post('/api/admin/set-claims', requireAuth, requireSuperAdmin, async (req: Au
     console.error('[MAYF Admin] Set claims failure:', error);
     return res.status(500).json({ error: 'Failed to update custom claims' });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Administration Management APIs (Require strict RBAC and claims)
@@ -1589,19 +1590,20 @@ app.get('/api/admin/verify-access', requireAuth, (req: AuthenticatedRequest, res
   });
 });
 
-app.get('/api/admin/metrics', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+async function refreshAdminUsers(_req: Request, _res: Response, next: NextFunction) {
+  try { await adminUserManager.refreshUsers(); next(); } catch (error) { next(error); }
+}
+app.get('/api/admin/metrics', requireAuth, requireAdmin, refreshAdminUsers, (req: AuthenticatedRequest, res: Response) => {
+  const users = adminUserManager.searchStudents({ includeDisabled: true });
+  const paid = paymentService.getAllOrders().filter(order => order.status === 'paid');
   return res.json({
-    totalStudents: 12480,
-    activeAnnualPasses: 3410,
-    totalRevenue: 6816590,
-    aiDoubtsSolved: 84320,
-    totalFormulas: 38,
-    totalChapters: 64,
-    activeCoupons: couponService.getAllCoupons().length,
-    serverStatus: 'healthy',
-    cloudflareAccessActive: false,
-    edgeVerifiedEmail: '2026vivekkushwah@gmail.com',
-    uptimeHours: 342,
+    totalStudents: users.filter(user => user.role === 'student').length,
+    activeAnnualPasses: users.filter(user => user.hasAnnualPass).length,
+    totalRevenue: paid.reduce((sum, order) => sum + order.grossAmount, 0),
+    aiDoubtsSolved: 0, totalFormulas: FORMULA_DECK_ITEMS.length, totalChapters: contentCmsManager.exportState().length,
+    activeCoupons: couponService.getAllCoupons().filter(coupon => coupon.enabled).length,
+    serverStatus: 'healthy', cloudflareAccessActive: false, edgeVerifiedEmail: req.userAuth?.email,
+    uptimeHours: Math.floor(process.uptime() / 3600),
   });
 });
 
@@ -1613,7 +1615,7 @@ app.get('/api/admin/metrics', requireAuth, requireAdmin, (_req: Request, res: Re
  * 1. Search & List Students
  * Supports search query, class, board, and entitlement filtering
  */
-app.get('/api/admin/students', requireAuth, requireAdmin, (req: Request, res: Response) => {
+app.get('/api/admin/students', requireAuth, requireAdmin, refreshAdminUsers, (req: Request, res: Response) => {
   const { q, studentClass, board, passStatus, includeDisabled } = req.query as Record<string, string>;
   const list = adminUserManager.searchStudents({
     search: q,
@@ -1628,7 +1630,7 @@ app.get('/api/admin/students', requireAuth, requireAdmin, (req: Request, res: Re
 /**
  * 2. View Full Student Profile with Status & Claims
  */
-app.get('/api/admin/users/:uid', requireAuth, requireAdmin, (req: Request, res: Response) => {
+app.get('/api/admin/users/:uid', requireAuth, requireAdmin, refreshAdminUsers, (req: Request, res: Response) => {
   const { uid } = req.params;
   const profile = adminUserManager.getStudentProfile(uid);
   if (!profile) {
@@ -1648,7 +1650,7 @@ app.get('/api/admin/users/:uid', requireAuth, requireAdmin, (req: Request, res: 
 /**
  * 3. Disable / Enable User Account via Firebase Admin SDK
  */
-app.post('/api/admin/users/:uid/disable', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/users/:uid/disable', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const { uid } = req.params;
   const { disabled } = req.body;
   if (typeof disabled !== 'boolean') {
@@ -1674,12 +1676,12 @@ app.post('/api/admin/users/:uid/disable', requireAuth, requireAdmin, async (req:
     forceTokenRefresh: disabled,
     message: disabled ? 'User account has been disabled and session revoked.' : 'User account reactivated.',
   });
-});
+}));
 
 /**
  * 4. Delete / Remove User According to Policy
  */
-app.delete('/api/admin/users/:uid', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/admin/users/:uid', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const { uid } = req.params;
   const { policyReason } = req.body || {};
 
@@ -1706,12 +1708,12 @@ app.delete('/api/admin/users/:uid', requireAuth, requireAdmin, async (req: Authe
     policyReason,
     message: 'User removed according to retention policy and Auth account deleted.',
   });
-});
+}));
 
 /**
  * 5. Grant / Revoke Pro Tier (Firebase Custom Claim)
  */
-app.post('/api/admin/users/:uid/pro', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/users/:uid/pro', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const { uid } = req.params;
   const { grant, reason } = req.body;
 
@@ -1734,12 +1736,12 @@ app.post('/api/admin/users/:uid/pro', requireAuth, requireAdmin, async (req: Aut
     forceTokenRefresh: true,
     message: grant ? 'Pro tier granted with custom claim pro:true.' : 'Pro tier revoked.',
   });
-});
+}));
 
 /**
  * 6. Grant / Revoke Annual Pass (Firebase Custom Claim)
  */
-app.post('/api/admin/users/:uid/annual-pass', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/users/:uid/annual-pass', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const { uid } = req.params;
   const { grant, expiryDate, reason } = req.body;
 
@@ -1762,12 +1764,12 @@ app.post('/api/admin/users/:uid/annual-pass', requireAuth, requireAdmin, async (
     forceTokenRefresh: true,
     message: grant ? 'Annual Pass granted and custom claims updated.' : 'Annual Pass revoked.',
   });
-});
+}));
 
 /**
  * 7. Change Annual Pass Expiry Date
  */
-app.put('/api/admin/users/:uid/annual-pass/expiry', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.put('/api/admin/users/:uid/annual-pass/expiry', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const { uid } = req.params;
   const { expiryDate, reason } = req.body;
 
@@ -1794,7 +1796,7 @@ app.put('/api/admin/users/:uid/annual-pass/expiry', requireAuth, requireAdmin, a
     forceTokenRefresh: true,
     message: `Annual Pass expiry updated to ${expiryDate}.`,
   });
-});
+}));
 
 /**
  * 8. View Orders for Given Student
@@ -1818,7 +1820,7 @@ app.get('/api/admin/users/:uid/activity', requireAuth, requireAdmin, (req: Reque
  * 10. Role Management (Make Admin / SuperAdmin / Student)
  * RBAC GATED: Only superAdmin can create or remove administrators or modify another superAdmin
  */
-app.post('/api/admin/users/:uid/role', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/users/:uid/role', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const { uid } = req.params;
   const { role } = req.body;
 
@@ -1846,13 +1848,13 @@ app.post('/api/admin/users/:uid/role', requireAuth, requireAdmin, async (req: Au
     forceTokenRefresh: true,
     message: `Role updated to ${role}. Refresh tokens revoked to force re-authentication.`,
   });
-});
+}));
 
 /**
  * 11. Remove Admin Privileges (Revert to Student)
  * RBAC GATED: Only superAdmin can remove administrators
  */
-app.delete('/api/admin/users/:uid/role', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/admin/users/:uid/role', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const { uid } = req.params;
 
   const actor = {
@@ -1875,47 +1877,24 @@ app.delete('/api/admin/users/:uid/role', requireAuth, requireAdmin, async (req: 
     forceTokenRefresh: true,
     message: 'Administrator privileges removed. Target user reverted to student.',
   });
-});
+}));
 
 /**
  * 12. List Active Privileged Administrators
  */
-app.get('/api/admin/admins', requireAuth, requireAdmin, (_req: Request, res: Response) => {
-  return res.json([
-    {
-      uid: 'admin-super-001',
-      email: '2026vivekkushwah@gmail.com',
-      displayName: 'Vivek Kushwah (Principal Admin)',
-      role: 'superAdmin',
-      hasCustomClaim: true,
-      customClaims: {
-        admin: true,
-        superAdmin: true,
-      },
-      lastLogin: new Date().toISOString(),
-      addedAt: '2026-01-01T00:00:00.000Z',
-    },
-    {
-      uid: 'admin-002',
-      email: 'admin@mayf.co.in',
-      displayName: 'Academic Operations Lead',
-      role: 'admin',
-      hasCustomClaim: true,
-      customClaims: {
-        admin: true,
-        superAdmin: false,
-      },
-      lastLogin: '2026-10-07T18:30:00.000Z',
-      addedAt: '2026-02-15T00:00:00.000Z',
-    },
-  ]);
+app.get('/api/admin/admins', requireAuth, requireAdmin, refreshAdminUsers, (_req: Request, res: Response) => {
+  return res.json(adminUserManager.searchStudents({ includeDisabled: true }).filter(user => user.role !== 'student').map(user => ({
+    uid: user.uid, email: user.email, displayName: user.displayName, role: user.role,
+    hasCustomClaim: true, customClaims: { admin: true, superAdmin: user.role === 'superAdmin' },
+    lastLogin: user.lastLoginAt, addedAt: user.createdAt,
+  })));
 });
 
 /**
  * 13. Mint Custom Claim Directly
  * Gated: only superAdmin can mint claims
  */
-app.post('/api/admin/admins/claim', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/admins/claim', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const { email, role } = req.body;
   if (!email) {
     return res.status(400).json({ error: 'Email is required' });
@@ -1926,6 +1905,11 @@ app.post('/api/admin/admins/claim', requireAuth, requireAdmin, async (req: Authe
     return res.status(403).json({ error: 'Forbidden: Only superAdmin can create or remove administrators' });
   }
 
+  if (role && !['admin', 'superAdmin'].includes(role)) return res.status(400).json({ error: 'Role must be admin or superAdmin' });
+  const auth = getAdminAuth();
+  if (!auth) throw new Error('Firebase user management is unavailable');
+  const target = await auth.getUserByEmail(String(email).trim());
+  await adminSetCustomUserClaims(target.uid, { role: role || 'admin', admin: true, superAdmin: role === 'superAdmin' });
   const isSuper = role === 'superAdmin';
   auditLogService.log({
     action: 'ADMIN_CREATED',
@@ -1933,7 +1917,7 @@ app.post('/api/admin/admins/claim', requireAuth, requireAdmin, async (req: Authe
     actorUid: req.userAuth?.uid || 'admin',
     actorEmail: req.userAuth?.email || 'admin@mayf.co.in',
     actorRole: 'superAdmin',
-    targetId: `usr-${email}`,
+    targetId: target.uid,
     targetEmail: email,
     targetType: 'administrator_role',
     details: { email, role, admin: true, superAdmin: isSuper },
@@ -1950,7 +1934,7 @@ app.post('/api/admin/admins/claim', requireAuth, requireAdmin, async (req: Authe
     },
     forceTokenRefresh: true,
   });
-});
+}));
 
 /**
  * 14. Audit Logs Retrieval
@@ -2666,7 +2650,7 @@ app.get('/api/admin/layout/homepage', requireAuth, requireAdmin, (_req: Authenti
 /**
  * 44. Admin Save Full Homepage Layout (Drag-and-drop reordered blocks + configs)
  */
-app.put('/api/admin/layout/homepage', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.put('/api/admin/layout/homepage', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2688,12 +2672,12 @@ app.put('/api/admin/layout/homepage', requireAuth, requireAdmin, async (req: Aut
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to update layout' });
   }
-});
+}));
 
 /**
  * 45. Admin Update Single Homepage Block
  */
-app.patch('/api/admin/layout/homepage/blocks/:id', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.patch('/api/admin/layout/homepage/blocks/:id', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2713,12 +2697,12 @@ app.patch('/api/admin/layout/homepage/blocks/:id', requireAuth, requireAdmin, as
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to update block' });
   }
-});
+}));
 
 /**
  * 46. Admin Reset Homepage Layout to Defaults
  */
-app.post('/api/admin/layout/homepage/reset', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/layout/homepage/reset', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2735,7 +2719,7 @@ app.post('/api/admin/layout/homepage/reset', requireAuth, requireAdmin, async (r
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to reset layout' });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Site Settings & Branding Management Endpoints
@@ -2779,7 +2763,7 @@ app.get('/api/admin/site-settings', requireAuth, requireAdmin, (_req: Authentica
 /**
  * 49. Admin Update Site Settings (Strictly sanitizes and blocks arbitrary HTML/JS)
  */
-app.put('/api/admin/site-settings', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.put('/api/admin/site-settings', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2796,12 +2780,12 @@ app.put('/api/admin/site-settings', requireAuth, requireAdmin, async (req: Authe
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to update site settings' });
   }
-});
+}));
 
 /**
  * 50. Admin Reset Site Settings to Defaults
  */
-app.post('/api/admin/site-settings/reset', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/site-settings/reset', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2818,7 +2802,7 @@ app.post('/api/admin/site-settings/reset', requireAuth, requireAdmin, async (req
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to reset site settings' });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Reusable AdSense & Minor Protection Management Endpoints
@@ -2860,7 +2844,7 @@ app.get('/api/admin/adsense/config', requireAuth, requireAdmin, (_req: Authentic
 /**
  * 53. Admin Update AdSense & Minor Protection Configuration
  */
-app.put('/api/admin/adsense/config', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.put('/api/admin/adsense/config', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2877,12 +2861,12 @@ app.put('/api/admin/adsense/config', requireAuth, requireAdmin, async (req: Auth
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to update AdSense configuration' });
   }
-});
+}));
 
 /**
  * 54. Admin Reset AdSense Configuration to Defaults
  */
-app.post('/api/admin/adsense/reset', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/adsense/reset', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2899,7 +2883,7 @@ app.post('/api/admin/adsense/reset', requireAuth, requireAdmin, async (req: Auth
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to reset AdSense configuration' });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Internal Website Notifications & Broadcasts Endpoints
@@ -2910,7 +2894,7 @@ app.post('/api/admin/adsense/reset', requireAuth, requireAdmin, async (req: Auth
 /**
  * 55. Active Broadcasts for Public / Student Session
  */
-app.get('/api/broadcasts/active', async (req: Request, res: Response) => {
+app.get('/api/broadcasts/active', asyncRoute(async (req: Request, res: Response) => {
   try {
     let email: string | undefined;
     let hasAnnualPass = false;
@@ -2934,7 +2918,7 @@ app.get('/api/broadcasts/active', async (req: Request, res: Response) => {
       email,
     });
 
-    res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
+    res.setHeader('Cache-Control', authHeader ? 'private, no-store' : 'public, max-age=30');
     return res.json({
       success: true,
       count: items.length,
@@ -2943,7 +2927,7 @@ app.get('/api/broadcasts/active', async (req: Request, res: Response) => {
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error?.message || 'Failed to fetch active broadcasts' });
   }
-});
+}));
 
 /**
  * 56. Admin List All Broadcasts
@@ -2964,7 +2948,7 @@ app.get('/api/admin/broadcasts', requireAuth, requireAdmin, (_req: Authenticated
 /**
  * 57. Admin Create Broadcast
  */
-app.post('/api/admin/broadcasts', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/broadcasts', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2981,12 +2965,12 @@ app.post('/api/admin/broadcasts', requireAuth, requireAdmin, async (req: Authent
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to create broadcast' });
   }
-});
+}));
 
 /**
  * 58. Admin Update Broadcast
  */
-app.put('/api/admin/broadcasts/:id', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.put('/api/admin/broadcasts/:id', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const actor = {
@@ -3004,12 +2988,12 @@ app.put('/api/admin/broadcasts/:id', requireAuth, requireAdmin, async (req: Auth
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to update broadcast' });
   }
-});
+}));
 
 /**
  * 59. Admin Delete Broadcast
  */
-app.delete('/api/admin/broadcasts/:id', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/admin/broadcasts/:id', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const actor = {
@@ -3026,7 +3010,7 @@ app.delete('/api/admin/broadcasts/:id', requireAuth, requireAdmin, async (req: A
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to delete broadcast' });
   }
-});
+}));
 
 /**
  * 57. Analytics Event Ingestion (Public, O(1) Atomic Counter Aggregation, Zero Student PII)
@@ -3365,7 +3349,7 @@ app.get('/api/ai-teacher/config', (_req: Request, res: Response) => {
 /**
  * Fetch Student AI Doubt History
  */
-app.get('/api/ai-teacher/history', async (req: Request, res: Response) => {
+app.get('/api/ai-teacher/history', asyncRoute(async (req: Request, res: Response) => {
   const authHeader = req.headers.authorization;
   let targetUid: string | null = null;
 
@@ -3386,7 +3370,7 @@ app.get('/api/ai-teacher/history', async (req: Request, res: Response) => {
     history: userHistory,
     total: userHistory.length,
   });
-});
+}));
 
 /**
  * Rate an AI Teacher Response
@@ -3411,7 +3395,7 @@ app.post('/api/ai-teacher/rate', (req: Request, res: Response) => {
  * Multimodal Gemini endpoint with rigorous pedagogical instructions,
  * App Check verification, and KaTeX math formatting.
  */
-app.post('/api/ai-teacher/ask', async (req: Request, res: Response) => {
+app.post('/api/ai-teacher/ask', asyncRoute(async (req: Request, res: Response) => {
   try {
     const rawIp = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || '127.0.0.1');
     const { message, studentClass, chapterTopic, questionType = 'text', image } = req.body;
@@ -3728,13 +3712,13 @@ Substitute the answer back into the original equation to ensure consistency.`;
       timestamp: new Date().toISOString(),
     });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Content Ingestion Webhook (Google Apps Script Integration)
 // Authenticated endpoint triggered when status in Google Sheet is "Approved"
 // -------------------------------------------------------------
-app.post('/api/ingestion/webhook', async (req: Request, res: Response) => {
+app.post('/api/ingestion/webhook', asyncRoute(async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
     if (!verifyWebhookSecret(authHeader)) {
@@ -3763,7 +3747,7 @@ app.post('/api/ingestion/webhook', async (req: Request, res: Response) => {
       error: error?.message || 'Internal content ingestion pipeline error',
     });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Admin Ingestion Jobs API
@@ -3787,7 +3771,7 @@ app.get('/api/admin/ingest/jobs', requireAuth, requireAdmin, (_req: Request, res
   });
 });
 
-app.post('/api/admin/ingest/retry', requireAuth, requireAdmin, async (req: Request, res: Response) => {
+app.post('/api/admin/ingest/retry', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   try {
     const { jobId } = req.body;
     if (!jobId) {
@@ -3804,9 +3788,9 @@ app.post('/api/admin/ingest/retry', requireAuth, requireAdmin, async (req: Reque
     console.error('[MAYF Ingestion] Retry failure:', error);
     return res.status(500).json({ success: false, error: error?.message || 'Retry failed' });
   }
-});
+}));
 
-app.post('/api/admin/ingest/sync', requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+app.post('/api/admin/ingest/sync', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
   try {
     const syncOutcome = await syncRegistryNow();
     return res.json({
@@ -3818,9 +3802,9 @@ app.post('/api/admin/ingest/sync', requireAuth, requireAdmin, async (_req: Reque
     console.error('[MAYF Ingestion] Manual sync failure:', error);
     return res.status(500).json({ success: false, error: error?.message || 'Sync failed' });
   }
-});
+}));
 
-app.post('/api/admin/ingest/simulate-approval', requireAuth, requireAdmin, async (req: Request, res: Response) => {
+app.post('/api/admin/ingest/simulate-approval', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   try {
     const { content_id } = req.body;
     const target = INGESTION_JOBS_STORE.find((j) => j.content_id === content_id);
@@ -3841,10 +3825,15 @@ app.post('/api/admin/ingest/simulate-approval', requireAuth, requireAdmin, async
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error?.message || 'Simulation error' });
   }
-});
+}));
 
 
 // API requests must never fall through to the SPA HTML.
 app.use("/api", (_req, res) => res.status(404).json({ error: "API endpoint not found" }));
+
+app.use((error: any, _req: Request, res: Response, _next: NextFunction) => {
+  console.error('[API operation failed]', error?.code || error?.message);
+  if (!res.headersSent) res.status(500).json({ success: false, error: 'The operation could not be completed. Please retry or check the service configuration.' });
+});
 
 export { app };

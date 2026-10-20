@@ -339,24 +339,17 @@ export async function verifyStudentSessionToken(bearerToken?: string): Promise<T
 /**
  * Assign custom claims to a Firebase user and force refresh tokens.
  */
-export async function adminSetCustomUserClaims(
-  uid: string,
-  claims: Record<string, any>
-): Promise<{ success: boolean; error?: string }> {
-  const authClient = getAdminAuth();
-  if (authClient) {
-    try {
-      await authClient.setCustomUserClaims(uid, claims);
-      // Force token refresh after role changes where necessary
-      await authClient.revokeRefreshTokens(uid);
-      console.info(`[Firebase Admin SDK] Successfully minted custom claims & revoked refresh tokens for UID ${uid}:`, claims);
-      return { success: true };
-    } catch (error: any) {
-      console.warn(`[Firebase Admin SDK] Error assigning claims via SDK for ${uid}:`, error?.message);
-    }
+export async function adminSetCustomUserClaims(uid: string, claims: Record<string, any>): Promise<{ success: boolean; error?: string }> {
+  const auth = getAdminAuth();
+  if (!auth) throw new Error('Firebase user management is unavailable');
+  const user = await auth.getUser(uid);
+  const merged = { ...user.customClaims };
+  for (const [key, value] of Object.entries(claims)) {
+    if (value === undefined) delete merged[key];
+    else merged[key] = value;
   }
-
-  // Gracefully report success for simulated store in development/preview
+  await auth.setCustomUserClaims(uid, merged);
+  await auth.revokeRefreshTokens(uid);
   return { success: true };
 }
 
@@ -371,10 +364,10 @@ export async function adminRevokeRefreshTokens(uid: string): Promise<boolean> {
       console.info(`[Firebase Admin SDK] Revoked refresh tokens for UID ${uid}`);
       return true;
     } catch (e: any) {
-      console.warn(`[Firebase Admin SDK] revokeRefreshTokens warning for ${uid}:`, e?.message);
+      throw e;
     }
   }
-  return true;
+  throw new Error('Firebase user management is unavailable');
 }
 
 /**
@@ -393,10 +386,10 @@ export async function adminUpdateUserDisabledStatus(
       }
       return { success: true };
     } catch (error: any) {
-      console.warn(`[Firebase Admin SDK] updateUser disabled status warning for ${uid}:`, error?.message);
+      throw error;
     }
   }
-  return { success: true };
+  throw new Error('Firebase user management is unavailable');
 }
 
 /**
@@ -410,10 +403,10 @@ export async function adminDeleteAuthUser(uid: string): Promise<{ success: boole
       console.info(`[Firebase Admin SDK] Successfully deleted user ${uid} from Firebase Auth`);
       return { success: true };
     } catch (error: any) {
-      console.warn(`[Firebase Admin SDK] deleteUser warning for ${uid}:`, error?.message);
+      throw error;
     }
   }
-  return { success: true };
+  throw new Error('Firebase user management is unavailable');
 }
 
 /**

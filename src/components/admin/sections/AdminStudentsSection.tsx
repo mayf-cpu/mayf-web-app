@@ -73,6 +73,9 @@ export const AdminStudentsSection: React.FC = () => {
         includeDisabled: true,
       });
       setStudents(data);
+    } catch (error: any) {
+      setStudents([]);
+      setActionMessage({ type: 'error', text: error?.message || 'Unable to load Firebase users' });
     } finally {
       setLoading(false);
     }

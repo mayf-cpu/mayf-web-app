@@ -122,6 +122,14 @@ class SiteSettingsService {
     input: Partial<SiteSettings>,
     actor: { uid: string; email: string; role: 'admin' | 'superAdmin' }
   ): Promise<SiteSettings> {
+    input = {
+      ...this.currentSettings, ...input,
+      brand: { ...this.currentSettings.brand, ...input.brand },
+      colors: { ...this.currentSettings.colors, ...input.colors },
+      social: { ...this.currentSettings.social, ...input.social },
+      contact: { ...this.currentSettings.contact, ...input.contact },
+      homepageCopy: { ...this.currentSettings.homepageCopy, ...input.homepageCopy },
+    };
     // 1. Inspect for explicit malicious script injection attempts
     const safetyCheck = inspectSecuritySafety(input);
     if (!safetyCheck.safe) {
@@ -226,9 +234,7 @@ class SiteSettingsService {
     this.cacheTimestamp = Date.now();
 
     // Keep homepage blocks synchronized with updated copy and social links
-    this.syncWithHomepageBlocks(newSettings, actor).catch((err) => {
-      console.warn('[SiteSettingsService] Homepage blocks synchronization note:', err?.message || err);
-    });
+    await this.syncWithHomepageBlocks(newSettings, actor);
 
     // Audit logging
     auditLogService.log({
@@ -318,7 +324,7 @@ class SiteSettingsService {
 
       await homepageLayoutService.updateLayout(updatedBlocks, actor);
     } catch (e: any) {
-      console.warn('[SiteSettingsService] syncWithHomepageBlocks note:', e?.message || e);
+      throw e;
     }
   }
 

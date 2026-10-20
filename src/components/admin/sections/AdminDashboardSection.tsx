@@ -25,15 +25,17 @@ interface AdminDashboardSectionProps {
 }
 
 export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({ onNavigateSection }) => {
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
-    const data = await adminService.getMetrics();
-    setMetrics(data);
-    setLoading(false);
+    setLoadError(null);
+    try { setMetrics(await adminService.getMetrics()); }
+    catch (error: any) { setMetrics(null); setLoadError(error?.message || 'Unable to load metrics'); }
+    finally { setLoading(false); }
   };
 
   useEffect(() => {
@@ -48,6 +50,7 @@ export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({ on
 
   return (
     <div className="space-y-6">
+      {loadError && <p role="alert" className="p-3 bg-rose-50 text-rose-700 rounded-lg">{loadError}</p>}
       {/* Top Banner: Defense in Depth & Cloudflare Edge Status */}
       <div className="bg-linear-to-r from-slate-900 via-blue-950 to-slate-900 border border-slate-800 rounded-xl p-5 text-white shadow-lg">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -101,7 +104,7 @@ export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({ on
               {metrics ? metrics.totalStudents.toLocaleString() : '...'}
             </span>
             <span className="text-xs font-semibold text-emerald-600 flex items-center">
-              +14% mo/mo
+
             </span>
           </div>
           <p className="text-[11px] text-slate-500 mt-1">Classes 5 to 10 (CBSE & ICSE)</p>

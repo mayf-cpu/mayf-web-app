@@ -2,6 +2,9 @@
 
 ## Current repair pass
 
+Second repair batch: actual Firebase Auth pagination now feeds student/admin lists; account operations fetch current records, preserve unrelated claims and surface Firebase failures. The add-admin endpoint now actually writes Firebase claims. Ordinary admins cannot modify administrator accounts. Async API rejections now reach JSON error middleware. Removed sample student-list and dashboard-metric fallbacks from these client methods. Five additional local regression tests pass (34 total). Authenticated live account mutations remain untested; no real users were disabled or deleted during tests.
+
+
 - Owner confirms real administrator sign-in now succeeds. The testing browser has no shared administrator session. Authenticated live write/read-back tests remain pending.
 - Fixed the origin shield rejecting same-origin state changes on the configured Cloudflare preview host; unrelated workers.dev origins remain rejected.
 - Content/category JSON routes now load Firestore records per operation and atomically commit changes before responding. Conditional writes reject concurrent edits; failed operations restore the previous server state. An initialization marker prevents deleted records from reappearing as seed data.
@@ -9,14 +12,14 @@
 - Settings, homepage layout, AdSense and broadcasts reload from Firestore on relevant requests and surface read/write failures. Settings/layout/AdSense caches update only after successful writes. These are not yet conflict-safe multi-document transactions.
 - Removed invented initial CMS sales/view/download totals and the unrelated sample PDF automatically attached to newly created content.
 - Added regression checks for persistence across fresh repositories, failed-write rollback, validation rollback, public visibility/filter/pagination and Firestore pagination/conflict rejection.
-- This repair pass does not complete payment/entitlement persistence, genuine download delivery, Drive integration, real admin user listing or analytics. AI and Turnstile are unconfigured according to the last preview health response. Those features must not be described as tested or functional.
+- This repair pass does not complete payment/entitlement persistence, genuine download delivery, Drive integration, analytics. AI and Turnstile are unconfigured according to the last preview health response. Those features must not be described as tested or functional.
 
 The sections below retain the earlier audit context; current repair notes above supersede overlapping catalogue/settings observations.
 
 
 This is an evidence log, not a statement that the entire application works. Earlier QA_AUDIT.md PASS labels do not establish live end-to-end functionality.
 
-## Executed checks
+## Earlier executed checks
 
 - TypeScript compilation, Vite production build and git whitespace validation pass.
 - Authentication/payment/document-store regression tests pass locally. These use fixtures and mocked external services, not real money or production Firebase sessions.

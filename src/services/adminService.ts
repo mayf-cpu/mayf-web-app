@@ -300,20 +300,8 @@ class AdminService {
       const res = await fetch('/api/admin/metrics', { headers });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
-    } catch {
-      return {
-        totalStudents: 12480,
-        activeAnnualPasses: 3410,
-        totalRevenue: 6816590,
-        aiDoubtsSolved: 84320,
-        totalFormulas: 38,
-        totalChapters: 64,
-        activeCoupons: 5,
-        serverStatus: 'healthy',
-        cloudflareAccessActive: false,
-        edgeVerifiedEmail: '2026vivekkushwah@gmail.com',
-        uptimeHours: 342,
-      };
+    } catch (error) {
+      throw error;
     }
   }
 
@@ -337,43 +325,8 @@ class AdminService {
       const res = await fetch(url, { headers });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
-    } catch {
-      return [
-        {
-          uid: 'student-1001',
-          displayName: 'Arjun Sharma',
-          email: 'arjun.sharma@mayf.co.in',
-          phoneNumber: '+91 98765 43210',
-          studentClass: 'Class 10',
-          board: 'CBSE',
-          hasAnnualPass: true,
-          passExpiry: '2027-03-31',
-          isPro: true,
-          disabled: false,
-          streakDays: 14,
-          lastActiveDate: '2026-10-08',
-          createdAt: '2026-04-01T00:00:00.000Z',
-          lastLoginAt: '2026-10-08T09:12:00.000Z',
-          role: 'student',
-        },
-        {
-          uid: 'student-1002',
-          displayName: 'Priya Patel',
-          email: 'priya.patel@gmail.com',
-          phoneNumber: '+91 91234 56789',
-          studentClass: 'Class 9',
-          board: 'ICSE',
-          hasAnnualPass: true,
-          passExpiry: '2027-04-15',
-          isPro: true,
-          disabled: false,
-          streakDays: 22,
-          lastActiveDate: '2026-10-08',
-          createdAt: '2026-04-10T00:00:00.000Z',
-          lastLoginAt: '2026-10-08T08:45:00.000Z',
-          role: 'student',
-        },
-      ];
+    } catch (error) {
+      throw error;
     }
   }
 
