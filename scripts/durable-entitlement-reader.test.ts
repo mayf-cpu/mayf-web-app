@@ -10,12 +10,12 @@ const pass = {
   grantedBy: 'payment', orderId: 'ord-a', paymentId: 'pay-a',
   createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z',
 };
-function reader(items: Record<string, unknown>[], expiry?: string) {
+function reader(items: Record<string, unknown>[], expiry?: string, lastOrderId: string | null = 'ord-a') {
   return new DurableEntitlementReader({
     queryEqual: async (_collection: string, _field: string, userId: string) => items.filter(data => data.userId === userId).map((data, i) => ({ id: 'doc-' + i, data, updateTime: '' })),
     collection: () => ({ doc: () => ({ get: async () => expiry === undefined
       ? { exists: false, data: () => undefined }
-      : { exists: true, data: () => ({ userId: 'student-a', expiresAt: expiry }) } }) }),
+      : { exists: true, data: () => ({ userId: 'student-a', expiresAt: expiry, lastOrderId }) } }) }),
   } as unknown as Pick<FirestoreDocumentStore, 'queryEqual' | 'collection'>);
 }
 test('valid persisted annual pass survives independently of in-memory service', async () => {
@@ -61,4 +61,16 @@ test('multiple paid renewals extend access beyond an older entitlement snapshot'
   // still reflects additional legitimately paid subscription days.
   assert.equal(result.active, true);
   assert.equal(result.entitlement?.expiresAt, '2028-10-01T00:00:00.000Z');
+});
+
+test('renewal cursor must refer to the active paid entitlement, not a revoked or unrelated order', async () => {
+  const mismatched = await reader([pass], '2028-10-01T00:00:00.000Z', 'unknown-order')
+    .checkActiveAnnualPass('student-a', now);
+  assert.equal(mismatched.active, false);
+  const cleared = await reader([pass], '2028-10-01T00:00:00.000Z', null)
+    .checkActiveAnnualPass('student-a', now);
+  assert.equal(cleared.active, false);
+  const revoked = await reader([{ ...pass, status: 'revoked' }],
+    '2028-10-01T00:00:00.000Z', 'ord-a').checkActiveAnnualPass('student-a', now);
+  assert.equal(revoked.active, false);
 });
