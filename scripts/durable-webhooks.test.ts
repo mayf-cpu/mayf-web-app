@@ -1,0 +1,55 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { settleVerifiedAnnualPassWebhook } from '../src/lib/payments/durableWebhookProcessor';
+import type { DurablePaymentRepository } from '../src/lib/payments/durablePaymentRepository';
+import type { StoredOrder, WebhookVerificationResult } from '../src/lib/payments/types';
+
+const order: StoredOrder = {
+  orderId: 'ord-test', userId: 'student-a', items: [{ title: 'Pass', unitPrice: 100, quantity: 1, annualPass: true }],
+  grossAmount: 100, discount: 0, tax: 18, currency: 'INR',
+  provider: 'razorpay', providerOrderId: 'rzp-order-test',
+  createdAt: '2026-10-21T00:00:00Z', status: 'created',
+};
+const receipt: WebhookVerificationResult = {
+  isValid: true, provider: 'razorpay', status: 'paid', eventId: 'evt-test',
+  eventType: 'payment.captured', providerOrderId: 'rzp-order-test',
+  providerPaymentId: 'pay-test', rawAmount: 118, currency: 'INR',
+};
+function fixture(stored: StoredOrder | null = order) {
+  const writes: unknown[] = [];
+  const repository = {
+    getOrderByProviderOrderId: async () => stored,
+    settleVerifiedPayment: async (payload: unknown) => { writes.push(payload); return 'settled' as const; },
+  } as Pick<DurablePaymentRepository, 'getOrderByProviderOrderId' | 'settleVerifiedPayment'>;
+  return { repository, writes };
+}
+test('verified paid event settles only for order owner with correct amount and entitlement', async () => {
+  const { repository, writes } = fixture();
+  assert.equal(await settleVerifiedAnnualPassWebhook(repository, receipt, 365, new Date('2026-10-21T00:00:00Z')), 'settled');
+  assert.equal(writes.length, 1);
+  const saved: any = writes[0];
+  assert.equal(saved.entitlement.userId, 'student-a');
+  assert.equal(saved.entitlement.orderId, 'ord-test');
+  assert.equal(saved.entitlement.paymentId, 'pay-test');
+  assert.equal(saved.entitlement.expiresAt, '2027-10-21T00:00:00.000Z');
+});
+test('invalid signature, non-paid status, absent IDs and mismatched amounts never settle', async () => {
+  const { repository, writes } = fixture();
+  for (const change of [
+    { isValid: false }, { status: 'pending' as const }, { providerOrderId: '' },
+    { providerPaymentId: '' }, { eventId: '' }, { rawAmount: 1 },
+    { rawAmount: NaN }, { currency: 'USD' },
+  ]) await assert.rejects(settleVerifiedAnnualPassWebhook(repository, { ...receipt, ...change }, 365));
+  assert.equal(writes.length, 0);
+});
+test('unknown orders remain retryable and do not issue entitlements', async () => {
+  const { repository, writes } = fixture(null);
+  assert.equal(await settleVerifiedAnnualPassWebhook(repository, receipt, 365), 'unknown_order');
+  assert.equal(writes.length, 0);
+});
+test('non-pass orders and invalid pass duration cannot provision annual access', async () => {
+  const { repository, writes } = fixture({ ...order, items: [{ title: 'Notes', unitPrice: 100, quantity: 1 }] });
+  await assert.rejects(settleVerifiedAnnualPassWebhook(repository, receipt, 365), /only supports annual pass/);
+  await assert.rejects(settleVerifiedAnnualPassWebhook(repository, receipt, 0), /duration/);
+  assert.equal(writes.length, 0);
+});
