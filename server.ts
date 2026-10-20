@@ -847,6 +847,22 @@ app.get('/api/admin/downloads/audit-logs', requireAuth, requireAdmin, (_req: Req
  * ENFORCES AUTHORITATIVE SERVER PRICING TO PREVENT PRICE MANIPULATION!
  */
 async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
+  // Checkout must remain explicitly disabled until payment reconciliation,
+  // refunds, renewal and sandbox acceptance checks are completed.
+  if (process.env.MAYF_ENABLE_CHECKOUT !== 'true') {
+    return res.status(503).json({
+      success: false, code: 'CHECKOUT_NOT_READY',
+      error: 'Purchases are temporarily unavailable while payment verification is being upgraded.',
+    });
+  }
+  const firestore = getAdminFirestore();
+  if (!firestore) {
+    return res.status(503).json({
+      success: false, code: 'PAYMENT_STORAGE_UNAVAILABLE',
+      error: 'Purchases are temporarily unavailable. Please try again later.',
+    });
+  }
+  paymentService.configureDurableOrders(new DurablePaymentRepository(firestore));
   try {
     const {
       amount,
