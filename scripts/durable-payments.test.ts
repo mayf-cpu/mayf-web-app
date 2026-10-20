@@ -214,3 +214,25 @@ test('concurrent renewals conflict on shared student cursor instead of losing pa
   assert.equal(docs.get('paymentEntitlements/payment-ord-next')?.data.expiresAt, '2028-10-20T12:00:00.000Z');
   assert.equal(await repo.settleVerifiedPayment(nextPayment), 'duplicate');
 });
+
+test('simultaneous renewal settlements cannot both commit against the same cursor revision', async () => {
+  const { repo, docs } = fixture();
+  await repo.createOrder(order);
+  await repo.createOrder({ ...order, orderId: 'ord-parallel', providerOrderId: 'gateway-parallel' });
+  const first = { ...payment, durationDays: 365 };
+  const second = {
+    ...payment, orderId: 'ord-parallel', providerOrderId: 'gateway-parallel',
+    providerPaymentId: 'pay-parallel', eventId: 'evt-parallel', durationDays: 365,
+    entitlement: { ...entitlement, id: 'payment-ord-parallel', orderId: 'ord-parallel',
+      paymentId: 'pay-parallel' },
+  };
+  const results = await Promise.allSettled([
+    repo.settleVerifiedPayment(first), repo.settleVerifiedPayment(second),
+  ]);
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(results.filter(result => result.status === 'rejected').length, 1);
+  assert.equal(docs.get('paymentRenewalCursors/student-1')?.data.expiresAt, '2027-10-21T12:00:00.000Z');
+  const succeededOrder = ['ord-1', 'ord-parallel'].filter(id =>
+    docs.get('paymentOrders/' + id)?.data.status === 'paid');
+  assert.equal(succeededOrder.length, 1);
+});
