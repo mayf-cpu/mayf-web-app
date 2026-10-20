@@ -392,18 +392,28 @@ export async function processRegistryRow(
   }
   const existing = await db.collection('contentItems').doc(firestoreId).get();
   const previous = existing.exists ? existing.data() || {} : {};
+  // Re-sync refreshes assets/metadata, but must never resurrect archived or
+  // deleted material, or silently override a deliberate admin unpublish.
+  const adminRestricted = previous.isDeleted === true ||
+    previous.status === 'archived' ||
+    previous.status === 'hidden' ||
+    previous.status === 'draft' ||
+    (existing.exists && previous.visible === false);
+  const publishOnImport = isPubliclyVisible && !adminRestricted;
   await db.commit([{
     collection: 'contentItems', id: firestoreId,
     ...(existing.updateTime ? { updateTime: existing.updateTime } : {}),
     data: {
       ...previous,
       ...contentDoc,
-      status: isPubliclyVisible ? 'published' : 'hidden',
-      isDeleted: false,
+      status: adminRestricted && typeof previous.status === 'string' ?
+        previous.status : (publishOnImport ? 'published' : 'hidden'),
+      isDeleted: previous.isDeleted === true,
       sourceDriveId: row.drive_file_id,
       importStatus: 'imported',
       lastSync: timestamp,
-      visibilityStatus: isPubliclyVisible ? 'Visible' : 'Hidden',
+      visibilityStatus: publishOnImport ? 'Visible' : (previous.visibilityStatus === 'Archived' ? 'Archived' : 'Hidden'),
+      visible: publishOnImport,
     },
   }]);
 
