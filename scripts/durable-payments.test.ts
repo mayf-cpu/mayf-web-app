@@ -125,3 +125,15 @@ test('missing Firestore revision fails closed before making payment writes', asy
   const brokenRepo = new DurablePaymentRepository(store as unknown as FirestoreDocumentStore);
   await assert.rejects(brokenRepo.settleVerifiedPayment(payment), /revision unavailable/);
 });
+
+test('missing gateway identifiers fail closed and cannot write payment records', async () => {
+  const { repo, docs } = fixture();
+  await repo.createOrder(order);
+  for (const override of [
+    { providerOrderId: '' }, { providerPaymentId: '' }, { eventId: '' }, { orderId: '' },
+  ]) {
+    await assert.rejects(repo.settleVerifiedPayment({ ...payment, ...override }), /identifiers are required/);
+  }
+  assert.equal(docs.size, 1);
+  assert.equal((await repo.getOrder(order.orderId))?.status, 'created');
+});
