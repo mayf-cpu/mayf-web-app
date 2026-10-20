@@ -19,11 +19,12 @@ test('Drive import verifies authenticated downloaded bytes before declaring an R
     private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
   });
   const valid = new TextEncoder().encode('%PDF-1.4\nfixture-data-123');
+  const original = Uint8Array.from(valid);
   const objects = new Map<string,Uint8Array>();
   const calls:string[] = [];
   configurePdfBucket({
     head: async (key: string) => objects.has(key) ? {size:objects.get(key)!.length} : null,
-    get: async () => null,
+    get: async (key: string) => objects.has(key) ? {size:objects.get(key)!.length, body:new Response(Buffer.from(objects.get(key)!)).body} : null,
     put: async (key: string, bytes: Uint8Array) => { objects.set(key, bytes); },
   });
   globalThis.fetch = async (input: RequestInfo | URL) => {
@@ -40,12 +41,15 @@ test('Drive import verifies authenticated downloaded bytes before declaring an R
     assert.deepEqual(objects.get('pdf/cnt-pdf-topic.pdf'), valid);
     assert.equal(calls.length, 2);
     assert.ok(calls[1].includes('drive/v3/files/drive-id-123'));
+    const retry = await copyDriveFileToProductionStorage('drive-id-123', undefined, 'topic', 'pdf', 'paid', 'cnt-pdf-topic');
+    assert.equal(retry.fileSizeBytes, valid.length, 'identical retry must be accepted');
+    assert.equal(calls.length, 4);
+    valid[valid.length - 1] = 88;
     await assert.rejects(
       copyDriveFileToProductionStorage('drive-id-123', undefined, 'topic', 'pdf', 'paid', 'cnt-pdf-topic'),
-      /replacement requires an explicit versioned publishing workflow/,
+      /explicit versioned replacement required/,
     );
-    assert.equal(calls.length, 2, 're-import must not even fetch Drive bytes');
-    assert.deepEqual(objects.get('pdf/cnt-pdf-topic.pdf'), valid, 'existing published bytes stay unchanged');
+    assert.deepEqual(objects.get('pdf/cnt-pdf-topic.pdf'), original, 'existing published bytes stay unchanged');
   } finally {
     globalThis.fetch = oldFetch;
     if(oldCredentials === undefined) delete process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
