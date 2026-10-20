@@ -20,6 +20,7 @@ import crypto from 'crypto';
 import { getDownloadableItem } from './src/lib/download/downloadRegistry';
 import { pdfExists, readVerifiedPdf } from './src/lib/download/pdfObjectStorage';
 import { DurableDownloadTokens } from './src/lib/download/durableDownloadTokens';
+import { DurableDownloadLimiter } from './src/lib/download/durableDownloadLimiter';
 import { FORMULA_DECK_ITEMS } from './src/data/formulaDeckData';
 import { paymentService } from './src/lib/payments/paymentService';
 import { isProductionPaymentRuntime } from './src/lib/payments/runtime';
@@ -419,13 +420,14 @@ interface RateLimitBucket {
 }
 const downloadRateLimitMap = new Map<string, RateLimitBucket>();
 
-function checkDownloadRateLimit(key: string, limit: number, windowMs: number): boolean {
+async function checkDownloadRateLimit(key: string, limit: number, windowMs: number): Promise<boolean> {
+  const db = getAdminFirestore();
+  if (db) return new DurableDownloadLimiter(db).isLimited(key, limit, windowMs);
+  if (isProductionPaymentRuntime()) throw new Error('Download rate-limit database unavailable');
   const now = Date.now();
   const bucket = downloadRateLimitMap.get(key) || { timestamps: [] };
-  bucket.timestamps = bucket.timestamps.filter((ts) => now - ts < windowMs);
-  if (bucket.timestamps.length >= limit) {
-    return true;
-  }
+  bucket.timestamps = bucket.timestamps.filter(ts => now - ts < windowMs);
+  if (bucket.timestamps.length >= limit) return true;
   bucket.timestamps.push(now);
   downloadRateLimitMap.set(key, bucket);
   return false;
@@ -551,7 +553,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
   const rawIp = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || '127.0.0.1');
 
   // Rate Limiting: max 10 authorization attempts per minute per IP
-  if (checkDownloadRateLimit(`auth-ip-${rawIp}`, 10, 60 * 1000)) {
+  if (await checkDownloadRateLimit(`auth-ip-${rawIp}`, 10, 60 * 1000)) {
     logDownloadAudit({
       contentId: req.body?.contentId || 'unknown',
       uid: null,
@@ -632,7 +634,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
       if (tokenVerification.valid && tokenVerification.uid) {
         verifiedUid = tokenVerification.uid;
         // User rate limiting: max 15 requests per minute
-        if (checkDownloadRateLimit(`auth-uid-${verifiedUid}`, 15, 60 * 1000)) {
+        if (await checkDownloadRateLimit(`auth-uid-${verifiedUid}`, 15, 60 * 1000)) {
           return res.status(429).json({
             success: false,
             error: 'Account download rate limit reached. Please wait 60 seconds.',
@@ -724,7 +726,7 @@ app.get('/api/downloads/file/:token', asyncRoute(async (req: Request, res: Respo
   const rawIp = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || '127.0.0.1');
 
   // Rate Limiting: max 20 file downloads per minute per IP
-  if (checkDownloadRateLimit(`dl-ip-${rawIp}`, 20, 60 * 1000)) {
+  if (await checkDownloadRateLimit(`dl-ip-${rawIp}`, 20, 60 * 1000)) {
     return res.status(429).send('Download rate limit exceeded. Please try again later.');
   }
 
@@ -857,7 +859,7 @@ async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
 
     // Rate Limiting on checkout creation: max 10 orders per 5 minutes per user/IP
     const rawIp = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || '127.0.0.1');
-    if (checkDownloadRateLimit(`order-rate-${userId || rawIp}`, 10, 300 * 1000)) {
+    if (await checkDownloadRateLimit(`order-rate-${userId || rawIp}`, 10, 300 * 1000)) {
       return res.status(429).json({
         success: false,
         error: 'Too many order requests. Please wait a few minutes before starting a new checkout.',
