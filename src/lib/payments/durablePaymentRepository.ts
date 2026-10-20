@@ -11,6 +11,7 @@ const PROVIDER_ORDER_COLLECTION = 'paymentProviderOrders';
 const EVENT_COLLECTION = 'paymentWebhookEvents';
 const PAYMENT_CLAIM_COLLECTION = 'paymentProviderClaims';
 const ENTITLEMENT_COLLECTION = 'paymentEntitlements';
+const RENEWAL_CURSOR_COLLECTION = 'paymentRenewalCursors';
 
 function validId(value: string): string {
   if (!value || value.includes('/') || value.length > 400) throw new Error('Invalid payment record identifier');
