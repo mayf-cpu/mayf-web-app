@@ -2,7 +2,10 @@
 
 ## Current repair pass
 
-Final local batch: 36 regression tests, TypeScript, Vite build and four workerd API checks pass. Premium resource lookup sends a Firebase ID token and returns paid file locations only after verified access checks; anonymous catalogue lists omit these locations. Expired-pass and invalid-token cases are covered with fixtures. This does not repair durable order entitlements or validate real paid media delivery.
+Additional browser finding: navigation from an already open tab during preview deployment failed to fetch an old lazy-loaded chunk, then the root error fallback crashed because it used a NavigationProvider-dependent layout outside that provider. The fallback now renders independently and reloads the document to obtain current assets. A provider-free rendering regression test passes. After reloading, the Formula Deck displays 26 formulas and its Class 5 filter displays two formulas.
+
+
+Final local batch: 37 regression tests, TypeScript, Vite build and four workerd API checks pass. Premium resource lookup sends a Firebase ID token and returns paid file locations only after verified access checks; anonymous catalogue lists omit these locations. Expired-pass and invalid-token cases are covered with fixtures. This does not repair durable order entitlements or validate real paid media delivery.
 
 Browser PDF check failed: the Class 5 factors/multiples resource page loads, but its example raw.githubusercontent.com PDF iframe displays “This page has been blocked by Chromium.” Real owner-supplied curriculum files and working protected download delivery remain required; this is not a passing PDF test. Cloudflare confirms preview commit d5883c3 built/deployed successfully, including the first three repair batches.
 
