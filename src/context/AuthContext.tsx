@@ -130,12 +130,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // 1. Fetch claims cryptographically signed by Firebase
         const claims = await getVerifiedClaims(fbUser);
         const email = (fbUser.email || '').toLowerCase().trim();
-        const isAuthorizedEmail = [
+        const isAuthorizedEmail = fbUser.emailVerified && [
           '2026vivekkushwah@gmail.com',
           'ntnagrawal146@gmail.com',
           'admin@mayf.co.in',
+          'mayfbackup@gmail.com',
         ].includes(email);
-        const isSuper = claims.isSuperAdmin || (isAuthorizedEmail && email !== 'admin@mayf.co.in');
+        const isSuper = claims.isSuperAdmin || (isAuthorizedEmail && ['2026vivekkushwah@gmail.com', 'ntnagrawal146@gmail.com'].includes(email));
         const isAdmin = isSuper || claims.isAdmin || isAuthorizedEmail;
 
         const effectiveClaims: ParsedUserEntitlements = {

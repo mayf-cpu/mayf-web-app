@@ -81,3 +81,35 @@ test('credential diagnostics tolerate invalid JSON and expose no secret values',
     else process.env.FIREBASE_SERVICE_ACCOUNT_JSON = prior;
   }
 });
+
+test('the owner-authorized backup account receives admin access after verified Google sign-in', async t => {
+  const auth = getAdminAuth();
+  assert.ok(auth);
+  const verifier = t.mock.method(auth, 'verifyIdToken', async () => ({
+    uid: 'authorized-backup', email: 'mayfbackup@gmail.com', email_verified: true,
+  }));
+  const result = await verifyStudentSessionToken('header.payload.signature');
+  assert.equal(result.valid, true);
+  assert.equal(result.role, 'admin');
+  assert.equal(result.superAdmin, false);
+  verifier.mock.mockImplementation(async () => ({
+    uid: 'unverified-backup', email: 'mayfbackup@gmail.com', email_verified: false,
+  }));
+  assert.equal((await verifyStudentSessionToken('header.payload.signature')).role, 'student');
+});
+
+test('an explicit administrator allowlist can revoke backup-email bootstrap access', async t => {
+  const previous = process.env.ADMIN_AUTHORIZED_EMAILS;
+  process.env.ADMIN_AUTHORIZED_EMAILS = 'administrator@example.com';
+  try {
+    const auth = getAdminAuth();
+    assert.ok(auth);
+    t.mock.method(auth, 'verifyIdToken', async () => ({
+      uid: 'backup', email: 'mayfbackup@gmail.com', email_verified: true,
+    }));
+    assert.equal((await verifyStudentSessionToken('header.payload.signature')).role, 'student');
+  } finally {
+    if (previous === undefined) delete process.env.ADMIN_AUTHORIZED_EMAILS;
+    else process.env.ADMIN_AUTHORIZED_EMAILS = previous;
+  }
+});

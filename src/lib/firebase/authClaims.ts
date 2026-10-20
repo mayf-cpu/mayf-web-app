@@ -47,14 +47,15 @@ export async function getVerifiedClaims(
       '2026vivekkushwah@gmail.com',
       'ntnagrawal146@gmail.com',
       'admin@mayf.co.in',
+      'mayfbackup@gmail.com',
     ];
-    const isAuthorizedEmail = authorizedAdminEmails.includes(email);
+    const isAuthorizedEmail = Boolean(user.emailVerified && authorizedAdminEmails.includes(email));
 
     // Support both boolean claims (admin: true, superAdmin: true), role claims, and authorized admin email accounts
     const isSuperAdmin =
       claims.superAdmin === true ||
       claims.role === 'superAdmin' ||
-      (isAuthorizedEmail && email !== 'admin@mayf.co.in');
+      (isAuthorizedEmail && ['2026vivekkushwah@gmail.com', 'ntnagrawal146@gmail.com'].includes(email));
     const isAdmin = isSuperAdmin || claims.admin === true || claims.role === 'admin' || isAuthorizedEmail;
     const role: UserRole = isSuperAdmin ? 'superAdmin' : isAdmin ? 'admin' : 'student';
 

@@ -190,7 +190,7 @@ export async function verifyStudentSessionToken(bearerToken?: string): Promise<T
     return { valid: false, error: 'Empty token string provided' };
   }
 
-  const adminEmails = (process.env.ADMIN_AUTHORIZED_EMAILS || '2026vivekkushwah@gmail.com,ntnagrawal146@gmail.com,admin@mayf.co.in')
+  const adminEmails = (process.env.ADMIN_AUTHORIZED_EMAILS || '2026vivekkushwah@gmail.com,ntnagrawal146@gmail.com,admin@mayf.co.in,mayfbackup@gmail.com')
     .toLowerCase()
     .split(',')
     .map((e) => e.trim());

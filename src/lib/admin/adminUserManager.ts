@@ -79,7 +79,7 @@ class AdminUserManager {
     cloudflareAccessAud: '566895799712-cfaccess-aud-mayf-2026',
     cloudflareTeamDomain: 'mayf.cloudflareaccess.com',
     requireCloudflareAccess: false,
-    authorizedAdminEmails: (process.env.ADMIN_AUTHORIZED_EMAILS || '2026vivekkushwah@gmail.com,ntnagrawal146@gmail.com,admin@mayf.co.in')
+    authorizedAdminEmails: (process.env.ADMIN_AUTHORIZED_EMAILS || '2026vivekkushwah@gmail.com,ntnagrawal146@gmail.com,admin@mayf.co.in,mayfbackup@gmail.com')
       .split(',')
       .map((e) => e.trim().toLowerCase()),
     emergencyMaintenanceMode: false,

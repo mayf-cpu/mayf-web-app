@@ -2,6 +2,9 @@
 
 ## Current repair pass
 
+Resumed authenticated testing: Google sign-in succeeded for the owner-confirmed backup administrator, but `/api/admin/verify-access` rejected the account because the default approved-email list omitted it. Added verified-email administrator access for that account consistently in server verification, actual-user listing and client claims. The two existing owner accounts retain their existing super-administrator mapping. Explicit ADMIN_AUTHORIZED_EMAILS overrides remain authoritative and can revoke default email access. New server/client regressions cover this configuration (40 tests total); live access must be checked after preview deployment.
+
+
 Additional browser finding: navigation from an already open tab during preview deployment failed to fetch an old lazy-loaded chunk, then the root error fallback crashed because it used a NavigationProvider-dependent layout outside that provider. The fallback now renders independently and reloads the document to obtain current assets. A provider-free rendering regression test passes. After reloading, the Formula Deck displays 26 formulas and its Class 5 filter displays two formulas.
 
 
