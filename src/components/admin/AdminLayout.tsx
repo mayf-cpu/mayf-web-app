@@ -256,7 +256,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
         </aside>
 
         {/* Content Area */}
-        <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 overflow-y-auto bg-[#0B1120]">
+        <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 overflow-y-auto bg-slate-50 text-slate-900">
           <div className="max-w-[1240px] mx-auto">{children}</div>
         </main>
       </div>
