@@ -21,6 +21,7 @@ import { getDownloadableItem } from './src/lib/download/downloadRegistry';
 import { pdfExists, readVerifiedPdf } from './src/lib/download/pdfObjectStorage';
 import { DurableDownloadTokens } from './src/lib/download/durableDownloadTokens';
 import { DurableDownloadLimiter } from './src/lib/download/durableDownloadLimiter';
+import { DurableDownloadAudit } from './src/lib/download/durableDownloadAudit';
 import { FORMULA_DECK_ITEMS } from './src/data/formulaDeckData';
 import { paymentService } from './src/lib/payments/paymentService';
 import { isProductionPaymentRuntime } from './src/lib/payments/runtime';
@@ -483,7 +484,7 @@ interface DownloadAuditLog {
 
 const DOWNLOAD_AUDIT_LOGS: DownloadAuditLog[] = [];
 
-function logDownloadAudit(params: {
+async function logDownloadAudit(params: {
   contentId: string;
   uid: string | null;
   accessType: 'free' | 'paid';
@@ -511,9 +512,14 @@ function logDownloadAudit(params: {
     },
   };
 
-  DOWNLOAD_AUDIT_LOGS.unshift(entry);
-  if (DOWNLOAD_AUDIT_LOGS.length > 500) {
-    DOWNLOAD_AUDIT_LOGS.pop();
+  const db = getAdminFirestore();
+  if (db) {
+    await new DurableDownloadAudit(db).record(entry);
+  } else if (isProductionPaymentRuntime()) {
+    throw new Error('Download audit persistence unavailable');
+  } else {
+    DOWNLOAD_AUDIT_LOGS.unshift(entry);
+    if (DOWNLOAD_AUDIT_LOGS.length > 500) DOWNLOAD_AUDIT_LOGS.pop();
   }
 
   console.info(`[MAYF Download Audit] ${params.action} | ${params.contentId} | ${params.accessType} | ${params.status}${params.reason ? ` | ${params.reason}` : ''}`);
@@ -554,7 +560,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
 
   // Rate Limiting: max 10 authorization attempts per minute per IP
   if (await checkDownloadRateLimit(`auth-ip-${rawIp}`, 10, 60 * 1000)) {
-    logDownloadAudit({
+    await logDownloadAudit({
       contentId: req.body?.contentId || 'unknown',
       uid: null,
       accessType: 'free',
@@ -581,7 +587,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
     // Lookup item in download registry
     const item = getDownloadableItem(contentId);
     if (!item) {
-      logDownloadAudit({
+      await logDownloadAudit({
         contentId,
         uid: null,
         accessType: 'free',
@@ -594,7 +600,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
     }
 
     if (!item.downloadAllowed) {
-      logDownloadAudit({
+      await logDownloadAudit({
         contentId,
         uid: null,
         accessType: item.accessType,
@@ -609,7 +615,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
     // Turnstile Server-Side Verification (Managed mode / Siteverify)
     const turnstileResult = await verifyTurnstileTokenServer(turnstileToken, rawIp);
     if (!turnstileResult.success) {
-      logDownloadAudit({
+      await logDownloadAudit({
         contentId,
         uid: null,
         accessType: item.accessType,
@@ -649,7 +655,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
     // Access control: PAID files require verified authentication & entitlement
     if (item.accessType === 'paid') {
       if (!authHeader || !verifiedUid) {
-        logDownloadAudit({
+        await logDownloadAudit({
           contentId,
           uid: null,
           accessType: 'paid',
@@ -666,7 +672,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
 
       if (!userHasEntitlement) {
         const passCheck = await getAuthoritativePassStatus(verifiedUid);
-        logDownloadAudit({
+        await logDownloadAudit({
           contentId,
           uid: verifiedUid,
           accessType: 'paid',
@@ -685,7 +691,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
 
     // Authorize only real objects in the private R2 PDF bucket.
     if (!(await pdfExists(item.id))) {
-      logDownloadAudit({
+      await logDownloadAudit({
         contentId: item.id, uid: verifiedUid, accessType: item.accessType,
         status: 'failed', action: 'authorize', reason: 'PDF asset is not uploaded to private R2 storage', req,
       });
@@ -704,7 +710,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
       accessType: item.accessType, uid: verifiedUid, clientIpHash,
       expiresAt: Date.now() + expiresInSeconds * 1000,
     });
-    logDownloadAudit({ contentId: item.id, uid: verifiedUid,
+    await logDownloadAudit({ contentId: item.id, uid: verifiedUid,
       accessType: item.accessType, status: 'successful', action: 'authorize', req });
     return res.json({ success: true, downloadUrl: `/api/downloads/file/${downloadToken}`,
       fileName: item.fileName, expiresInSeconds });
@@ -761,7 +767,7 @@ app.get('/api/downloads/file/:token', asyncRoute(async (req: Request, res: Respo
   // Ensure requesting IP matches the IP that authorized the token
   const callerIpHash = crypto.createHash('sha256').update(rawIp).digest('hex').substring(0, 16);
   if (tokenRecord.clientIpHash && tokenRecord.clientIpHash !== callerIpHash) {
-    logDownloadAudit({
+    await logDownloadAudit({
       contentId: tokenRecord.contentId,
       uid: tokenRecord.uid,
       accessType: tokenRecord.accessType,
@@ -777,7 +783,7 @@ app.get('/api/downloads/file/:token', asyncRoute(async (req: Request, res: Respo
 
   const pdf = await readVerifiedPdf(tokenRecord.contentId);
   if (!pdf) {
-    logDownloadAudit({
+    await logDownloadAudit({
       contentId: tokenRecord.contentId, uid: tokenRecord.uid,
       accessType: tokenRecord.accessType, status: 'failed',
       action: 'file_served', reason: 'Private R2 PDF missing, invalid, or too large', req,
@@ -798,7 +804,7 @@ app.get('/api/downloads/file/:token', asyncRoute(async (req: Request, res: Respo
   res.setHeader('Content-Length', String(pdf.byteLength));
   res.setHeader('Cache-Control', 'no-store, private');
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  logDownloadAudit({
+  await logDownloadAudit({
     contentId: tokenRecord.contentId, uid: tokenRecord.uid,
     accessType: tokenRecord.accessType, status: 'successful', action: 'file_served', req,
   });
@@ -808,13 +814,14 @@ app.get('/api/downloads/file/:token', asyncRoute(async (req: Request, res: Respo
 /**
  * Admin Download Audit Logs Endpoint
  */
-app.get('/api/admin/downloads/audit-logs', requireAuth, requireAdmin, (_req: Request, res: Response) => {
-  return res.json({
-    success: true,
-    totalLogs: DOWNLOAD_AUDIT_LOGS.length,
-    logs: DOWNLOAD_AUDIT_LOGS,
+app.get('/api/admin/downloads/audit-logs', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  const db = getAdminFirestore();
+  if (!db && isProductionPaymentRuntime()) return res.status(503).json({
+    success: false, error: 'Download audit database unavailable',
   });
-});
+  const logs = db ? await new DurableDownloadAudit(db).recent() : DOWNLOAD_AUDIT_LOGS;
+  return res.json({ success: true, totalLogs: logs.length, logs });
+}));
 
 // -------------------------------------------------------------
 // Provider-Independent Payment Gateway API
