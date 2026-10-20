@@ -2,6 +2,11 @@
 
 ## Current repair pass
 
+Live preview read checks: catalogue returns 20 first-page records, Class 5 filter returns 3, and Pythagoras search returns 2. Health, site settings, homepage layout, AdSense configuration, broadcasts, annual-pass configuration and AI configuration return JSON 200; anonymous admin content returns JSON 401. These response checks do not prove every feature behind those configuration endpoints works.
+
+Browser: public catalogue loads, Load More appends the remaining five resources, and Class 5 filtering displays the three matching resources. The testing browser reached the Google account chooser and password step, but authenticated testing remains blocked by credential approval review. No live admin writes were performed. Fixed the catalogue search field searching only loaded items: it now queries all records with the search filter and ignores superseded responses.
+
+
 Second repair batch: actual Firebase Auth pagination now feeds student/admin lists; account operations fetch current records, preserve unrelated claims and surface Firebase failures. The add-admin endpoint now actually writes Firebase claims. Ordinary admins cannot modify administrator accounts. Async API rejections now reach JSON error middleware. Removed sample student-list and dashboard-metric fallbacks from these client methods. Five additional local regression tests pass (34 total). Authenticated live account mutations remain untested; no real users were disabled or deleted during tests.
 
 

@@ -19,6 +19,7 @@ export type CatalogueSortOption = 'latest' | 'popular' | 'most_viewed' | 'alpha'
 export type DifficultyLevel = 'Foundation' | 'Standard' | 'Exemplar / Board';
 
 export interface CatalogueFilters {
+  search?: string;
   classLevel?: StudentClass | 'All';
   categoryId?: string | 'All';
   subcategoryId?: string | 'All';
