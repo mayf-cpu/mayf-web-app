@@ -13,6 +13,7 @@ import { ContentRegistryRow, IngestionJobRecord, ImportJobStatus, WebhookIngestR
 import { copyDriveFileToProductionStorage } from './driveStorageAdapter';
 import { ContentItem, StudentClass, ContentType } from '../firebase/types';
 import { getAdminFirestore } from '../firebase/admin';
+import { importPublicationPolicy } from './importPublicationPolicy';
 
 // In-memory persistent job store (synced with Firestore /importJobs in live environment)
 export let INGESTION_JOBS_STORE: IngestionJobRecord[] = [
@@ -392,28 +393,17 @@ export async function processRegistryRow(
   }
   const existing = await db.collection('contentItems').doc(firestoreId).get();
   const previous = existing.exists ? existing.data() || {} : {};
-  // Re-sync refreshes assets/metadata, but must never resurrect archived or
-  // deleted material, or silently override a deliberate admin unpublish.
-  const adminRestricted = previous.isDeleted === true ||
-    previous.status === 'archived' ||
-    previous.status === 'hidden' ||
-    previous.status === 'draft' ||
-    (existing.exists && previous.visible === false);
-  const publishOnImport = isPubliclyVisible && !adminRestricted;
+  const publication = importPublicationPolicy(previous, existing.exists, isPubliclyVisible);
   await db.commit([{
     collection: 'contentItems', id: firestoreId,
     ...(existing.updateTime ? { updateTime: existing.updateTime } : {}),
     data: {
       ...previous,
       ...contentDoc,
-      status: adminRestricted && typeof previous.status === 'string' ?
-        previous.status : (publishOnImport ? 'published' : 'hidden'),
-      isDeleted: previous.isDeleted === true,
+      ...publication,
       sourceDriveId: row.drive_file_id,
       importStatus: 'imported',
       lastSync: timestamp,
-      visibilityStatus: publishOnImport ? 'Visible' : (previous.visibilityStatus === 'Archived' ? 'Archived' : 'Hidden'),
-      visible: publishOnImport,
     },
   }]);
 
