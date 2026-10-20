@@ -750,58 +750,26 @@ app.get('/api/downloads/file/:token', asyncRoute(async (req: Request, res: Respo
     });
   }
 
-  // Enforce single-use: invalidate token immediately
-  tokenRecord.used = true;
-  DOWNLOAD_TOKENS_STORE.delete(token);
-
-  const item = getDownloadableItem(tokenRecord.contentId);
-  const safeFileName = (tokenRecord.fileName || 'MAYF_Document.pdf').replace(/[^\w.-]/g, '_');
-
-  // Security Headers: anti-caching, no-sniff, secure attachment
-  res.setHeader('Content-Disposition', `attachment; filename="${safeFileName}"`);
-  res.setHeader('Content-Type', tokenRecord.mimeType || 'application/pdf');
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-
+  // No real binary asset is currently connected to this registry entry.
+  // Do not return generated UTF-8 text with a PDF content-type: browsers
+  // interpret that as a corrupt PDF, and it falsely reports a download.
+  // Keep the authorization token unused so a future storage integration
+  // can resolve it correctly within its existing expiration window.
   logDownloadAudit({
     contentId: tokenRecord.contentId,
     uid: tokenRecord.uid,
     accessType: tokenRecord.accessType,
-    status: 'successful',
+    status: 'failed',
     action: 'file_served',
+    reason: 'Actual file storage has not been connected',
     req,
   });
-
-  // Synthesize verified high-density educational study content
-  const documentBody =
-    `======================================================================\n` +
-    `  MATHS AT YOUR FINGERTIPS (mayf.co.in) - OFFICIAL EDUCATIONAL RESOURCE\n` +
-    `======================================================================\n\n` +
-    `Document:    ${item?.title || tokenRecord.contentId}\n` +
-    `Grade Level: ${item?.classLevel || 'Class 5–10 CBSE & ICSE'}\n` +
-    `Category:    ${item?.category || 'Mathematics Revision'}\n` +
-    `Access Tier: ${tokenRecord.accessType === 'paid' ? 'Verified Annual Pass / Pro Entitlement' : 'Public Free Resource'}\n` +
-    `User ID:     ${tokenRecord.uid ? `UID:${tokenRecord.uid}` : 'Public Anonymous Learner'}\n` +
-    `Issued At:   ${new Date().toISOString()}\n` +
-    `Security:    Cloudflare Turnstile Verified Single-Use Authorization\n\n` +
-    `----------------------------------------------------------------------\n` +
-    `RESOURCE OVERVIEW & SYLLABUS ALIGNMENT:\n` +
-    `----------------------------------------------------------------------\n` +
-    `${item?.description || 'Official CBSE & ICSE Mathematics Revision Asset.'}\n\n` +
-    `----------------------------------------------------------------------\n` +
-    `CORE MATHEMATICAL CONCEPTS & FORMULA REFERENCE:\n` +
-    `----------------------------------------------------------------------\n` +
-    `* Real Numbers: Fundamental Theorem of Arithmetic, Euclid Lemma a = bq + r.\n` +
-    `* Polynomials: Quadratic roots sum = -b/a, product = c/a.\n` +
-    `* Quadratic Formula: x = (-b +- sqrt(b^2 - 4ac)) / 2a.\n` +
-    `* Arithmetic Progressions: a_n = a + (n-1)d, S_n = (n/2)(2a + (n-1)d).\n` +
-    `* Trigonometry: sin^2(x) + cos^2(x) = 1, 1 + tan^2(x) = sec^2(x).\n` +
-    `* Coordinate Geometry: Distance formula, Section formula ((m1x2+m2x1)/(m1+m2), (m1y2+m2y1)/(m1+m2)).\n` +
-    `* Geometry: Basic Proportionality Theorem (Thales), Tangent equality theorem.\n` +
-    `* Mensuration: Cylinder Vol = pi*r^2*h, Cone Vol = 1/3*pi*r^2*h, Sphere Vol = 4/3*pi*r^3.\n\n` +
-    `Verified by Professor Sigma. Maths at Your Fingertips (c) 2026 mayf.co.in.\n`;
-
-  return res.send(Buffer.from(documentBody, 'utf-8'));
+  res.setHeader('Cache-Control', 'no-store');
+  return res.status(503).json({
+    success: false,
+    code: 'FILE_NOT_AVAILABLE',
+    error: 'This study material file is not available for download yet. Please try again later.',
+  });
 }));
 
 /**
