@@ -84,11 +84,11 @@ test('duplicate order ID cannot overwrite a previously persisted order', async (
 test('the same gateway payment cannot settle a second order under a different event ID', async () => {
   const { repo, docs } = fixture();
   await repo.createOrder(order);
-  await repo.createOrder({ ...order, orderId: 'ord-2', userId: 'student-2' });
+  await repo.createOrder({ ...order, orderId: 'ord-2', userId: 'student-2', providerOrderId: 'gateway-2' });
   assert.equal(await repo.settleVerifiedPayment(payment), 'settled');
   const secondEntitlement = { ...entitlement, id: 'ent-2', userId: 'student-2', orderId: 'ord-2' };
   await assert.rejects(repo.settleVerifiedPayment({
-    ...payment, orderId: 'ord-2', eventId: 'evt-2', entitlement: secondEntitlement,
+    ...payment, orderId: 'ord-2', providerOrderId: 'gateway-2', eventId: 'evt-2', entitlement: secondEntitlement,
   }), /payment claim conflicts with this order/);
   assert.equal((await repo.getOrder('ord-2'))?.status, 'created');
   assert.equal(docs.has('paymentEntitlements/ent-2'), false);
