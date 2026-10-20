@@ -73,7 +73,13 @@ export class DurablePaymentRepository {
     // the gateway sends different event IDs for the same payment.
     const paymentClaimId = validId(provider + ':' + providerPaymentId);
     const eventRef = await this.store.collection(EVENT_COLLECTION).doc(eventKey).get();
-    if (eventRef.exists) return 'duplicate';
+    if (eventRef.exists) {
+      const recorded = eventRef.data();
+      if (recorded?.orderId === orderId && recorded?.provider === provider &&
+          recorded?.providerOrderId === providerOrderId &&
+          recorded?.providerPaymentId === providerPaymentId) return 'duplicate';
+      throw new Error('Webhook event identifier conflicts with another payment');
+    }
 
     const existingClaim = await this.store.collection(PAYMENT_CLAIM_COLLECTION).doc(paymentClaimId).get();
     if (existingClaim.exists) {
