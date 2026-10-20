@@ -27,7 +27,7 @@ export class DurableEntitlementReader {
       .filter(e => e && e.userId === userId && e.type === 'annual_pass' &&
         e.status === 'active' &&
         Number.isFinite(Date.parse(e.startsAt)) && Number.isFinite(Date.parse(e.expiresAt)) &&
-        Date.parse(e.startsAt) <= nowMs && Date.parse(e.expiresAt) > nowMs)
+        Date.parse(e.startsAt) <= nowMs)
       .sort((a, b) => Date.parse(b.expiresAt) - Date.parse(a.expiresAt));
     const active = passes[0];
     if (!active) return { active: false, daysRemaining: 0, reason: 'No active Annual Pass found for student' };
