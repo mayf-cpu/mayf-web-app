@@ -7,7 +7,7 @@ function bucket(bytes: Uint8Array, name = 'pdf/dl-10-cheatsheet.pdf') {
     head: async (key: string) => key === name ? { size: bytes.byteLength } : null,
     get: async (key: string) => key === name ? {
       size: bytes.byteLength,
-      body: new Response(bytes).body,
+      body: new Response(Buffer.from(bytes)).body,
       httpMetadata: { contentType: 'application/pdf' },
     } : null,
   };
