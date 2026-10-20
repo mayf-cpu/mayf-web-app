@@ -55,9 +55,10 @@ test('durable repository atomically creates order and settles payment', async ()
   assert.equal(await repo.settleVerifiedPayment(payment), 'settled');
   assert.equal((await repo.getOrder(order.orderId))?.status, 'paid');
   assert.equal(docs.get('paymentEntitlements/ent-1')?.data.userId, 'student-1');
-  assert.equal(docs.size, 4);
+  assert.equal(docs.size, 5);
+  assert.deepEqual((await repo.getOrderByProviderOrderId('razorpay', 'gateway-1'))?.orderId, 'ord-1');
   assert.equal(await repo.settleVerifiedPayment(payment), 'duplicate');
-  assert.equal(docs.size, 4);
+  assert.equal(docs.size, 5);
 });
 
 test('unknown orders and mismatched owner/provider/payment cannot grant access', async () => {
@@ -69,7 +70,7 @@ test('unknown orders and mismatched owner/provider/payment cannot grant access',
     { entitlement: { ...entitlement, userId: 'attacker' } },
     { entitlement: { ...entitlement, paymentId: 'other-payment' } },
   ]) await assert.rejects(repo.settleVerifiedPayment({ ...payment, ...override }), /does not match/);
-  assert.equal(docs.size, 1);
+  assert.equal(docs.size, 2);
   assert.equal((await repo.getOrder('ord-1'))?.status, 'created');
 });
 
@@ -83,11 +84,11 @@ test('duplicate order ID cannot overwrite a previously persisted order', async (
 test('the same gateway payment cannot settle a second order under a different event ID', async () => {
   const { repo, docs } = fixture();
   await repo.createOrder(order);
-  await repo.createOrder({ ...order, orderId: 'ord-2', userId: 'student-2' });
+  await repo.createOrder({ ...order, orderId: 'ord-2', userId: 'student-2', providerOrderId: 'gateway-2' });
   assert.equal(await repo.settleVerifiedPayment(payment), 'settled');
   const secondEntitlement = { ...entitlement, id: 'ent-2', userId: 'student-2', orderId: 'ord-2' };
   await assert.rejects(repo.settleVerifiedPayment({
-    ...payment, orderId: 'ord-2', eventId: 'evt-2', entitlement: secondEntitlement,
+    ...payment, orderId: 'ord-2', providerOrderId: 'gateway-2', eventId: 'evt-2', entitlement: secondEntitlement,
   }), /payment claim conflicts with this order/);
   assert.equal((await repo.getOrder('ord-2'))?.status, 'created');
   assert.equal(docs.has('paymentEntitlements/ent-2'), false);
@@ -134,6 +135,16 @@ test('missing gateway identifiers fail closed and cannot write payment records',
   ]) {
     await assert.rejects(repo.settleVerifiedPayment({ ...payment, ...override }), /identifiers are required/);
   }
-  assert.equal(docs.size, 1);
+  assert.equal(docs.size, 2);
   assert.equal((await repo.getOrder(order.orderId))?.status, 'created');
+});
+
+test('gateway order index resolves across new repository instances and rejects wrong provider', async () => {
+  const { repo, docs } = fixture();
+  await repo.createOrder(order);
+  assert.equal((await repo.getOrderByProviderOrderId('razorpay', 'gateway-1'))?.userId, 'student-1');
+  assert.equal(await repo.getOrderByProviderOrderId('stripe', 'gateway-1'), null);
+  assert.equal(await repo.getOrderByProviderOrderId('razorpay', 'missing'), null);
+  docs.get('paymentProviderOrders/razorpay:gateway-1')!.data.orderId = 'missing-order';
+  await assert.rejects(repo.getOrderByProviderOrderId('razorpay', 'gateway-1'), /does not match/);
 });

@@ -7,6 +7,7 @@ import { FirestoreDocumentStore } from '../firebase/documentStore';
 import type { StoredOrder, Entitlement, PaymentProvider } from './types';
 
 const ORDER_COLLECTION = 'paymentOrders';
+const PROVIDER_ORDER_COLLECTION = 'paymentProviderOrders';
 const EVENT_COLLECTION = 'paymentWebhookEvents';
 const PAYMENT_CLAIM_COLLECTION = 'paymentProviderClaims';
 const ENTITLEMENT_COLLECTION = 'paymentEntitlements';
@@ -21,15 +22,32 @@ export class DurablePaymentRepository {
 
   async createOrder(order: StoredOrder): Promise<void> {
     if (order.status !== 'created' && order.status !== 'pending') throw new Error('New payment order cannot be settled');
-    await this.store.commit([{
-      collection: ORDER_COLLECTION, id: validId(order.orderId),
-      data: { ...order },
-    }]);
+    if (!order.providerOrderId?.trim()) throw new Error('Gateway order identifier is required');
+    const providerKey = validId(order.provider + ':' + order.providerOrderId);
+    await this.store.commit([
+      { collection: ORDER_COLLECTION, id: validId(order.orderId), data: { ...order } },
+      { collection: PROVIDER_ORDER_COLLECTION, id: providerKey,
+        data: { orderId: order.orderId, provider: order.provider, providerOrderId: order.providerOrderId } },
+    ]);
   }
 
   async getOrder(orderId: string): Promise<StoredOrder | null> {
     const doc = await this.store.collection(ORDER_COLLECTION).doc(validId(orderId)).get();
     return doc.exists ? doc.data() as StoredOrder : null;
+  }
+
+  /** Resolve a verified webhook's provider order ID without relying on isolate memory. */
+  async getOrderByProviderOrderId(provider: PaymentProvider, providerOrderId: string): Promise<StoredOrder | null> {
+    const key = validId(provider + ':' + validId(providerOrderId));
+    const index = await this.store.collection(PROVIDER_ORDER_COLLECTION).doc(key).get();
+    if (!index.exists) return null;
+    const id = index.data()?.orderId;
+    if (typeof id !== 'string') throw new Error('Corrupt payment provider order index');
+    const order = await this.getOrder(id);
+    if (!order || order.provider !== provider || order.providerOrderId !== providerOrderId) {
+      throw new Error('Payment provider order index does not match persisted order');
+    }
+    return order;
   }
 
   /**
