@@ -1,3 +1,4 @@
+import { canReadPremiumContent, publicContent } from './src/lib/catalogue/catalogueAccess';
 import { asyncRoute } from './src/lib/http/asyncRoute';
 import { filterCatalogue } from './src/lib/catalogue/catalogueQuery';
 import { catalogueRepository, catalogueRoute } from './src/lib/cms/catalogueRepository';
@@ -2031,26 +2032,21 @@ app.post('/api/admin/orders/:orderId/refund', requireAuth, requireAdmin, (req: A
  * 19. List Content CMS Items
  * Supports search, classLevel, contentType, accessType, visibility, tab, sortBy
  */
-function publicContent(item: any) {
-  const { sourceDriveId, sourceDriveFileId, sales, archivedBy, archivedReason, ...publicItem } = item;
-  if (item.accessType !== 'free') {
-    publicItem.files = [];
-    publicItem.embedUrl = '';
-    publicItem.galleryImages = [];
-  }
-  return publicItem;
-}
 app.get('/api/catalogue', catalogueRoute(false, (req, res) => {
   const pageSize = Math.max(1, Math.min(20, Number(req.query.pageSize) || 20));
   const offset = Math.max(0, Math.floor(Number(req.query.offset) || 0));
   const filters = { ...req.query, featuredOnly: req.query.featuredOnly === 'true' };
   const result = filterCatalogue(contentCmsManager.exportState() as any, filters as any, { offset } as any, pageSize);
   res.setHeader?.('Cache-Control', 'no-store');
-  return res.json({ ...result, items: result.items.map(publicContent) });
+  return res.json({ ...result, items: result.items.map(item => publicContent(item)) });
 }));
-app.get('/api/catalogue/by-slug/:slug', catalogueRoute(false, (req, res) => {
-  const item = contentCmsManager.exportState().find(item => item.slug === req.params.slug && item.visible && (!item.status || item.status === 'published') && !item.isDeleted);
-  return item ? res.json({ item: publicContent(item) }) : res.status(404).json({ error: 'Resource not found' });
+app.get('/api/catalogue/by-slug/:slug', asyncRoute(async (req, res) => {
+  const verified = req.headers.authorization ? await verifyStudentSessionToken(req.headers.authorization) : null;
+  const item = await catalogueRepository.run(() => contentCmsManager.exportState().find(item => item.slug === req.params.slug && item.visible && (!item.status || item.status === 'published') && !item.isDeleted));
+  if (!item) return res.status(404).json({ error: 'Resource not found' });
+  const canAccess = canReadPremiumContent(verified, item.annualPassIncluded);
+  res.setHeader('Cache-Control', 'private, no-store');
+  return res.json({ item: publicContent(item, canAccess) });
 }));
 
 app.get('/api/admin/content', requireAuth, requireAdmin, catalogueRoute(false, (req: AuthenticatedRequest, res: Response) => {

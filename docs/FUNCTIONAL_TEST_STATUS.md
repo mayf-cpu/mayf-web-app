@@ -2,6 +2,11 @@
 
 ## Current repair pass
 
+Final local batch: 36 regression tests, TypeScript, Vite build and four workerd API checks pass. Premium resource lookup sends a Firebase ID token and returns paid file locations only after verified access checks; anonymous catalogue lists omit these locations. Expired-pass and invalid-token cases are covered with fixtures. This does not repair durable order entitlements or validate real paid media delivery.
+
+Browser PDF check failed: the Class 5 factors/multiples resource page loads, but its example raw.githubusercontent.com PDF iframe displays “This page has been blocked by Chromium.” Real owner-supplied curriculum files and working protected download delivery remain required; this is not a passing PDF test. Cloudflare confirms preview commit d5883c3 built/deployed successfully, including the first three repair batches.
+
+
 Live preview read checks: catalogue returns 20 first-page records, Class 5 filter returns 3, and Pythagoras search returns 2. Health, site settings, homepage layout, AdSense configuration, broadcasts, annual-pass configuration and AI configuration return JSON 200; anonymous admin content returns JSON 401. These response checks do not prove every feature behind those configuration endpoints works.
 
 Browser: public catalogue loads, Load More appends the remaining five resources, and Class 5 filtering displays the three matching resources. The testing browser reached the Google account chooser and password step, but authenticated testing remains blocked by credential approval review. No live admin writes were performed. Fixed the catalogue search field searching only loaded items: it now queries all records with the search filter and ignores superseded responses.

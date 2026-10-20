@@ -10,6 +10,7 @@
  * 6. Multi-format content viewers: PDF, multi-image, single image, HTML5 video, YouTube, Facebook, Test Papers, Courses.
  */
 
+import { auth } from '../firebase/client';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
 import { ContentItem, StudentClass, ContentAccessType, ContentType } from '../firebase/types';
 import { ParsedUserEntitlements } from '../firebase/authClaims';
@@ -65,7 +66,10 @@ export async function fetchContentCatalogue(
 }
 
 export async function fetchContentItemBySlug(slug: string): Promise<ContentItem | null> {
-  const response = await fetch(`/api/catalogue/by-slug/${encodeURIComponent(slug)}`);
+  const token = auth.currentUser ? await auth.currentUser.getIdToken() : null;
+  const response = await fetch(`/api/catalogue/by-slug/${encodeURIComponent(slug)}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
   if (response.status === 404) return null;
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || 'Unable to load this resource');
