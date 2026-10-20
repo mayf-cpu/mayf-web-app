@@ -19,7 +19,7 @@ import { ContentRegistryRow } from './src/lib/ingestion/types';
 import crypto from 'crypto';
 import { getDownloadableItem } from './src/lib/download/downloadRegistry';
 import { resolveDownloadableItem } from './src/lib/download/cmsDownloadResolver';
-import { pdfExists, readVerifiedPdf } from './src/lib/download/pdfObjectStorage';
+import { pdfExists, readVerifiedPdf, getPdfBucket } from './src/lib/download/pdfObjectStorage';
 import { DurableDownloadTokens } from './src/lib/download/durableDownloadTokens';
 import { DurableDownloadLimiter } from './src/lib/download/durableDownloadLimiter';
 import { DurableDownloadAudit } from './src/lib/download/durableDownloadAudit';
@@ -1620,6 +1620,32 @@ app.post('/api/admin/set-claims', requireAuth, requireSuperAdmin, asyncRoute(asy
  * Verifies Firebase ID Token, checks custom claims (admin/superAdmin),
  * and returns authorization status. Rejects students with 403.
  */
+/**
+ * Staging operator diagnostics: credential presence is not a successful
+ * connection test. Never expose credentials, bucket objects or file IDs.
+ */
+app.get('/api/admin/storage-readiness', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  const firestore = getAdminFirestore();
+  const pdfBucket = getPdfBucket();
+  const driveAccount = Boolean(process.env.GOOGLE_SERVICE_ACCOUNT_KEY || process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  const check = {
+    firestoreConfigured: Boolean(firestore && getFirebaseAdminConfig().isReady),
+    privateR2BucketBound: Boolean(pdfBucket),
+    privateR2UploadSupported: Boolean(pdfBucket?.put),
+    googleServiceAccountPresent: driveAccount,
+    verifiedPdfImportAvailable: Boolean(
+      firestore && pdfBucket?.put && driveAccount && getFirebaseAdminConfig().isReady
+    ),
+  };
+  return res.json({
+    success: true,
+    readiness: check,
+    note: 'Configuration-only check; real Google Drive and R2 transfers must be tested in staging.',
+  });
+}));
+
 app.get('/api/admin/verify-access', requireAuth, (req: AuthenticatedRequest, res: Response) => {
   res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   if (!req.userAuth || (req.userAuth.role !== 'admin' && req.userAuth.role !== 'superAdmin')) {
