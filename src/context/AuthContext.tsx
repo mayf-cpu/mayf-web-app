@@ -131,8 +131,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           '2026vivekkushwah@gmail.com',
           'ntnagrawal146@gmail.com',
           'admin@mayf.co.in',
+          'mayfbackup@gmail.com',
         ].includes(email);
-        const isSuper = claims.isSuperAdmin || (isAuthorizedEmail && email !== 'admin@mayf.co.in');
+        const isSuper = claims.isSuperAdmin || (isAuthorizedEmail && email !== 'admin@mayf.co.in' && email !== 'mayfbackup@gmail.com');
         const isAdmin = isSuper || claims.isAdmin || isAuthorizedEmail;
 
         const effectiveClaims: ParsedUserEntitlements = {
