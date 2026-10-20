@@ -933,7 +933,7 @@ async function handleVerifyPayment(req: AuthenticatedRequest, res: Response) {
     const verification = await paymentService.verifyPaymentSignature({
       orderId,
       userId,
-      provider: (provider as PaymentProvider) || 'razorpay',
+      provider: provider as PaymentProvider,
       providerOrderId: providerOrderId || razorpay_order_id || '',
       providerPaymentId: providerPaymentId || razorpay_payment_id || paymentGatewayTransactionId || '',
       signature: signature || razorpay_signature,
@@ -984,6 +984,10 @@ app.post('/api/payments/webhook/razorpay', async (req: Request, res: Response) =
       return res.status(400).json({ status: 'invalid_signature', error: result.message });
     }
 
+    if (!result.success) {
+      return res.status(503).json({ status: 'retry_required', error: result.message });
+    }
+
     // Provision entitlement ONLY on genuine first-time processed payment, NEVER on duplicate webhook replays!
     if (result.success && result.status === 'processed' && result.orderId) {
       const order = paymentService.getAllOrders().find((o) => o.orderId === result.orderId);
@@ -1021,6 +1025,10 @@ app.post('/api/payments/webhook/stripe', async (req: Request, res: Response) => 
     if (!result.success && result.status === 'signature_invalid') {
       console.warn('[MAYF Webhook] Stripe signature invalid');
       return res.status(400).json({ status: 'invalid_signature', error: result.message });
+    }
+
+    if (!result.success) {
+      return res.status(503).json({ status: 'retry_required', error: result.message });
     }
 
     // Provision entitlement ONLY on genuine first-time processed payment, NEVER on duplicate webhook replays!

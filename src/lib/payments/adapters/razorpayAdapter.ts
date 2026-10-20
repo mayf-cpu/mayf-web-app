@@ -239,8 +239,10 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
       payloadString = JSON.stringify(rawPayload);
     }
 
-    const eventId = payloadJson?.event_id || payloadJson?.id || `rzp_evt_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-    const eventType = payloadJson?.event || 'payment.captured';
+    const rawEventId = headers['x-razorpay-event-id'] || headers['X-Razorpay-Event-Id'];
+    const eventId = (Array.isArray(rawEventId) ? rawEventId[0] : rawEventId) ||
+      payloadJson?.event_id || payloadJson?.id || crypto.createHash('sha256').update(payloadString).digest('hex');
+    const eventType = payloadJson?.event || 'unknown';
 
     // Strictly mandate cryptographic signature header on all webhooks
     if (!signature) {
@@ -293,7 +295,7 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
 
     const providerPaymentId = paymentEntity?.id || payloadJson?.payment_id;
     const providerOrderId = paymentEntity?.order_id || orderEntity?.id || payloadJson?.order_id;
-    const rawAmount = paymentEntity?.amount || orderEntity?.amount;
+    const rawAmount = paymentEntity?.amount ?? orderEntity?.amount;
 
     let status: 'paid' | 'failed' | 'pending' = 'pending';
     if (eventType === 'payment.captured' || eventType === 'order.paid') {
@@ -310,8 +312,8 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
       providerOrderId,
       providerPaymentId,
       status,
-      rawAmount: rawAmount ? rawAmount / 100 : undefined,
-      currency: paymentEntity?.currency || 'INR',
+      rawAmount: typeof rawAmount === 'number' ? rawAmount / 100 : undefined,
+      currency: paymentEntity?.currency || orderEntity?.currency,
       metadata: payloadJson?.notes || {},
     };
   }
