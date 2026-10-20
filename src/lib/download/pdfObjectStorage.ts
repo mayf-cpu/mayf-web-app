@@ -11,6 +11,7 @@ export interface PdfR2Object {
 export interface PdfR2Bucket {
   head(key: string): Promise<{ size: number } | null>;
   get(key: string): Promise<PdfR2Object | null>;
+  put?(key: string, value: Uint8Array, options?: { httpMetadata?: { contentType: string } }): Promise<unknown>;
 }
 let bucket: PdfR2Bucket | null = null;
 export function configurePdfBucket(value: PdfR2Bucket | null): void { bucket = value; }
