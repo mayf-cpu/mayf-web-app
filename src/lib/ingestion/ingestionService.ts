@@ -12,6 +12,7 @@
 import { ContentRegistryRow, IngestionJobRecord, ImportJobStatus, WebhookIngestResponse } from './types';
 import { copyDriveFileToProductionStorage } from './driveStorageAdapter';
 import { ContentItem, StudentClass, ContentType } from '../firebase/types';
+import { getAdminFirestore } from '../firebase/admin';
 
 // In-memory persistent job store (synced with Firestore /importJobs in live environment)
 export let INGESTION_JOBS_STORE: IngestionJobRecord[] = [
@@ -381,6 +382,30 @@ export async function processRegistryRow(
     viewCount: 0,
     downloadCount: 0,
   };
+
+  // The R2 transfer alone is not a completed import. The CMS record must be
+  // committed durably before the job can be reported as imported.
+  const db = getAdminFirestore();
+  if (!db) throw new Error('CMS Firestore database is unavailable; import not published');
+  if (!/^[A-Za-z0-9_-]{1,150}$/.test(firestoreId)) {
+    throw new Error('Invalid CMS content ID for durable import');
+  }
+  const existing = await db.collection('contentItems').doc(firestoreId).get();
+  const previous = existing.exists ? existing.data() || {} : {};
+  await db.commit([{
+    collection: 'contentItems', id: firestoreId,
+    ...(existing.updateTime ? { updateTime: existing.updateTime } : {}),
+    data: {
+      ...previous,
+      ...contentDoc,
+      status: isPubliclyVisible ? 'published' : 'hidden',
+      isDeleted: false,
+      sourceDriveId: row.drive_file_id,
+      importStatus: 'imported',
+      lastSync: timestamp,
+      visibilityStatus: isPubliclyVisible ? 'Visible' : 'Hidden',
+    },
+  }]);
 
   // 4. Record successful Ingestion Job
   const successfulJob: IngestionJobRecord = {
