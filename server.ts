@@ -18,6 +18,7 @@ import {
 import { ContentRegistryRow } from './src/lib/ingestion/types';
 import crypto from 'crypto';
 import { getDownloadableItem } from './src/lib/download/downloadRegistry';
+import { resolveDownloadableItem } from './src/lib/download/cmsDownloadResolver';
 import { pdfExists, readVerifiedPdf } from './src/lib/download/pdfObjectStorage';
 import { DurableDownloadTokens } from './src/lib/download/durableDownloadTokens';
 import { DurableDownloadLimiter } from './src/lib/download/durableDownloadLimiter';
@@ -585,7 +586,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
     }
 
     // Lookup item in download registry
-    const item = getDownloadableItem(contentId);
+    const item = await resolveDownloadableItem(getAdminFirestore(), contentId);
     if (!item) {
       await logDownloadAudit({
         contentId,
