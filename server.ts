@@ -1,3 +1,4 @@
+import publicFirebaseConfig from './src/config/firebasePublicConfig.json';
 import express, { Request, Response, NextFunction } from 'express';
 import { GoogleGenAI } from '@google/genai';
 import { getFirebaseAdminConfig, getFirebaseAdminDiagnostics, verifyStudentSessionToken } from './src/lib/firebase/admin';
@@ -333,6 +334,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
     // Configuration presence is not proof of a successful external connection.
     firebaseConfigured: getFirebaseAdminConfig().isReady,
     firebaseConfiguration: getFirebaseAdminDiagnostics(),
+    firebaseProjectMatchesWebConfig: getFirebaseAdminConfig().projectId === publicFirebaseConfig.projectId,
     services: {
       geminiAiTeacher: Boolean(geminiApiKey),
       cloudflareTurnstile: Boolean(process.env.TURNSTILE_SECRET_KEY),
