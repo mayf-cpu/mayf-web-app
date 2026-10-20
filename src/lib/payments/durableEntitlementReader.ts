@@ -43,6 +43,12 @@ export class DurableEntitlementReader {
       if (cursor?.userId !== userId || !Number.isFinite(cursorExpiry)) {
         throw new Error('Annual Pass renewal cursor is invalid');
       }
+      // Bind the cursor to an unrevoked payment entitlement. A stale cursor
+      // cannot extend an unrelated or subsequently revoked purchase.
+      if (typeof cursor.lastOrderId !== 'string' ||
+          !passes.some(pass => pass.orderId === cursor.lastOrderId)) {
+        return { active: false, daysRemaining: 0, reason: 'Annual Pass payment requires reconciliation' };
+      }
       // A cursor created by a paid renewal may extend beyond every individual
       // entitlement document. Do not truncate it to an old entitlement snapshot.
       effectiveExpiry = cursorExpiry;
