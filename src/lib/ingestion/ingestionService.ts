@@ -13,6 +13,7 @@ import { ContentRegistryRow, IngestionJobRecord, ImportJobStatus, WebhookIngestR
 import { copyDriveFileToProductionStorage } from './driveStorageAdapter';
 import { ContentItem, StudentClass, ContentType } from '../firebase/types';
 import { getAdminFirestore } from '../firebase/admin';
+import { importPublicationPolicy } from './importPublicationPolicy';
 
 // In-memory persistent job store (synced with Firestore /importJobs in live environment)
 export let INGESTION_JOBS_STORE: IngestionJobRecord[] = [
@@ -392,18 +393,17 @@ export async function processRegistryRow(
   }
   const existing = await db.collection('contentItems').doc(firestoreId).get();
   const previous = existing.exists ? existing.data() || {} : {};
+  const publication = importPublicationPolicy(previous, existing.exists, isPubliclyVisible);
   await db.commit([{
     collection: 'contentItems', id: firestoreId,
     ...(existing.updateTime ? { updateTime: existing.updateTime } : {}),
     data: {
       ...previous,
       ...contentDoc,
-      status: isPubliclyVisible ? 'published' : 'hidden',
-      isDeleted: false,
+      ...publication,
       sourceDriveId: row.drive_file_id,
       importStatus: 'imported',
       lastSync: timestamp,
-      visibilityStatus: isPubliclyVisible ? 'Visible' : 'Hidden',
     },
   }]);
 
