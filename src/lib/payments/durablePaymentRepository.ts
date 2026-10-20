@@ -98,6 +98,17 @@ export class DurablePaymentRepository {
     return 'refunded';
   }
 
+  /** Find the furthest active paid-pass expiry for renewal calculation. */
+  async findLatestPaidPass(userId: string): Promise<Entitlement | null> {
+    if (!userId?.trim()) throw new Error('Student identifier is required');
+    const docs = await this.store.queryEqual(ENTITLEMENT_COLLECTION, 'userId', userId);
+    const matches = docs.map(doc => doc.data as Entitlement)
+      .filter(pass => pass.userId === userId && pass.type === 'annual_pass' &&
+        pass.status === 'active' && Number.isFinite(Date.parse(pass.expiresAt)))
+      .sort((a, b) => Date.parse(b.expiresAt) - Date.parse(a.expiresAt));
+    return matches[0] || null;
+  }
+
   async getOrder(orderId: string): Promise<StoredOrder | null> {
     const doc = await this.store.collection(ORDER_COLLECTION).doc(validId(orderId)).get();
     return doc.exists ? doc.data() as StoredOrder : null;
