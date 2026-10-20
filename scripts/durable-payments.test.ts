@@ -162,3 +162,36 @@ test('webhook event ID cannot be reused for a different payment or order', async
   assert.equal(docs.has('paymentEntitlements/ent-other'), false);
   assert.equal(await repo.settleVerifiedPayment(payment), 'duplicate');
 });
+
+test('verified full refund atomically revokes the paid pass and is idempotent', async () => {
+  const { repo, docs } = fixture();
+  await repo.createOrder(order);
+  await repo.settleVerifiedPayment({ ...payment, entitlement: { ...entitlement, id: 'payment-ord-1' } });
+  const args = {
+    orderId: 'ord-1', provider: 'razorpay' as const, providerOrderId: 'gateway-1',
+    providerPaymentId: 'pay-1', refundId: 'rfnd-1', eventId: 'evt-r1',
+    refundAmount: 100, currency: 'INR', refundedAt: '2026-10-22T00:00:00Z',
+  };
+  assert.equal(await repo.recordVerifiedFullRefund(args), 'refunded');
+  assert.equal((await repo.getOrder('ord-1'))?.status, 'refunded');
+  assert.equal(docs.get('paymentEntitlements/payment-ord-1')?.data.status, 'revoked');
+  const count = docs.size;
+  assert.equal(await repo.recordVerifiedFullRefund(args), 'duplicate');
+  assert.equal(docs.size, count);
+});
+
+test('partial refund, wrong payment and mismatched currency never revoke access', async () => {
+  const { repo, docs } = fixture();
+  await repo.createOrder(order);
+  await repo.settleVerifiedPayment({ ...payment, entitlement: { ...entitlement, id: 'payment-ord-1' } });
+  const args = {
+    orderId: 'ord-1', provider: 'razorpay' as const, providerOrderId: 'gateway-1',
+    providerPaymentId: 'pay-1', refundId: 'rfnd-2', eventId: 'evt-r2',
+    refundAmount: 100, currency: 'INR', refundedAt: '2026-10-22T00:00:00Z',
+  };
+  for (const change of [{ refundAmount: 50 }, { currency: 'USD' }, { providerPaymentId: 'pay-other' }]) {
+    await assert.rejects(repo.recordVerifiedFullRefund({ ...args, ...change }));
+  }
+  assert.equal((await repo.getOrder('ord-1'))?.status, 'paid');
+  assert.equal(docs.get('paymentEntitlements/payment-ord-1')?.data.status, 'active');
+});
