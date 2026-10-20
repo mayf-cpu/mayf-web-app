@@ -1078,14 +1078,20 @@ app.post('/api/payments/webhook/stripe', asyncRoute(async (req: Request, res: Re
 /**
  * 5. Student Orders Endpoint
  */
-app.get('/api/student/orders', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/student/orders', requireAuth, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.userAuth!.uid;
-  const userOrders = paymentService.getUserOrders(userId);
+  const db = getAdminFirestore();
+  if (!db && process.env.NODE_ENV === 'production') {
+    return res.status(503).json({ success: false, error: 'Payment history is temporarily unavailable' });
+  }
+  const userOrders = db
+    ? await new DurablePaymentRepository(db).getStudentOrders(userId)
+    : paymentService.getUserOrders(userId);
   return res.json({
     success: true,
     orders: userOrders,
   });
-});
+}));
 
 /**
  * 6. Admin Payment Settings (NEVER reveals stored plaintext secrets)
@@ -1115,8 +1121,14 @@ app.post('/api/admin/payments/settings', requireAuth, requireAdmin, (req: Reques
 /**
  * 7. Admin Orders Ledger & Audit
  */
-app.get('/api/admin/payments/orders', requireAuth, requireAdmin, (_req: Request, res: Response) => {
-  const orders = paymentService.getAllOrders();
+app.get('/api/admin/payments/orders', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  const db = getAdminFirestore();
+  if (!db && process.env.NODE_ENV === 'production') {
+    return res.status(503).json({ success: false, error: 'Payment ledger is temporarily unavailable' });
+  }
+  const orders = db
+    ? await new DurablePaymentRepository(db).getAllOrders()
+    : paymentService.getAllOrders();
   const summary = {
     totalOrders: orders.length,
     paidOrders: orders.filter((o) => o.status === 'paid').length,
@@ -1135,7 +1147,7 @@ app.get('/api/admin/payments/orders', requireAuth, requireAdmin, (_req: Request,
     summary,
     orders,
   });
-});
+}));
 
 /**
  * 8. Admin Webhook Idempotency Log
