@@ -34,13 +34,13 @@ class SiteSettingsService {
 
   constructor() {
     this.currentSettings = JSON.parse(JSON.stringify(DEFAULT_SITE_SETTINGS));
-    this.initFromFirestore();
+
   }
 
   /**
    * Initializes or hydrates settings from Firestore /siteSettings/general
    */
-  private async initFromFirestore(): Promise<void> {
+  public async initFromFirestore(): Promise<void> {
     try {
       const db = getAdminFirestore();
       if (!db) return;

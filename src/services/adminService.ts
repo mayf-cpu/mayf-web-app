@@ -281,6 +281,9 @@ class AdminService {
     try {
       const headers = await this.getAuthHeaders();
       const res = await fetch('/api/admin/verify-access', { headers });
+      if (!res.headers.get('content-type')?.includes('application/json')) {
+        throw new Error('The admin service is unavailable. Please contact the site administrator.');
+      }
       const data = await res.json();
       if (res.ok && data.authorized) {
         return { authorized: true, role: data.role, email: data.email };

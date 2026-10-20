@@ -30,13 +30,13 @@ class HomepageLayoutService {
       updatedBy: 'system_default',
       blocks: JSON.parse(JSON.stringify(DEFAULT_HOMEPAGE_BLOCKS)),
     };
-    this.initFromFirestore();
+
   }
 
   /**
    * Initialize or restore layout from Firestore /siteSettings/homepageLayout
    */
-  private async initFromFirestore(): Promise<void> {
+  public async initFromFirestore(): Promise<void> {
     try {
       const db = getAdminFirestore();
       if (!db) return;

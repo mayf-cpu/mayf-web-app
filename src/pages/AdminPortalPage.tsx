@@ -253,7 +253,7 @@ export const AdminPortalPage: React.FC = () => {
           </button>
           <div className="flex items-center gap-1.5 text-[11px] font-mono text-rose-600 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded">
             <ShieldAlert className="w-3.5 h-3.5" />
-            <span>403 Forbidden</span>
+            <span>Verification failed</span>
           </div>
         </header>
 
@@ -264,10 +264,10 @@ export const AdminPortalPage: React.FC = () => {
 
           <div className="space-y-2">
             <h1 className="font-heading font-extrabold text-2xl text-slate-900 tracking-tight">
-              Access Denied
+              Unable to verify admin access
             </h1>
             <p className="text-xs text-slate-600 leading-relaxed max-w-sm mx-auto">
-              Administrator privileges required. Knowing this secret URL does not grant access to student accounts.
+              {authError || "Admin access could not be verified. Please try again."}
             </p>
           </div>
 
@@ -280,12 +280,12 @@ export const AdminPortalPage: React.FC = () => {
                 {currentEmail}
               </p>
               <p className="text-[11px] text-rose-600 font-medium pt-1">
-                Role: <span className="font-mono uppercase font-bold">student</span> (No admin/superAdmin claims)
+                Administrator access has not been verified.
               </p>
             </div>
 
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              Every administrative API endpoint validates cryptographic ID token claims independently on the server. If you are an authorized administrator, please sign out and sign in using your designated administrator Google account.
+              If this is your administrator account, a service or configuration issue may be preventing verification. Switching accounts will not resolve a service outage.
             </p>
 
             <div className="space-y-2 pt-1">

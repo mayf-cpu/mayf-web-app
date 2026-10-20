@@ -23,10 +23,10 @@ class BroadcastService {
   private cacheTimestamp: number = 0;
 
   constructor() {
-    this.initStore();
+    SEED_BROADCASTS.forEach((b) => this.broadcastsStore.set(b.id, { ...b }));
   }
 
-  private async initStore(): Promise<void> {
+  public async initStore(): Promise<void> {
     // Seed initial broadcasts into store
     SEED_BROADCASTS.forEach((b) => this.broadcastsStore.set(b.id, { ...b }));
 

@@ -26,10 +26,10 @@ class AdSenseService {
 
   constructor() {
     this.currentSettings = JSON.parse(JSON.stringify(DEFAULT_ADSENSE_SETTINGS));
-    this.initFromFirestore();
+
   }
 
-  private async initFromFirestore(): Promise<void> {
+  public async initFromFirestore(): Promise<void> {
     try {
       const db = getAdminFirestore();
       if (!db) return;
