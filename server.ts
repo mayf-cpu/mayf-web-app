@@ -18,6 +18,7 @@ import {
 import { ContentRegistryRow } from './src/lib/ingestion/types';
 import crypto from 'crypto';
 import { getDownloadableItem } from './src/lib/download/downloadRegistry';
+import { pdfExists, readVerifiedPdf } from './src/lib/download/pdfObjectStorage';
 import { FORMULA_DECK_ITEMS } from './src/data/formulaDeckData';
 import { paymentService } from './src/lib/payments/paymentService';
 import { isProductionPaymentRuntime } from './src/lib/payments/runtime';
@@ -679,18 +680,29 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
       }
     }
 
-    // This registry only contains metadata; no verified PDF bytes or storage
-    // object are configured. Do not issue an unusable "successful" download link.
-    logDownloadAudit({
-      contentId: item.id, uid: verifiedUid, accessType: item.accessType,
-      status: 'failed', action: 'authorize',
-      reason: 'Verified PDF asset storage is not configured', req,
-    });
-    return res.status(503).json({
-      success: false, code: 'FILE_NOT_AVAILABLE',
-      error: 'This study material PDF is not available for download yet.',
-    });
+    // Authorize only real objects in the private R2 PDF bucket.
+    if (!(await pdfExists(item.id))) {
+      logDownloadAudit({
+        contentId: item.id, uid: verifiedUid, accessType: item.accessType,
+        status: 'failed', action: 'authorize', reason: 'PDF asset is not uploaded to private R2 storage', req,
+      });
+      return res.status(503).json({ success: false, code: 'FILE_NOT_AVAILABLE',
+        error: 'This study material PDF is not available for download yet.' });
+    }
 
+    const downloadToken = crypto.randomBytes(32).toString('hex');
+    const clientIpHash = crypto.createHash('sha256').update(rawIp).digest('hex').substring(0, 16);
+    const expiresInSeconds = 60;
+    DOWNLOAD_TOKENS_STORE.set(downloadToken, {
+      token: downloadToken, contentId: item.id, fileName: item.fileName,
+      mimeType: 'application/pdf', accessType: item.accessType, uid: verifiedUid,
+      clientIpHash, createdAt: Date.now(), expiresAt: Date.now() + expiresInSeconds * 1000,
+      used: false,
+    });
+    logDownloadAudit({ contentId: item.id, uid: verifiedUid,
+      accessType: item.accessType, status: 'successful', action: 'authorize', req });
+    return res.json({ success: true, downloadUrl: `/api/downloads/file/${downloadToken}`,
+      fileName: item.fileName, expiresInSeconds });
 
   } catch (error: any) {
     console.error('[MAYF Server] Download authorization error:', error);
@@ -751,22 +763,30 @@ app.get('/api/downloads/file/:token', asyncRoute(async (req: Request, res: Respo
     });
   }
 
-  // No actual PDF storage is connected yet. Never return fabricated text
-  // with application/pdf or consume the token as a successful download.
+  const pdf = await readVerifiedPdf(tokenRecord.contentId);
+  if (!pdf) {
+    logDownloadAudit({
+      contentId: tokenRecord.contentId, uid: tokenRecord.uid,
+      accessType: tokenRecord.accessType, status: 'failed',
+      action: 'file_served', reason: 'Private R2 PDF missing, invalid, or too large', req,
+    });
+    return res.status(503).json({ success: false, code: 'FILE_NOT_AVAILABLE',
+      error: 'This study material PDF is not available for download yet.' });
+  }
+  // Only consume a token after the actual bytes have been retrieved and validated.
+  tokenRecord.used = true;
+  DOWNLOAD_TOKENS_STORE.delete(token);
+  const safeFileName = tokenRecord.fileName.replace(/[^a-zA-Z0-9_.-]/g, '_');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeFileName}"`);
+  res.setHeader('Content-Length', String(pdf.byteLength));
+  res.setHeader('Cache-Control', 'no-store, private');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   logDownloadAudit({
-    contentId: tokenRecord.contentId,
-    uid: tokenRecord.uid,
-    accessType: tokenRecord.accessType,
-    status: 'failed',
-    action: 'file_served',
-    reason: 'Verified PDF asset storage is not configured',
-    req,
+    contentId: tokenRecord.contentId, uid: tokenRecord.uid,
+    accessType: tokenRecord.accessType, status: 'successful', action: 'file_served', req,
   });
-  return res.status(503).json({
-    success: false,
-    code: 'FILE_NOT_AVAILABLE',
-    error: 'This study material PDF is not available for download yet.',
-  });
+  return res.end(Buffer.from(pdf));
 }));
 
 /**
