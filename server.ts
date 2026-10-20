@@ -679,6 +679,18 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
       }
     }
 
+    // This registry only contains metadata; no verified PDF bytes or storage
+    // object are configured. Do not issue an unusable "successful" download link.
+    logDownloadAudit({
+      contentId: item.id, uid: verifiedUid, accessType: item.accessType,
+      status: 'failed', action: 'authorize',
+      reason: 'Verified PDF asset storage is not configured', req,
+    });
+    return res.status(503).json({
+      success: false, code: 'FILE_NOT_AVAILABLE',
+      error: 'This study material PDF is not available for download yet.',
+    });
+
     // Generate short-lived (60 seconds) cryptographically secure single-use token
     // Bound strictly to client IP hash to prevent download URL sharing
     const downloadToken = crypto.randomBytes(32).toString('hex');
