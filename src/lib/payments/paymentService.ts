@@ -43,7 +43,7 @@ export class PaymentService {
   // Payment Gateway Settings (Configurable by admin, secrets kept strictly server-side)
   private settings: PaymentGatewaySettings;
 
-  constructor(private readonly durableOrders?: Pick<DurablePaymentRepository, 'createOrder'>) {
+  constructor(private durableOrders?: Pick<DurablePaymentRepository, 'createOrder'>) {
     this.razorpayAdapter = new RazorpayAdapter();
     this.stripeAdapter = new StripeAdapter();
 
@@ -61,6 +61,11 @@ export class PaymentService {
     };
 
     if (!isProductionPaymentRuntime()) this.seedInitialOrders();
+  }
+
+  /** Configure persistent storage before checkout. Never treat a missing store as success. */
+  configureDurableOrders(repository: Pick<DurablePaymentRepository, 'createOrder'>): void {
+    this.durableOrders = repository;
   }
 
   /**
