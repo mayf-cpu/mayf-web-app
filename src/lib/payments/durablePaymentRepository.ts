@@ -47,6 +47,9 @@ export class DurablePaymentRepository {
     paidAt: string;
   }): Promise<'settled' | 'duplicate'> {
     const { orderId, provider, providerOrderId, providerPaymentId, eventId, entitlement, paidAt } = args;
+    if (!orderId?.trim() || !providerOrderId?.trim() || !providerPaymentId?.trim() || !eventId?.trim()) {
+      throw new Error('Verified payment identifiers are required');
+    }
     const eventKey = validId(provider + ':' + eventId);
     // A provider transaction must be credited to at most one order, even if
     // the gateway sends different event IDs for the same payment.
