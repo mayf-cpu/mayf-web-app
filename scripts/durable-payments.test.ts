@@ -148,3 +148,17 @@ test('gateway order index resolves across new repository instances and rejects w
   docs.get('paymentProviderOrders/razorpay:gateway-1')!.data.orderId = 'missing-order';
   await assert.rejects(repo.getOrderByProviderOrderId('razorpay', 'gateway-1'), /does not match/);
 });
+
+test('webhook event ID cannot be reused for a different payment or order', async () => {
+  const { repo, docs } = fixture();
+  await repo.createOrder(order);
+  await repo.createOrder({ ...order, orderId: 'ord-2', userId: 'student-2', providerOrderId: 'gateway-2' });
+  assert.equal(await repo.settleVerifiedPayment(payment), 'settled');
+  const other = { ...payment, orderId: 'ord-2', providerOrderId: 'gateway-2',
+    providerPaymentId: 'pay-other', entitlement: { ...entitlement, id: 'ent-other',
+      userId: 'student-2', orderId: 'ord-2', paymentId: 'pay-other' } };
+  await assert.rejects(repo.settleVerifiedPayment(other), /Webhook event identifier conflicts/);
+  assert.equal((await repo.getOrder('ord-2'))?.status, 'created');
+  assert.equal(docs.has('paymentEntitlements/ent-other'), false);
+  assert.equal(await repo.settleVerifiedPayment(payment), 'duplicate');
+});
