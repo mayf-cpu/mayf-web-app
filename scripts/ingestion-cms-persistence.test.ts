@@ -9,6 +9,7 @@ test('Drive ingestion commits CMS content before reporting success', () => {
   const success = source.indexOf('// 4. Record successful Ingestion Job', transfer);
   assert.ok(transfer >= 0 && persisted > transfer && success > persisted,
     'upload must finish and CMS commit must succeed before import success');
-  assert.match(source, /status: isPubliclyVisible \? 'published' : 'hidden'/);
+  assert.match(source, /importPublicationPolicy\(previous, existing\.exists, isPubliclyVisible\)/);
+  assert.match(source, /\.\.\.publication,/);
   assert.match(source, /\.\.\.\(existing\.updateTime \? \{ updateTime: existing\.updateTime \} : \{\}\)/);
 });
