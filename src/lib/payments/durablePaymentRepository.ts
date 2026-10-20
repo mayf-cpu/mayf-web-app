@@ -31,6 +31,56 @@ export class DurablePaymentRepository {
     ]);
   }
 
+  /**
+   * Record a cryptographically verified FULL refund and revoke the associated
+   * pass atomically. Gateway signature and refund amount must be verified upstream.
+   * Partial refunds are intentionally unsupported and must not revoke access.
+   */
+  async recordVerifiedFullRefund(args: {
+    orderId: string; provider: PaymentProvider; providerOrderId: string;
+    providerPaymentId: string; refundId: string; eventId: string;
+    refundAmount: number; currency: string; refundedAt: string;
+  }): Promise<'refunded' | 'duplicate'> {
+    const { orderId, provider, providerOrderId, providerPaymentId, refundId, eventId,
+      refundAmount, currency, refundedAt } = args;
+    for (const value of [orderId, providerOrderId, providerPaymentId, refundId, eventId]) validId(value);
+    const refundKey = validId(provider + ':refund:' + refundId);
+    const ref = await this.store.collection(EVENT_COLLECTION).doc(refundKey).get();
+    if (ref.exists) {
+      const data = ref.data();
+      if (data?.orderId === orderId && data?.providerPaymentId === providerPaymentId &&
+          data?.refundId === refundId) return 'duplicate';
+      throw new Error('Refund identifier conflicts with an existing transaction');
+    }
+    const orderRef = await this.store.collection(ORDER_COLLECTION).doc(validId(orderId)).get();
+    if (!orderRef.exists || !orderRef.updateTime) throw new Error('Refund order missing or revision unavailable');
+    const order = orderRef.data() as StoredOrder;
+    if (order.status !== 'paid' || order.provider !== provider ||
+        order.providerOrderId !== providerOrderId || order.providerPaymentId !== providerPaymentId) {
+      throw new Error('Refund does not match a paid order');
+    }
+    const payable = Math.round((order.grossAmount - order.discount + (order.tax || 0)) * 100);
+    if (!Number.isSafeInteger(payable) || payable <= 0 || !Number.isFinite(refundAmount) ||
+        Math.round(refundAmount * 100) !== payable || currency.toUpperCase() !== order.currency.toUpperCase()) {
+      throw new Error('Only a verified full refund matching order amount and currency is supported');
+    }
+    const entitlementId = validId('payment-' + orderId);
+    const passRef = await this.store.collection(ENTITLEMENT_COLLECTION).doc(entitlementId).get();
+    if (!passRef.exists || !passRef.updateTime) throw new Error('Paid entitlement missing or revision unavailable');
+    const pass = passRef.data() as Entitlement;
+    if (pass.orderId !== orderId || pass.userId !== order.userId || pass.paymentId !== providerPaymentId ||
+        pass.status !== 'active') throw new Error('Refund entitlement does not match the order');
+    await this.store.commit([
+      { collection: ORDER_COLLECTION, id: validId(orderId), updateTime: orderRef.updateTime,
+        data: { ...order, status: 'refunded', refundedAt, refundId } },
+      { collection: ENTITLEMENT_COLLECTION, id: entitlementId, updateTime: passRef.updateTime,
+        data: { ...pass, status: 'revoked', updatedAt: refundedAt, notes: 'Revoked after verified full refund' } },
+      { collection: EVENT_COLLECTION, id: refundKey,
+        data: { provider, orderId, providerPaymentId, refundId, eventId, processedAt: refundedAt } },
+    ]);
+    return 'refunded';
+  }
+
   async getOrder(orderId: string): Promise<StoredOrder | null> {
     const doc = await this.store.collection(ORDER_COLLECTION).doc(validId(orderId)).get();
     return doc.exists ? doc.data() as StoredOrder : null;
