@@ -8,6 +8,7 @@ import type { StoredOrder, Entitlement, PaymentProvider } from './types';
 
 const ORDER_COLLECTION = 'paymentOrders';
 const EVENT_COLLECTION = 'paymentWebhookEvents';
+const PAYMENT_CLAIM_COLLECTION = 'paymentProviderClaims';
 const ENTITLEMENT_COLLECTION = 'paymentEntitlements';
 
 function validId(value: string): string {
@@ -47,8 +48,17 @@ export class DurablePaymentRepository {
   }): Promise<'settled' | 'duplicate'> {
     const { orderId, provider, providerOrderId, providerPaymentId, eventId, entitlement, paidAt } = args;
     const eventKey = validId(provider + ':' + eventId);
+    // A provider transaction must be credited to at most one order, even if
+    // the gateway sends different event IDs for the same payment.
+    const paymentClaimId = validId(provider + ':' + providerPaymentId);
     const eventRef = await this.store.collection(EVENT_COLLECTION).doc(eventKey).get();
     if (eventRef.exists) return 'duplicate';
+
+    const existingClaim = await this.store.collection(PAYMENT_CLAIM_COLLECTION).doc(paymentClaimId).get();
+    if (existingClaim.exists) {
+      if (existingClaim.data()?.orderId === orderId) return 'duplicate';
+      throw new Error('Provider payment already belongs to another order');
+    }
 
     const orderRef = await this.store.collection(ORDER_COLLECTION).doc(validId(orderId)).get();
     if (!orderRef.exists) throw new Error('Payment order not found');
@@ -70,6 +80,8 @@ export class DurablePaymentRepository {
       { collection: EVENT_COLLECTION, id: eventKey,
         data: { provider, eventId, orderId, providerOrderId, providerPaymentId, processedAt: paidAt } },
       { collection: ENTITLEMENT_COLLECTION, id: entitlementId, data: { ...entitlement } },
+      { collection: PAYMENT_CLAIM_COLLECTION, id: paymentClaimId,
+        data: { provider, providerPaymentId, orderId, createdAt: paidAt } },
     ]);
     return 'settled';
   }
