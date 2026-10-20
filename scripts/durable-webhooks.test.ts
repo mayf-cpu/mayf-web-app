@@ -49,7 +49,21 @@ test('unknown orders remain retryable and do not issue entitlements', async () =
 });
 test('non-pass orders and invalid pass duration cannot provision annual access', async () => {
   const { repository, writes } = fixture({ ...order, items: [{ title: 'Notes', unitPrice: 100, quantity: 1 }] });
-  await assert.rejects(settleVerifiedAnnualPassWebhook(repository, receipt, 365), /only supports annual pass/);
+  await assert.rejects(settleVerifiedAnnualPassWebhook(repository, receipt, 365), /exactly one authoritative Annual Pass/);
   await assert.rejects(settleVerifiedAnnualPassWebhook(repository, receipt, 0), /duration/);
   assert.equal(writes.length, 0);
+});
+
+test('mixed carts, multiplied passes and altered gross values cannot grant a pass', async () => {
+  for (const invalidItems of [
+    [{ title: 'Pass', unitPrice: 100, quantity: 1, annualPass: true },
+      { title: 'Notes', unitPrice: 20, quantity: 1 }],
+    [{ title: 'Pass', unitPrice: 100, quantity: 2, annualPass: true }],
+    [{ title: 'Pass', unitPrice: 1, quantity: 1, annualPass: true }],
+    [],
+  ]) {
+    const { repository, writes } = fixture({ ...order, items: invalidItems });
+    await assert.rejects(settleVerifiedAnnualPassWebhook(repository, receipt, 365), /exactly one authoritative Annual Pass/);
+    assert.equal(writes.length, 0);
+  }
 });
