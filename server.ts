@@ -720,6 +720,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
  */
 app.get('/api/downloads/file/:token', asyncRoute(async (req: Request, res: Response) => {
   const { token } = req.params;
+  if (!/^[a-f0-9]{64}$/.test(token)) return res.status(404).json({ error: 'Invalid download link.' });
   const rawIp = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || '127.0.0.1');
 
   // Rate Limiting: max 20 file downloads per minute per IP
