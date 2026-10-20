@@ -67,11 +67,9 @@ export async function copyDriveFileToProductionStorage(
   const bucket = getPdfBucket();
   if (!bucket?.put) throw new Error('Private R2 PDF bucket is not configured for uploads');
   const key = keyForPdf(contentId);
-  // Never replace bytes behind an already published CMS record. An R2 upload
-  // and Firestore catalogue commit cannot be atomic across providers.
-  if (await bucket.head(key)) {
-    throw new Error('PDF already exists in private storage; replacement requires an explicit versioned publishing workflow.');
-  }
+  // Allow a safe retry after an earlier R2 upload followed by a failed CMS
+  // commit, but never mutate published bytes. Reuse only identical content.
+  const previousObject = await bucket.head(key);
   const token = await getDriveAccessToken(getServiceAccount());
   const url = 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(driveFileId) + '?alt=media';
   const response = await fetch(url, {
@@ -103,7 +101,24 @@ export async function copyDriveFileToProductionStorage(
   for (const chunk of chunks) { bytes.set(chunk, cursor); cursor += chunk.byteLength; }
   if (bytes.length < 9 || String.fromCharCode(...bytes.subarray(0, 5)) !== '%PDF-')
     throw new Error('Google Drive source is not a valid PDF');
-  await bucket.put(key, bytes, { httpMetadata: { contentType: 'application/pdf' } });
+  if (previousObject) {
+    if (previousObject.size !== bytes.length) {
+      throw new Error('R2 PDF differs from Drive source; explicit versioned replacement required');
+    }
+    const saved = await bucket.get(key);
+    if (!saved?.body || saved.size !== bytes.length) {
+      throw new Error('Existing R2 PDF cannot be verified for safe import retry');
+    }
+    const previousBytes = new Uint8Array(await new Response(saved.body).arrayBuffer());
+    const storedHash = crypto.createHash('sha256').update(previousBytes).digest();
+    const incomingHash = crypto.createHash('sha256').update(bytes).digest();
+    if (previousBytes.byteLength !== bytes.length ||
+      !crypto.timingSafeEqual(storedHash, incomingHash)) {
+      throw new Error('R2 PDF differs from Drive source; explicit versioned replacement required');
+    }
+  } else {
+    await bucket.put(key, bytes, { httpMetadata: { contentType: 'application/pdf' } });
+  }
   const stored = await bucket.head(key);
   if (!stored || stored.size !== bytes.length)
     throw new Error('R2 upload verification failed; import was not published');
