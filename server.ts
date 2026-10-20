@@ -691,41 +691,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
       error: 'This study material PDF is not available for download yet.',
     });
 
-    // Generate short-lived (60 seconds) cryptographically secure single-use token
-    // Bound strictly to client IP hash to prevent download URL sharing
-    const downloadToken = crypto.randomBytes(32).toString('hex');
-    const clientIpHash = crypto.createHash('sha256').update(rawIp).digest('hex').substring(0, 16);
-    const expiresInSeconds = 60;
-    const expiresAt = Date.now() + expiresInSeconds * 1000;
 
-    DOWNLOAD_TOKENS_STORE.set(downloadToken, {
-      token: downloadToken,
-      contentId: item.id,
-      fileName: item.fileName,
-      mimeType: item.mimeType,
-      accessType: item.accessType,
-      uid: verifiedUid,
-      clientIpHash,
-      createdAt: Date.now(),
-      expiresAt,
-      used: false,
-    });
-
-    logDownloadAudit({
-      contentId: item.id,
-      uid: verifiedUid,
-      accessType: item.accessType,
-      status: 'successful',
-      action: 'authorize',
-      req,
-    });
-
-    return res.json({
-      success: true,
-      downloadUrl: `/api/downloads/file/${downloadToken}`,
-      fileName: item.fileName,
-      expiresInSeconds,
-    });
   } catch (error: any) {
     console.error('[MAYF Server] Download authorization error:', error);
     return res.status(500).json({ success: false, error: 'Internal download authorization failure' });
