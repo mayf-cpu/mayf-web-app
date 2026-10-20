@@ -1216,7 +1216,7 @@ app.get('/api/student/entitlement', requireAuth, asyncRoute(async (req: Authenti
     entitlement: status.entitlement,
     settings: entitlementService.getSettings(),
   });
-});
+}));
 
 /**
  * Admin: Get Annual Pass Settings
