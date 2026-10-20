@@ -20,6 +20,8 @@ import crypto from 'crypto';
 import { getDownloadableItem } from './src/lib/download/downloadRegistry';
 import { FORMULA_DECK_ITEMS } from './src/data/formulaDeckData';
 import { paymentService } from './src/lib/payments/paymentService';
+import { DurablePaymentRepository } from './src/lib/payments/durablePaymentRepository';
+import { settleVerifiedAnnualPassWebhook } from './src/lib/payments/durableWebhookProcessor';
 import { entitlementService } from './src/lib/payments/entitlementService';
 import { DurableEntitlementReader } from './src/lib/payments/durableEntitlementReader';
 import { couponService } from './src/lib/coupons/couponService';
@@ -998,86 +1000,44 @@ app.post('/api/payments/verify-and-grant', requireAuth, handleVerifyPayment);
  * 3. Razorpay Authoritative Webhook Endpoint
  * Verifies x-razorpay-signature HMAC and enforces idempotency
  */
-app.post('/api/payments/webhook/razorpay', asyncRoute(async (req: Request, res: Response) => {
-  try {
-    const rawBody = (req as any).rawBody || JSON.stringify(req.body);
-    const result = await paymentService.handleWebhook('razorpay', req.headers, rawBody);
-
-    if (!result.success && result.status === 'signature_invalid') {
-      console.warn('[MAYF Webhook] Razorpay signature invalid');
-      return res.status(400).json({ status: 'invalid_signature', error: result.message });
-    }
-
-    if (!result.success) {
-      return res.status(503).json({ status: 'retry_required', error: result.message });
-    }
-
-    // Provision entitlement ONLY on genuine first-time processed payment, NEVER on duplicate webhook replays!
-    if (result.success && result.status === 'processed' && result.orderId) {
-      const order = paymentService.getAllOrders().find((o) => o.orderId === result.orderId);
-      if (order && order.status === 'paid') {
-        entitlementService.createOrRenewFromPayment({
-          userId: order.userId,
-          orderId: order.orderId,
-          paymentId: order.providerPaymentId,
-        });
-      }
-    }
-
-    // Always respond with 200 OK to acknowledged webhooks (even duplicate ones)
-    return res.status(200).json({
-      status: 'ok',
-      idempotency: result.status,
-      message: result.message,
-      orderId: result.orderId,
-    });
-  } catch (error: any) {
-    console.error('[MAYF Webhook] Razorpay webhook handling error:', error);
-    return res.status(500).json({ status: 'error', error: error?.message || 'Webhook processing failed' });
-  }
-}));
-
 /**
- * 4. Stripe Authoritative Webhook Endpoint
- * Verifies stripe-signature timestamped HMAC and enforces idempotency
+ * Persist a signed gateway payment before acknowledging its webhook.
+ * This deliberately returns retry-required for anything we do not yet handle
+ * durably; we must never silently grant access using volatile Worker memory.
  */
-app.post('/api/payments/webhook/stripe', asyncRoute(async (req: Request, res: Response) => {
+async function handleDurablePaymentWebhook(provider: PaymentProvider, req: Request, res: Response) {
   try {
     const rawBody = (req as any).rawBody || JSON.stringify(req.body);
-    const result = await paymentService.handleWebhook('stripe', req.headers, rawBody);
-
-    if (!result.success && result.status === 'signature_invalid') {
-      console.warn('[MAYF Webhook] Stripe signature invalid');
-      return res.status(400).json({ status: 'invalid_signature', error: result.message });
+    const verified = await paymentService.verifyWebhookReceipt(provider, req.headers, rawBody);
+    if (!verified.isValid) {
+      return res.status(400).json({ status: 'invalid_signature', error: verified.error || 'Invalid gateway signature' });
     }
-
-    if (!result.success) {
-      return res.status(503).json({ status: 'retry_required', error: result.message });
+    if (verified.status !== 'paid') {
+      return res.status(503).json({ status: 'retry_required', error: 'Non-paid webhook handling is not yet durably implemented' });
     }
-
-    // Provision entitlement ONLY on genuine first-time processed payment, NEVER on duplicate webhook replays!
-    if (result.success && result.status === 'processed' && result.orderId) {
-      const order = paymentService.getAllOrders().find((o) => o.orderId === result.orderId);
-      if (order && order.status === 'paid') {
-        entitlementService.createOrRenewFromPayment({
-          userId: order.userId,
-          orderId: order.orderId,
-          paymentId: order.providerPaymentId,
-        });
-      }
+    const db = getAdminFirestore();
+    if (!db) {
+      return res.status(503).json({ status: 'retry_required', error: 'Payment storage unavailable' });
     }
-
+    const result = await settleVerifiedAnnualPassWebhook(
+      new DurablePaymentRepository(db), verified, entitlementService.getSettings().durationDays,
+    );
+    if (result === 'unknown_order') {
+      return res.status(503).json({ status: 'retry_required', error: 'Payment order not yet persisted' });
+    }
     return res.status(200).json({
-      status: 'ok',
-      idempotency: result.status,
-      message: result.message,
-      orderId: result.orderId,
+      status: 'ok', idempotency: result === 'duplicate' ? 'duplicate_ignored' : 'processed',
     });
   } catch (error: any) {
-    console.error('[MAYF Webhook] Stripe webhook handling error:', error);
-    return res.status(500).json({ status: 'error', error: error?.message || 'Webhook processing failed' });
+    console.error('[MAYF Payments] Durable webhook processing error:', error?.message || 'unknown');
+    return res.status(503).json({ status: 'retry_required', error: 'Payment reconciliation required' });
   }
-}));
+}
+
+app.post('/api/payments/webhook/razorpay', asyncRoute(async (req: Request, res: Response) =>
+  handleDurablePaymentWebhook('razorpay', req, res)));
+app.post('/api/payments/webhook/stripe', asyncRoute(async (req: Request, res: Response) =>
+  handleDurablePaymentWebhook('stripe', req, res)));
 
 /**
  * 5. Student Orders Endpoint
