@@ -12,8 +12,8 @@ const pass = {
 };
 function reader(items: Record<string, unknown>[]) {
   return new DurableEntitlementReader({
-    list: async () => items.map((data, i) => ({ id: 'doc-' + i, data, updateTime: '' })),
-  } as Pick<FirestoreDocumentStore, 'list'>);
+    queryEqual: async (_collection: string, _field: string, userId: string) => items.filter(data => data.userId === userId).map((data, i) => ({ id: 'doc-' + i, data, updateTime: '' })),
+  } as Pick<FirestoreDocumentStore, 'queryEqual'>);
 }
 test('valid persisted annual pass survives independently of in-memory service', async () => {
   const result = await reader([pass]).checkActiveAnnualPass('student-a', now);
@@ -35,7 +35,7 @@ test('other students, revoked, expired and future passes never provide access', 
 });
 test('database failure does not silently grant a paid pass', async () => {
   const broken = new DurableEntitlementReader({
-    list: async () => { throw new Error('Firestore is offline'); },
-  } as Pick<FirestoreDocumentStore, 'list'>);
+    queryEqual: async () => { throw new Error('Firestore is offline'); },
+  } as Pick<FirestoreDocumentStore, 'queryEqual'>);
   await assert.rejects(broken.checkActiveAnnualPass('student-a', now), /Firestore is offline/);
 });
