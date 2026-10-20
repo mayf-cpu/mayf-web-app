@@ -341,6 +341,19 @@ export class PaymentService {
   }
 
   /**
+   * Signature-only adapter entry point for durable processing. Unlike handleWebhook
+   * this does not mutate volatile orders or acknowledge an event before Firestore.
+   */
+  async verifyWebhookReceipt(
+    provider: PaymentProvider,
+    headers: Record<string, string | string[] | undefined>,
+    rawBody: string | Buffer | Record<string, unknown>,
+  ) {
+    const adapter = provider === 'stripe' ? this.stripeAdapter : this.razorpayAdapter;
+    return adapter.verifyWebhook(headers, rawBody);
+  }
+
+  /**
    * STEP 4: Trusted Webhook Confirms Payment Authoritatively
    * Enforces webhook idempotency to prevent duplicate executions.
    */
