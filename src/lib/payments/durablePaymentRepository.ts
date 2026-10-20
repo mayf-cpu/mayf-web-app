@@ -181,6 +181,28 @@ export class DurablePaymentRepository {
     if (!orderRef.updateTime) throw new Error('Order revision unavailable; cannot safely settle payment');
     if (order.status !== 'created' && order.status !== 'pending') throw new Error('Order is not payable');
 
+    // One per-student revision is a serialization point for concurrent renewals.
+    // Never commit a pass based on a stale expiry value.
+    const cursorId = validId(order.userId);
+    const cursorRef = await this.store.collection(RENEWAL_CURSOR_COLLECTION).doc(cursorId).get();
+    const cursor = cursorRef.exists ? cursorRef.data() : undefined;
+    const paidMs = Date.parse(paidAt);
+    const proposedMs = Date.parse(entitlement.expiresAt);
+    const startsMs = Date.parse(entitlement.startsAt);
+    if (!Number.isFinite(paidMs) || !Number.isFinite(proposedMs) ||
+        !Number.isFinite(startsMs) || proposedMs <= paidMs) {
+      throw new Error('Invalid renewal entitlement dates');
+    }
+    // The orchestrator supplies the pass duration. Compute the expiry again
+    // from the cursor, preserving remaining time on the student's paid pass.
+    const termMs = proposedMs - Math.max(paidMs, startsMs);
+    const cursorExpiryMs = cursor?.expiresAt ? Date.parse(cursor.expiresAt) : NaN;
+    if (cursor && (!Number.isFinite(cursorExpiryMs) || !cursorRef.updateTime)) {
+      throw new Error('Renewal cursor is corrupt or missing its revision');
+    }
+    const baseMs = Math.max(paidMs, Number.isFinite(cursorExpiryMs) ? cursorExpiryMs : paidMs);
+    const expiresAt = new Date(baseMs + termMs).toISOString();
+    const finalEntitlement = { ...entitlement, expiresAt };
     const entitlementId = validId(entitlement.id);
     const entitlementRef = await this.store.collection(ENTITLEMENT_COLLECTION).doc(entitlementId).get();
     if (entitlementRef.exists) throw new Error('Entitlement ID already exists');
@@ -190,7 +212,10 @@ export class DurablePaymentRepository {
         data: { ...order, status: 'paid', paidAt, providerPaymentId }, updateTime: orderRef.updateTime },
       { collection: EVENT_COLLECTION, id: eventKey,
         data: { provider, eventId, orderId, providerOrderId, providerPaymentId, processedAt: paidAt } },
-      { collection: ENTITLEMENT_COLLECTION, id: entitlementId, data: { ...entitlement } },
+      { collection: ENTITLEMENT_COLLECTION, id: entitlementId, data: finalEntitlement },
+      { collection: RENEWAL_CURSOR_COLLECTION, id: cursorId,
+        ...(cursorRef.updateTime ? { updateTime: cursorRef.updateTime } : {}),
+        data: { userId: order.userId, expiresAt, lastOrderId: orderId, updatedAt: paidAt } },
       { collection: PAYMENT_CLAIM_COLLECTION, id: paymentClaimId,
         data: { provider, providerPaymentId, orderId, createdAt: paidAt } },
     ]);
