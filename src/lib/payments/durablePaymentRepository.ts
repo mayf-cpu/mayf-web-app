@@ -31,6 +31,23 @@ export class DurablePaymentRepository {
     ]);
   }
 
+  /** Resolve a captured payment from the globally unique provider payment claim. */
+  async getOrderByProviderPaymentId(provider: PaymentProvider, providerPaymentId: string): Promise<StoredOrder | null> {
+    const claimId = validId(provider + ':' + validId(providerPaymentId));
+    const claim = await this.store.collection(PAYMENT_CLAIM_COLLECTION).doc(claimId).get();
+    if (!claim.exists) return null;
+    const data = claim.data();
+    if (typeof data?.orderId !== 'string' || data?.provider !== provider ||
+        data?.providerPaymentId !== providerPaymentId) {
+      throw new Error('Payment claim does not match provider transaction');
+    }
+    const order = await this.getOrder(data.orderId);
+    if (!order || order.provider !== provider || order.providerPaymentId !== providerPaymentId) {
+      throw new Error('Payment claim does not match persisted order');
+    }
+    return order;
+  }
+
   /**
    * Record a cryptographically verified FULL refund and revoke the associated
    * pass atomically. Gateway signature and refund amount must be verified upstream.

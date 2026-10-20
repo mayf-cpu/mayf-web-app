@@ -22,6 +22,7 @@ import { FORMULA_DECK_ITEMS } from './src/data/formulaDeckData';
 import { paymentService } from './src/lib/payments/paymentService';
 import { validateAnnualPassCart } from './src/lib/payments/checkoutPolicy';
 import { DurablePaymentRepository } from './src/lib/payments/durablePaymentRepository';
+import { processVerifiedRazorpayFullRefund } from './src/lib/payments/durableRefundProcessor';
 import { settleVerifiedAnnualPassWebhook } from './src/lib/payments/durableWebhookProcessor';
 import { entitlementService } from './src/lib/payments/entitlementService';
 import { DurableEntitlementReader } from './src/lib/payments/durableEntitlementReader';
@@ -1035,6 +1036,17 @@ async function handleDurablePaymentWebhook(provider: PaymentProvider, req: Reque
     const verified = await paymentService.verifyWebhookReceipt(provider, req.headers, rawBody);
     if (!verified.isValid) {
       return res.status(400).json({ status: 'invalid_signature', error: verified.error || 'Invalid gateway signature' });
+    }
+    if (provider === 'razorpay' && verified.eventType === 'refund.processed') {
+      const db = getAdminFirestore();
+      if (!db) return res.status(503).json({ status: 'retry_required', error: 'Payment storage unavailable' });
+      const result = await processVerifiedRazorpayFullRefund(
+        new DurablePaymentRepository(db), verified, rawBody,
+      );
+      if (result === 'unknown_order') {
+        return res.status(503).json({ status: 'retry_required', error: 'Refund payment not yet reconciled' });
+      }
+      return res.status(200).json({ status: 'ok', idempotency: result });
     }
     if (verified.status !== 'paid') {
       return res.status(503).json({ status: 'retry_required', error: 'Non-paid webhook handling is not yet durably implemented' });
