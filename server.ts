@@ -1165,6 +1165,15 @@ app.get('/api/admin/payments/webhook-logs', requireAuth, requireAdmin, (_req: Re
  * 9. Admin Webhook Simulator & Idempotency Tester
  */
 app.post('/api/admin/payments/simulate-webhook', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
+  // This diagnostic mutates only the legacy in-memory payment service.
+  // Never allow a simulated event to appear as a real payment in production.
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(403).json({
+      success: false,
+      code: 'PAYMENT_SIMULATION_DISABLED',
+      error: 'Payment simulation is disabled in production.',
+    });
+  }
   try {
     const { provider = 'razorpay', eventType = 'payment.captured', orderId, simulateDuplicate } = req.body;
     if (!orderId) {
