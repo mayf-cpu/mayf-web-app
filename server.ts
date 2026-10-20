@@ -375,7 +375,7 @@ app.post('/api/turnstile/verify', asyncRoute(async (req: Request, res: Response)
 
     const secretKey = process.env.TURNSTILE_SECRET_KEY || '1x0000000000000000000000000000000AA';
 
-    const isProd = isProductionPaymentRuntime() || process.env.APP_ENV === 'production';
+    const isProd = isProductionPaymentRuntime();
     if (!isProd && (token.startsWith('cf-test-') || token === '1x00000000000000000000AA' || secretKey.startsWith('1x0000'))) {
       return res.json({
         success: true,
@@ -435,7 +435,7 @@ async function verifyTurnstileTokenServer(token: string, remoteIp?: string): Pro
   const secretKey = process.env.TURNSTILE_SECRET_KEY || '1x0000000000000000000000000000000AA';
 
   // Support local test and development keys without breaking ONLY in non-production
-  const isProd = isProductionPaymentRuntime() || process.env.APP_ENV === 'production';
+  const isProd = isProductionPaymentRuntime();
   if (!isProd && (token.startsWith('cf-test-') || token === '1x00000000000000000000AA' || secretKey.startsWith('1x0000'))) {
     return { success: true };
   }
