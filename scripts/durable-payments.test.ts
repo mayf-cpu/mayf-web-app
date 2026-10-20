@@ -55,9 +55,9 @@ test('durable repository atomically creates order and settles payment', async ()
   assert.equal(await repo.settleVerifiedPayment(payment), 'settled');
   assert.equal((await repo.getOrder(order.orderId))?.status, 'paid');
   assert.equal(docs.get('paymentEntitlements/ent-1')?.data.userId, 'student-1');
-  assert.equal(docs.size, 3);
+  assert.equal(docs.size, 4);
   assert.equal(await repo.settleVerifiedPayment(payment), 'duplicate');
-  assert.equal(docs.size, 3);
+  assert.equal(docs.size, 4);
 });
 
 test('unknown orders and mismatched owner/provider/payment cannot grant access', async () => {
@@ -78,4 +78,17 @@ test('duplicate order ID cannot overwrite a previously persisted order', async (
   await repo.createOrder(order);
   await assert.rejects(repo.createOrder({ ...order, userId: 'attacker' }), /Concurrent payment update/);
   assert.equal((await repo.getOrder(order.orderId))?.userId, 'student-1');
+});
+
+test('the same gateway payment cannot settle a second order under a different event ID', async () => {
+  const { repo, docs } = fixture();
+  await repo.createOrder(order);
+  await repo.createOrder({ ...order, orderId: 'ord-2', userId: 'student-2' });
+  assert.equal(await repo.settleVerifiedPayment(payment), 'settled');
+  const secondEntitlement = { ...entitlement, id: 'ent-2', userId: 'student-2', orderId: 'ord-2' };
+  await assert.rejects(repo.settleVerifiedPayment({
+    ...payment, orderId: 'ord-2', eventId: 'evt-2', entitlement: secondEntitlement,
+  }), /already belongs to another order/);
+  assert.equal((await repo.getOrder('ord-2'))?.status, 'created');
+  assert.equal(docs.has('paymentEntitlements/ent-2'), false);
 });
