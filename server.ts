@@ -19,6 +19,7 @@ import { ContentRegistryRow } from './src/lib/ingestion/types';
 import crypto from 'crypto';
 import { getDownloadableItem } from './src/lib/download/downloadRegistry';
 import { pdfExists, readVerifiedPdf } from './src/lib/download/pdfObjectStorage';
+import { DurableDownloadTokens } from './src/lib/download/durableDownloadTokens';
 import { FORMULA_DECK_ITEMS } from './src/data/formulaDeckData';
 import { paymentService } from './src/lib/payments/paymentService';
 import { isProductionPaymentRuntime } from './src/lib/payments/runtime';
@@ -693,11 +694,13 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
     const downloadToken = crypto.randomBytes(32).toString('hex');
     const clientIpHash = crypto.createHash('sha256').update(rawIp).digest('hex').substring(0, 16);
     const expiresInSeconds = 60;
-    DOWNLOAD_TOKENS_STORE.set(downloadToken, {
-      token: downloadToken, contentId: item.id, fileName: item.fileName,
-      mimeType: 'application/pdf', accessType: item.accessType, uid: verifiedUid,
-      clientIpHash, createdAt: Date.now(), expiresAt: Date.now() + expiresInSeconds * 1000,
-      used: false,
+    const tokenDb = getAdminFirestore();
+    if (!tokenDb) return res.status(503).json({ success: false,
+      code: 'DOWNLOAD_STORAGE_UNAVAILABLE', error: 'Secure download authorization is temporarily unavailable.' });
+    await new DurableDownloadTokens(tokenDb).create(downloadToken, {
+      contentId: item.id, fileName: item.fileName,
+      accessType: item.accessType, uid: verifiedUid, clientIpHash,
+      expiresAt: Date.now() + expiresInSeconds * 1000,
     });
     logDownloadAudit({ contentId: item.id, uid: verifiedUid,
       accessType: item.accessType, status: 'successful', action: 'authorize', req });
@@ -724,7 +727,14 @@ app.get('/api/downloads/file/:token', asyncRoute(async (req: Request, res: Respo
     return res.status(429).send('Download rate limit exceeded. Please try again later.');
   }
 
-  const tokenRecord = DOWNLOAD_TOKENS_STORE.get(token);
+  const tokenDb = getAdminFirestore();
+  if (!tokenDb) return res.status(503).json({
+    success: false, code: 'DOWNLOAD_STORAGE_UNAVAILABLE', error: 'Secure download authorization is temporarily unavailable.',
+  });
+  const tokens = new DurableDownloadTokens(tokenDb);
+  let tokenRecord;
+  try { tokenRecord = await tokens.peek(token); }
+  catch { return res.status(404).json({ error: 'Invalid download link.' }); }
 
   if (!tokenRecord) {
     return res.status(404).json({
@@ -733,7 +743,6 @@ app.get('/api/downloads/file/:token', asyncRoute(async (req: Request, res: Respo
   }
 
   if (tokenRecord.expiresAt < Date.now()) {
-    DOWNLOAD_TOKENS_STORE.delete(token);
     return res.status(410).json({
       error: 'Download token has expired (60-second limit). Please re-verify to generate a fresh link.',
     });
@@ -774,8 +783,12 @@ app.get('/api/downloads/file/:token', asyncRoute(async (req: Request, res: Respo
       error: 'This study material PDF is not available for download yet.' });
   }
   // Only consume a token after the actual bytes have been retrieved and validated.
-  tokenRecord.used = true;
-  DOWNLOAD_TOKENS_STORE.delete(token);
+  try {
+    await tokens.consume(token, tokenRecord);
+  } catch {
+    return res.status(409).json({ success: false, code: 'DOWNLOAD_TOKEN_USED',
+      error: 'This download link has already been used or has expired.' });
+  }
   const safeFileName = tokenRecord.fileName.replace(/[^a-zA-Z0-9_.-]/g, '_');
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${safeFileName}"`);
