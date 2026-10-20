@@ -19,8 +19,9 @@ function fixture(stored: StoredOrder | null = order) {
   const writes: unknown[] = [];
   const repository = {
     getOrderByProviderOrderId: async () => stored,
+    findLatestPaidPass: async () => null,
     settleVerifiedPayment: async (payload: unknown) => { writes.push(payload); return 'settled' as const; },
-  } as Pick<DurablePaymentRepository, 'getOrderByProviderOrderId' | 'settleVerifiedPayment'>;
+  } as Pick<DurablePaymentRepository, 'getOrderByProviderOrderId' | 'settleVerifiedPayment' | 'findLatestPaidPass'>;
   return { repository, writes };
 }
 test('verified paid event settles only for order owner with correct amount and entitlement', async () => {
@@ -66,4 +67,16 @@ test('mixed carts, multiplied passes and altered gross values cannot grant a pas
     await assert.rejects(settleVerifiedAnnualPassWebhook(repository, receipt, 365), /exactly one authoritative Annual Pass/);
     assert.equal(writes.length, 0);
   }
+});
+
+test('early renewal extends from previous pass expiry instead of purchase date', async () => {
+  const { repository, writes } = fixture();
+  repository.findLatestPaidPass = async () => ({
+    id: 'old', userId: 'student-a', type: 'annual_pass', status: 'active',
+    startsAt: '2026-01-01T00:00:00Z', expiresAt: '2027-01-01T00:00:00Z',
+    grantedBy: 'payment', orderId: 'old-order', paymentId: 'old-pay',
+    createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+  });
+  await settleVerifiedAnnualPassWebhook(repository, receipt, 365, new Date('2026-10-21T00:00:00Z'));
+  assert.equal((writes[0] as any).entitlement.expiresAt, '2028-01-01T00:00:00.000Z');
 });
