@@ -782,6 +782,33 @@ app.get('/api/downloads/file/:token', asyncRoute(async (req: Request, res: Respo
     });
   }
 
+  // Token issuance does not freeze publication or subscription rights.
+  // Recheck current CMS state and paid entitlement before giving out bytes.
+  const currentItem = await resolveDownloadableItem(tokenDb, tokenRecord.contentId);
+  if (!currentItem || !currentItem.downloadAllowed ||
+      currentItem.accessType !== tokenRecord.accessType) {
+    await logDownloadAudit({
+      contentId: tokenRecord.contentId, uid: tokenRecord.uid,
+      accessType: tokenRecord.accessType, status: 'failed', action: 'file_served',
+      reason: 'Content was unpublished, removed, or changed access tier after authorization', req,
+    });
+    return res.status(403).json({ success: false, code: 'DOWNLOAD_ACCESS_REVOKED',
+      error: 'This study material is no longer available for this download link.' });
+  }
+  if (tokenRecord.accessType === 'paid') {
+    const validPaidAccess = tokenRecord.uid ?
+      await getAuthoritativePassStatus(tokenRecord.uid) : { active: false };
+    if (!validPaidAccess.active) {
+      await logDownloadAudit({
+        contentId: tokenRecord.contentId, uid: tokenRecord.uid,
+        accessType: 'paid', status: 'failed', action: 'file_served',
+        reason: 'Annual Pass inactive at download redemption', req,
+      });
+      return res.status(403).json({ success: false, code: 'ANNUAL_PASS_REQUIRED',
+        error: 'An active Annual Pass is required for this download.' });
+    }
+  }
+
   const pdf = await readVerifiedPdf(tokenRecord.contentId);
   if (!pdf) {
     await logDownloadAudit({
