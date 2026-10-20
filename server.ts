@@ -6,7 +6,7 @@ import { isAllowedRequestOrigin } from './src/lib/security/requestOrigin';
 import publicFirebaseConfig from './src/config/firebasePublicConfig.json';
 import express, { Request, Response, NextFunction } from 'express';
 import { GoogleGenAI } from '@google/genai';
-import { getAdminAuth, adminSetCustomUserClaims, getFirebaseAdminConfig, getFirebaseAdminDiagnostics, verifyStudentSessionToken } from './src/lib/firebase/admin';
+import { getAdminAuth, getAdminFirestore, adminSetCustomUserClaims, getFirebaseAdminConfig, getFirebaseAdminDiagnostics, verifyStudentSessionToken } from './src/lib/firebase/admin';
 import {
   INGESTION_JOBS_STORE,
   verifyWebhookSecret,
@@ -21,6 +21,7 @@ import { getDownloadableItem } from './src/lib/download/downloadRegistry';
 import { FORMULA_DECK_ITEMS } from './src/data/formulaDeckData';
 import { paymentService } from './src/lib/payments/paymentService';
 import { entitlementService } from './src/lib/payments/entitlementService';
+import { DurableEntitlementReader } from './src/lib/payments/durableEntitlementReader';
 import { couponService } from './src/lib/coupons/couponService';
 import { PaymentProvider, StoredOrder } from './src/lib/payments/types';
 import { adminUserManager } from './src/lib/admin/adminUserManager';
@@ -201,6 +202,17 @@ interface AuthenticatedRequest extends Request {
 }
 
 /**
+ * Durable paid-access lookup. Production must never fall back to volatile maps.
+ * Firestore outages fail closed; admins retain their separately verified roles.
+ */
+async function getAuthoritativePassStatus(uid: string) {
+  const firestore = getAdminFirestore();
+  if (firestore) return new DurableEntitlementReader(firestore).checkActiveAnnualPass(uid);
+  if (process.env.NODE_ENV !== 'production') return entitlementService.checkActiveEntitlement(uid);
+  return { active: false, daysRemaining: 0, reason: 'Premium verification is temporarily unavailable' };
+}
+
+/**
  * Server-Side Firebase ID Token Verification Middleware
  * Never trusts role values coming directly from browser payloads.
  */
@@ -220,7 +232,13 @@ async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextF
   }
 
   // Check active entitlement authoritatively from server-side store
-  const entitlementCheck = entitlementService.checkActiveEntitlement(tokenVerification.uid);
+  let entitlementCheck;
+  try {
+    entitlementCheck = await getAuthoritativePassStatus(tokenVerification.uid);
+  } catch (error) {
+    console.error('Annual Pass verification unavailable:', error instanceof Error ? error.message : 'unknown error');
+    return res.status(503).json({ error: 'Annual Pass verification is temporarily unavailable' });
+  }
 
   // Assign verified user identity from token (CRITICAL: Strictly rely on cryptographic claims, NEVER substrings in UID)
   const assignedRole =
@@ -614,7 +632,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
           });
         }
         // Check server-side entitlement status
-        const passCheck = entitlementService.checkActiveEntitlement(verifiedUid);
+        const passCheck = await getAuthoritativePassStatus(verifiedUid);
         userHasEntitlement = passCheck.active;
       }
     }
@@ -638,7 +656,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
       }
 
       if (!userHasEntitlement) {
-        const passCheck = entitlementService.checkActiveEntitlement(verifiedUid);
+        const passCheck = await getAuthoritativePassStatus(verifiedUid);
         logDownloadAudit({
           contentId,
           uid: verifiedUid,
@@ -1181,15 +1199,15 @@ app.get('/api/annual-pass/config', (_req: Request, res: Response) => {
     success: true,
     settings: entitlementService.getSettings(),
   });
-});
+}));
 
 /**
  * Student Active Entitlement Status & Expiry Check
  * Automatically reflects expired state without removing order history.
  */
-app.get('/api/student/entitlement', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/student/entitlement', requireAuth, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.userAuth!.uid;
-  const status = entitlementService.checkActiveEntitlement(userId);
+  const status = await getAuthoritativePassStatus(userId);
   return res.json({
     success: true,
     active: status.active,
