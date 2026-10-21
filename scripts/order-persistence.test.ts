@@ -41,3 +41,23 @@ test('production refuses checkout when no durable storage is configured', async 
     else process.env.NODE_ENV = previous;
   }
 });
+
+
+test('invalid coupon is rejected before creating a chargeable gateway order', async t => {
+  const gateway = t.mock.method(RazorpayAdapter.prototype, 'createOrder', async () => result);
+  const service = new PaymentService();
+  await assert.rejects(
+    service.createOrder({ ...request, coupon: 'INVALID_CODE_DOES_NOT_EXIST' }),
+    /Coupon not applicable:/,
+  );
+  assert.equal(gateway.mock.callCount(), 0);
+  assert.equal(service.getUserOrders(request.userId).length, 0);
+});
+
+test('only the validated coupon is persisted with its authoritative discount', async t => {
+  t.mock.method(RazorpayAdapter.prototype, 'createOrder', async () => result);
+  const service = new PaymentService({ createOrder: async () => undefined });
+  const created = await service.createOrder({ ...request, coupon: 'board2026' });
+  assert.equal(created.order.coupon, 'BOARD2026');
+  assert.equal(created.order.discount, 100);
+});
