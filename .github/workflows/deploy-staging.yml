@@ -2,13 +2,19 @@ name: MAYF isolated staging deployment
 
 on:
   workflow_dispatch:
+    inputs:
+      confirm_isolated_staging:
+        description: 'Deploy ONLY isolated staging resources (not mayf.co.in)'
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   deploy_staging:
-    if: github.ref_name == 'staging/integrated-acceptance-2026-10-21'
+    if: github.ref_name == 'staging/consolidated-mayf-2026-10-21' && inputs.confirm_isolated_staging == true
     runs-on: ubuntu-latest
     environment: mayf-staging
     timeout-minutes: 20
@@ -26,6 +32,13 @@ jobs:
         run: node scripts/check-staging-isolation.mjs
       - name: Compile isolated staging Worker without deployment
         run: npx wrangler deploy --config wrangler.staging.jsonc --dry-run --outdir .worker-staging-test
+      - name: Confirm release candidate branch and explicit staging-only approval
+        env:
+          STAGING_BRANCH: ${{ github.ref_name }}
+          STAGING_CONFIRM: ${{ inputs.confirm_isolated_staging }}
+        run: |
+          test "$STAGING_BRANCH" = "staging/consolidated-mayf-2026-10-21" || { echo "Wrong staging branch"; exit 1; }
+          test "$STAGING_CONFIRM" = "true" || { echo "Explicit isolated staging approval required"; exit 1; }
       - name: Require staging-only deployment credentials
         env:
           STAGING_CLOUDFLARE_TOKEN: ${{ secrets.MAYF_STAGING_CLOUDFLARE_API_TOKEN }}
