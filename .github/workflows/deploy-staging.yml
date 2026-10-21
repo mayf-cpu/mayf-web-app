@@ -26,6 +26,16 @@ jobs:
         run: node scripts/check-staging-isolation.mjs
       - name: Compile isolated staging Worker without deployment
         run: npx wrangler deploy --config wrangler.staging.jsonc --dry-run --outdir .worker-staging-test
+      - name: Require staging-only deployment credentials
+        env:
+          STAGING_CLOUDFLARE_TOKEN: ${{ secrets.MAYF_STAGING_CLOUDFLARE_API_TOKEN }}
+          STAGING_CLOUDFLARE_ACCOUNT: ${{ secrets.MAYF_STAGING_CLOUDFLARE_ACCOUNT_ID }}
+          STAGING_FIREBASE_PROJECT: ${{ vars.MAYF_STAGING_FIREBASE_PROJECT_ID }}
+        run: |
+          test -n "$STAGING_CLOUDFLARE_TOKEN" || { echo "Missing staging Cloudflare API token"; exit 1; }
+          test -n "$STAGING_CLOUDFLARE_ACCOUNT" || { echo "Missing staging Cloudflare account ID"; exit 1; }
+          test -n "$STAGING_FIREBASE_PROJECT" || { echo "Missing staging Firebase project ID"; exit 1; }
+          test "$STAGING_FIREBASE_PROJECT" != "maths-at-your-fingertips" || { echo "Do not use the production Firebase project"; exit 1; }
       - name: Deploy ONLY isolated staging Worker
         run: npx wrangler deploy --config wrangler.staging.jsonc
         env:
