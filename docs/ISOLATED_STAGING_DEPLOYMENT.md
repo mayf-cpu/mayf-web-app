@@ -27,3 +27,15 @@ These **static safeguards are not live acceptance**. GitHub's `MAYF_STAGING_FIRE
 ## Content Registry webhook credential gate
 
 The Google Sheets import webhook requires **INGESTION_WEBHOOK_SECRET** in the Worker runtime and **MAYF_INGESTION_WEBHOOK_SECRET** in Apps Script Project Settings (Script Properties), set to the same unique random value of at least 32 characters. Also set **MAYF_WEBHOOK_URL** in Script Properties to the correct isolated staging HTTPS URL ending in `/api/ingestion/webhook`. Never use the publicly documented example secret or an implicit production domain fallback. Missing or weak values deny the webhook. Use the installable edit trigger (not a simple `onEdit` trigger) for Google UrlFetchApp permissions. When promoting, rotate the credentials and explicitly set the approved production URL separately; never copy staging secrets into production. The Admin Import page sends current Firebase ID tokens for protected jobs/sync/retry routes; verify this end-to-end in staging.
+
+## Frontend Firebase build isolation (required)
+
+The public Firebase web configuration is compiled into Vite frontend assets. A normal `npm run build` defaults to production-mode values and **must not** be used for isolated staging, since that can bind the browser to the production Firebase project.
+
+Create these GitHub environment variables in `mayf-staging`, all for the **same isolated Firebase web application**:
+
+- `MAYF_STAGING_FIREBASE_PROJECT_ID`, `MAYF_STAGING_FIREBASE_API_KEY`, `MAYF_STAGING_FIREBASE_AUTH_DOMAIN`, `MAYF_STAGING_FIREBASE_STORAGE_BUCKET`, `MAYF_STAGING_FIREBASE_MESSAGING_SENDER_ID`, `MAYF_STAGING_FIREBASE_APP_ID`
+
+The manual staging workflow supplies the variables as `VITE_FIREBASE_*` and forces `VITE_APP_ENV=staging` for both the isolated preflight and the Vite build. It rejects placeholders, production Firebase IDs, mismatched project IDs and missing values **before generating staging assets**. The Firebase web API key and app ID are public config, not service-account private keys.
+
+This only verifies **frontend build-time** isolation. Independently verify the deployed Worker secret `FIREBASE_SERVICE_ACCOUNT_JSON` (its `project_id`), active Firestore rules, test accounts, and OAuth before staging tests. The GitHub project-ID variable cannot prove a Cloudflare Worker secret is correct.

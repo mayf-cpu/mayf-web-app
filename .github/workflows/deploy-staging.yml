@@ -27,7 +27,28 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm test
-      - run: npm run build
+      - name: Verify isolated staging frontend Firebase configuration
+        env:
+          VITE_APP_ENV: staging
+          MAYF_STAGING_FIREBASE_PROJECT_ID: ${{ vars.MAYF_STAGING_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.MAYF_STAGING_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_API_KEY: ${{ vars.MAYF_STAGING_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.MAYF_STAGING_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.MAYF_STAGING_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.MAYF_STAGING_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.MAYF_STAGING_FIREBASE_APP_ID }}
+        run: node scripts/check-staging-frontend-env.mjs
+      - name: Build frontend with isolated staging Firebase configuration
+        env:
+          VITE_APP_ENV: staging
+          MAYF_STAGING_FIREBASE_PROJECT_ID: ${{ vars.MAYF_STAGING_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.MAYF_STAGING_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_API_KEY: ${{ vars.MAYF_STAGING_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.MAYF_STAGING_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.MAYF_STAGING_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.MAYF_STAGING_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.MAYF_STAGING_FIREBASE_APP_ID }}
+        run: npm run build
       - name: Verify isolated staging config
         run: node scripts/check-staging-isolation.mjs
       - name: Compile isolated staging Worker without deployment

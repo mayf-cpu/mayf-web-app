@@ -20,3 +20,15 @@ test('only the consolidated candidate can be explicitly dispatched for isolated 
  assert.match(workflow, /test "\$STAGING_CONFIRM" = "true"/);
  assert.ok(!workflow.includes('push:'));
 });
+
+test('staging deployment fails closed before building a frontend with wrong Firebase config', () => {
+ const guard = workflow.indexOf('Verify isolated staging frontend Firebase configuration');
+ const build = workflow.indexOf('Build frontend with isolated staging Firebase configuration');
+ const deploy = workflow.indexOf('Deploy ONLY isolated staging Worker');
+ assert.ok(guard >= 0 && build > guard && deploy > build);
+ assert.match(workflow, /node scripts\/check-staging-frontend-env\.mjs/);
+ for (const key of ['VITE_APP_ENV: staging','VITE_FIREBASE_PROJECT_ID','VITE_FIREBASE_API_KEY',
+  'VITE_FIREBASE_AUTH_DOMAIN','VITE_FIREBASE_STORAGE_BUCKET','VITE_FIREBASE_MESSAGING_SENDER_ID','VITE_FIREBASE_APP_ID',
+  'MAYF_STAGING_FIREBASE_PROJECT_ID']) assert.ok(workflow.includes(key), key);
+ assert.ok(!workflow.includes('      - run: npm run build'));
+});
