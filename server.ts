@@ -45,6 +45,7 @@ import { homepageLayoutService } from './src/lib/layout/homepageLayoutService';
 import { siteSettingsService } from './src/lib/settings/siteSettingsService';
 import { adSenseService } from './src/lib/adsense/adsenseService';
 import { broadcastService } from './src/lib/broadcasts/broadcastService';
+import { seoSettings } from './src/lib/seo/seoSettings';
 import { sitemapService } from './src/lib/seo/sitemapService';
 import { aggregateMetricsService } from './src/lib/analytics/aggregateMetricsService';
 
@@ -202,6 +203,12 @@ app.get('/sitemap.xml', (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
   res.send(sitemapService.generateSitemapXml(baseUrl));
 });
+
+// Read server-authoritative SEO configuration, without public write access.
+app.get('/api/seo-config', asyncRoute(async (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({ success: true, settings: await seoSettings.read() });
+}));
 
 // Extend Express Request type for authenticated context
 interface AuthenticatedRequest extends Request {
@@ -3179,6 +3186,16 @@ app.get('/api/admin/ai-activity', requireAuth, requireAdmin, (_req: Request, res
     },
   ]);
 });
+
+// SEO changes are authenticated and must be durably written before success.
+app.get('/api/admin/seo', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({ success: true, settings: await seoSettings.read() });
+}));
+app.put('/api/admin/seo', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
+  try { return res.json({ success: true, settings: await seoSettings.save(req.body) }); }
+  catch (error: any) { return res.status(400).json({ success: false, error: error.message || 'SEO settings were not saved.' }); }
+}));
 
 app.get('/api/admin/orders', requireAuth, requireAdmin, (_req: Request, res: Response) => {
   const stored = paymentService.getAllOrders();
