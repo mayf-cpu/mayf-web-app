@@ -430,9 +430,11 @@ export class CouponService {
   deleteCoupon(code: string): boolean {
     const normalized = code.toUpperCase();
     const coupon = this.couponsStore.get(normalized);
-    if (coupon && Object.values(coupon.activeReservations || {}).some(
-      hold => Number.isFinite(Date.parse(hold.expiresAt)) && Date.parse(hold.expiresAt) > Date.now()
-    )) throw new Error('Coupon has active checkout reservations. Disable it and retry after holds expire.');
+    // An expired hold may still back an unresolved gateway charge.
+    // Never let administrators delete that financial obligation by timer alone.
+    if (coupon && Object.keys(coupon.activeReservations || {}).length > 0) {
+      throw new Error('Coupon has outstanding checkout reservations. Resolve them before deleting.');
+    }
     return this.couponsStore.delete(normalized);
   }
 
