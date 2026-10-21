@@ -102,7 +102,7 @@ export interface OrderRecord {
   amount: number;
   currency: string;
   gateway: 'razorpay' | 'stripe';
-  status: 'captured' | 'paid' | 'pending' | 'failed' | 'refunded';
+  status: 'created' | 'pending' | 'paid' | 'failed' | 'refunded' | 'cancelled';
   createdAt: string;
   paymentId: string;
 }
@@ -560,14 +560,12 @@ class AdminService {
   }
 
   async getOrders(): Promise<OrderRecord[]> {
-    try {
-      const headers = await this.getAuthHeaders();
-      const res = await fetch('/api/admin/orders', { headers });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    } catch {
-      return [];
-    }
+    const headers = await this.getAuthHeaders();
+    const res = await fetch('/api/admin/orders', { headers });
+    if (!res.ok) throw new Error(`Payment ledger unavailable (HTTP ${res.status}).`);
+    const data: unknown = await res.json();
+    if (!Array.isArray(data)) throw new Error('Invalid payment ledger response.');
+    return data as OrderRecord[];
   }
 
   async processRefund(
