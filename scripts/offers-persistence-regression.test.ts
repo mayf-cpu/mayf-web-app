@@ -45,3 +45,24 @@ test('offers admin UI never uses fabricated credentials', () => {
     assert.match(source, /await getAdminRequestHeaders\(\)/);
   }
 });
+
+
+test('admin cannot reduce limits below used or outstanding unverified payment holds', () => {
+  const service = new CouponService();
+  const coupon = service.saveCoupon({
+    code: 'SAFE_LIMIT', discountType: 'fixed', discountValue: 10,
+    usageLimit: 3, perUserLimit: 3,
+  });
+  service.couponState.importState([{
+    ...coupon,
+    timesUsed: 1,
+    userUsageMap: { 'student-1': 1 },
+    activeReservations: {
+      'order-open': { userId: 'student-1', discount: 10, expiresAt: '2026-10-20T12:00:00Z' },
+    },
+  }]);
+  assert.throws(() => service.saveCoupon({ code: 'SAFE_LIMIT', usageLimit: 1 }), /below redeemed uses/);
+  assert.throws(() => service.saveCoupon({ code: 'SAFE_LIMIT', perUserLimit: 1 }), /per-user limit cannot be below/);
+  assert.equal(service.saveCoupon({ code: 'SAFE_LIMIT', enabled: false }).enabled, false);
+  assert.throws(() => service.deleteCoupon('SAFE_LIMIT'), /outstanding checkout reservations/);
+});
