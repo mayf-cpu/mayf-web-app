@@ -1,12 +1,7 @@
 import type { RequestHandler, Request, Response } from 'express';
-import { DocumentStateRepository } from '../firebase/documentStateRepository';
-import { getAdminFirestore } from '../firebase/admin';
-import { couponService } from './couponService';
 
-export const couponRepository = new DocumentStateRepository([
-  { collection: 'coupons', state: couponService.couponState },
-  { collection: 'promotions', state: couponService.promotionState },
-], getAdminFirestore, 'couponState');
+export { commerceRepository as couponRepository } from '../payments/commerceRepository';
+import { commerceRepository as couponRepository } from '../payments/commerceRepository';
 
 /** Send success only after the conditional Firestore commit succeeds. */
 export function couponRoute(write: boolean, handler: (req: Request, res: Response) => unknown): RequestHandler {
@@ -22,7 +17,7 @@ export function couponRoute(write: boolean, handler: (req: Request, res: Respons
       res.setHeader('Cache-Control', 'no-store');
       res.status(result.status).json(result.body);
     } catch {
-      res.status(503).json({ success: false, error: 'Coupon storage unavailable or changed concurrently. Refresh and retry.' });
+      res.status(503).json({ success: false, error: 'Saved data is temporarily unavailable or changed concurrently. Refresh and retry.' });
     }
   };
 }

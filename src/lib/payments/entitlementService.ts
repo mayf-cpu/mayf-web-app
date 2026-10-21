@@ -70,6 +70,19 @@ export class EntitlementService {
     if (!isProductionPaymentRuntime()) this.seedInitialEntitlements();
   }
 
+  entitlementState = {
+    exportState: () => structuredClone([...this.entitlementsStore.values()]),
+    importState: (items: Record<string, any>[]) => { this.entitlementsStore = new Map(items.map(item => [item.id, item as Entitlement])); },
+  };
+  historyState = {
+    exportState: () => structuredClone(this.historyLogs),
+    importState: (items: Record<string, any>[]) => { this.historyLogs = items as EntitlementHistoryLog[]; },
+  };
+  settingsState = {
+    exportState: () => [{ id: 'annual-pass', ...this.settings }],
+    importState: (items: Record<string, any>[]) => { const config = items.find(item => item.id === 'annual-pass'); if (config) { const { id, ...settings } = config; this.settings = settings as AnnualPassSettings; } },
+  };
+
   /**
    * Seed realistic initial entitlement for demo student
    */
@@ -147,6 +160,7 @@ export class EntitlementService {
     if (params.orderId) {
       for (const existing of this.entitlementsStore.values()) {
         if (existing.orderId === params.orderId) {
+          if (existing.userId !== params.userId) throw new Error('Order already belongs to a different student.');
           return existing;
         }
       }
@@ -154,7 +168,9 @@ export class EntitlementService {
 
     const duration = params.durationDays || this.settings.durationDays || 365;
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + duration * 24 * 60 * 60 * 1000);
+    if (!Number.isInteger(duration) || duration <= 0 || duration > 3650) throw new Error('Pass duration must be 1–3650 whole days.');
+    const renewalStart = Math.max(now.getTime(), ...[...this.entitlementsStore.values()].filter(item => item.userId === params.userId && item.status === 'active' && Date.parse(item.startsAt) <= now.getTime()).map(item => Date.parse(item.expiresAt)).filter(Number.isFinite));
+    const expiresAt = new Date(renewalStart + duration * 24 * 60 * 60 * 1000);
 
     const entitlementId = `ent-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
     const entitlement: Entitlement = {

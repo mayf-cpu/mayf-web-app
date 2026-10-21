@@ -1,4 +1,5 @@
-import { canReadPremiumContent, publicContent } from './src/lib/catalogue/catalogueAccess';
+import { hasPurchasedContentAccess } from './src/lib/payments/contentAccess';
+import { publicContent } from './src/lib/catalogue/catalogueAccess';
 import { asyncRoute } from './src/lib/http/asyncRoute';
 import { filterCatalogue } from './src/lib/catalogue/catalogueQuery';
 import { catalogueRepository, catalogueRoute } from './src/lib/cms/catalogueRepository';
@@ -22,6 +23,7 @@ import { FORMULA_DECK_ITEMS } from './src/data/formulaDeckData';
 import { paymentService } from './src/lib/payments/paymentService';
 import { entitlementService } from './src/lib/payments/entitlementService';
 import { couponService } from './src/lib/coupons/couponService';
+import { commerceRepository } from './src/lib/payments/commerceRepository';
 import { couponRepository, couponRoute } from './src/lib/coupons/couponRepository';
 import { resolveCheckoutCart } from './src/lib/payments/checkoutPricing';
 import { PaymentProvider, StoredOrder } from './src/lib/payments/types';
@@ -222,7 +224,9 @@ async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextF
   }
 
   // Check active entitlement authoritatively from server-side store
-  const entitlementCheck = entitlementService.checkActiveEntitlement(tokenVerification.uid);
+  let entitlementCheck;
+  try { entitlementCheck = await commerceRepository.run(() => entitlementService.checkActiveEntitlement(tokenVerification.uid!)); }
+  catch { return res.status(503).json({ error: 'Membership storage unavailable. Please retry shortly.' }); }
 
   // Assign verified user identity from token (CRITICAL: Strictly rely on cryptographic claims, NEVER substrings in UID)
   const assignedRole =
@@ -616,7 +620,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
           });
         }
         // Check server-side entitlement status
-        const passCheck = entitlementService.checkActiveEntitlement(verifiedUid);
+        const passCheck = await commerceRepository.run(() => entitlementService.checkActiveEntitlement(verifiedUid!));
         userHasEntitlement = passCheck.active;
       }
     }
@@ -640,7 +644,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
       }
 
       if (!userHasEntitlement) {
-        const passCheck = entitlementService.checkActiveEntitlement(verifiedUid);
+        const passCheck = await commerceRepository.run(() => entitlementService.checkActiveEntitlement(verifiedUid!));
         logDownloadAudit({
           contentId,
           uid: verifiedUid,
@@ -859,6 +863,7 @@ async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
       return res.status(400).json({ success: false, error: error.message || 'Invalid checkout cart.' });
     }
 
+    if (provider === 'razorpay' && cart.currency !== 'INR') return res.status(400).json({ success: false, error: 'Razorpay checkout requires INR.' });
     const chosenCoupon = coupon || couponCode;
 
     const result = await paymentService.createOrder({
@@ -891,8 +896,8 @@ async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
   }
 }
 
-app.post('/api/payments/create-order', requireAuth, handleCreateOrder);
-app.post('/api/orders/create', requireAuth, handleCreateOrder);
+app.post('/api/payments/create-order', requireAuth, couponRoute(true, handleCreateOrder));
+app.post('/api/orders/create', requireAuth, couponRoute(true, handleCreateOrder));
 
 /**
  * 2. Client Returns Payment Identifiers -> Server Authoritatively Verifies Signature
@@ -956,14 +961,14 @@ async function handleVerifyPayment(req: AuthenticatedRequest, res: Response) {
   }
 }
 
-app.post('/api/payments/verify-signature', requireAuth, handleVerifyPayment);
-app.post('/api/payments/verify-and-grant', requireAuth, handleVerifyPayment);
+app.post('/api/payments/verify-signature', requireAuth, couponRoute(true, handleVerifyPayment));
+app.post('/api/payments/verify-and-grant', requireAuth, couponRoute(true, handleVerifyPayment));
 
 /**
  * 3. Razorpay Authoritative Webhook Endpoint
  * Verifies x-razorpay-signature HMAC and enforces idempotency
  */
-app.post('/api/payments/webhook/razorpay', asyncRoute(async (req: Request, res: Response) => {
+app.post('/api/payments/webhook/razorpay', couponRoute(true, async (req: Request, res: Response) => {
   try {
     const rawBody = (req as any).rawBody || JSON.stringify(req.body);
     const result = await paymentService.handleWebhook('razorpay', req.headers, rawBody);
@@ -1006,7 +1011,7 @@ app.post('/api/payments/webhook/razorpay', asyncRoute(async (req: Request, res: 
  * 4. Stripe Authoritative Webhook Endpoint
  * Verifies stripe-signature timestamped HMAC and enforces idempotency
  */
-app.post('/api/payments/webhook/stripe', asyncRoute(async (req: Request, res: Response) => {
+app.post('/api/payments/webhook/stripe', couponRoute(true, async (req: Request, res: Response) => {
   try {
     const rawBody = (req as any).rawBody || JSON.stringify(req.body);
     const result = await paymentService.handleWebhook('stripe', req.headers, rawBody);
@@ -1047,27 +1052,27 @@ app.post('/api/payments/webhook/stripe', asyncRoute(async (req: Request, res: Re
 /**
  * 5. Student Orders Endpoint
  */
-app.get('/api/student/orders', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/student/orders', requireAuth, couponRoute(false, (req: AuthenticatedRequest, res: Response) => {
   const userId = req.userAuth!.uid;
   const userOrders = paymentService.getUserOrders(userId);
   return res.json({
     success: true,
     orders: userOrders,
   });
-});
+}));
 
 /**
  * 6. Admin Payment Settings (NEVER reveals stored plaintext secrets)
  */
-app.get('/api/admin/payments/settings', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+app.get('/api/admin/payments/settings', requireAuth, requireAdmin, couponRoute(false, (_req: Request, res: Response) => {
   const settings = paymentService.getMaskedSettings();
   return res.json({
     success: true,
     settings,
   });
-});
+}));
 
-app.post('/api/admin/payments/settings', requireAuth, requireAdmin, (req: Request, res: Response) => {
+app.post('/api/admin/payments/settings', requireAuth, requireAdmin, couponRoute(true, (req: Request, res: Response) => {
   try {
     const updated = paymentService.updateSettings(req.body);
     return res.json({
@@ -1079,12 +1084,12 @@ app.post('/api/admin/payments/settings', requireAuth, requireAdmin, (req: Reques
     console.error('[MAYF Admin] Payment settings update error:', error);
     return res.status(500).json({ success: false, error: error?.message || 'Failed to update payment settings' });
   }
-});
+}));
 
 /**
  * 7. Admin Orders Ledger & Audit
  */
-app.get('/api/admin/payments/orders', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+app.get('/api/admin/payments/orders', requireAuth, requireAdmin, couponRoute(false, (_req: Request, res: Response) => {
   const orders = paymentService.getAllOrders();
   const summary = {
     totalOrders: orders.length,
@@ -1104,24 +1109,24 @@ app.get('/api/admin/payments/orders', requireAuth, requireAdmin, (_req: Request,
     summary,
     orders,
   });
-});
+}));
 
 /**
  * 8. Admin Webhook Idempotency Log
  */
-app.get('/api/admin/payments/webhook-logs', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+app.get('/api/admin/payments/webhook-logs', requireAuth, requireAdmin, couponRoute(false, (_req: Request, res: Response) => {
   const logs = paymentService.getWebhookLogs();
   return res.json({
     success: true,
     totalLogs: logs.length,
     logs,
   });
-});
+}));
 
 /**
  * 9. Admin Webhook Simulator & Idempotency Tester
  */
-app.post('/api/admin/payments/simulate-webhook', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
+app.post('/api/admin/payments/simulate-webhook', requireAuth, requireAdmin, couponRoute(true, async (req: Request, res: Response) => {
   try {
     const { provider = 'razorpay', eventType = 'payment.captured', orderId, simulateDuplicate } = req.body;
     if (!orderId) {
@@ -1159,18 +1164,18 @@ app.post('/api/admin/payments/simulate-webhook', requireAuth, requireAdmin, asyn
 /**
  * Public Annual Pass Configuration (For pricing & feature cards)
  */
-app.get('/api/annual-pass/config', (_req: Request, res: Response) => {
+app.get('/api/annual-pass/config', couponRoute(false, (_req: Request, res: Response) => {
   return res.json({
     success: true,
     settings: entitlementService.getSettings(),
   });
-});
+}));
 
 /**
  * Student Active Entitlement Status & Expiry Check
  * Automatically reflects expired state without removing order history.
  */
-app.get('/api/student/entitlement', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/student/entitlement', requireAuth, couponRoute(false, (req: AuthenticatedRequest, res: Response) => {
   const userId = req.userAuth!.uid;
   const status = entitlementService.checkActiveEntitlement(userId);
   return res.json({
@@ -1181,22 +1186,22 @@ app.get('/api/student/entitlement', requireAuth, (req: AuthenticatedRequest, res
     entitlement: status.entitlement,
     settings: entitlementService.getSettings(),
   });
-});
+}));
 
 /**
  * Admin: Get Annual Pass Settings
  */
-app.get('/api/admin/annual-pass/settings', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+app.get('/api/admin/annual-pass/settings', requireAuth, requireAdmin, couponRoute(false, (_req: Request, res: Response) => {
   return res.json({
     success: true,
     settings: entitlementService.getSettings(),
   });
-});
+}));
 
 /**
  * Admin: Update Annual Pass Settings
  */
-app.post('/api/admin/annual-pass/settings', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/annual-pass/settings', requireAuth, requireAdmin, couponRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const updated = entitlementService.updateSettings(req.body, req.userAuth?.uid || 'admin');
     return res.json({
@@ -1207,24 +1212,24 @@ app.post('/api/admin/annual-pass/settings', requireAuth, requireAdmin, (req: Aut
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message || 'Failed to update Annual Pass settings' });
   }
-});
+}));
 
 /**
  * Admin: List All Entitlements
  */
-app.get('/api/admin/annual-pass/entitlements', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+app.get('/api/admin/annual-pass/entitlements', requireAuth, requireAdmin, couponRoute(false, (_req: Request, res: Response) => {
   const entitlements = entitlementService.getAllEntitlements();
   return res.json({
     success: true,
     count: entitlements.length,
     entitlements,
   });
-});
+}));
 
 /**
  * Admin: Grant Annual Pass
  */
-app.post('/api/admin/annual-pass/grant', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/annual-pass/grant', requireAuth, requireAdmin, couponRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const { userId, durationDays, notes } = req.body;
     if (!userId || typeof userId !== 'string') {
@@ -1246,12 +1251,12 @@ app.post('/api/admin/annual-pass/grant', requireAuth, requireAdmin, (req: Authen
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message || 'Failed to grant Annual Pass' });
   }
-});
+}));
 
 /**
  * Admin: Extend Annual Pass
  */
-app.post('/api/admin/annual-pass/extend', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/annual-pass/extend', requireAuth, requireAdmin, couponRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const { userId, daysToAdd, newExpiresAt, reason } = req.body;
     if (!userId || typeof userId !== 'string') {
@@ -1274,12 +1279,12 @@ app.post('/api/admin/annual-pass/extend', requireAuth, requireAdmin, (req: Authe
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message || 'Failed to extend Annual Pass' });
   }
-});
+}));
 
 /**
  * Admin: Revoke Annual Pass
  */
-app.post('/api/admin/annual-pass/revoke', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/annual-pass/revoke', requireAuth, requireAdmin, couponRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const { userId, reason } = req.body;
     if (!userId || typeof userId !== 'string') {
@@ -1300,12 +1305,12 @@ app.post('/api/admin/annual-pass/revoke', requireAuth, requireAdmin, (req: Authe
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message || 'Failed to revoke Annual Pass' });
   }
-});
+}));
 
 /**
  * Admin: View Audit History Log
  */
-app.get('/api/admin/annual-pass/history', requireAuth, requireAdmin, (req: Request, res: Response) => {
+app.get('/api/admin/annual-pass/history', requireAuth, requireAdmin, couponRoute(false, (req: Request, res: Response) => {
   const userId = req.query.userId ? String(req.query.userId) : undefined;
   const history = entitlementService.getHistory(userId);
   return res.json({
@@ -1313,7 +1318,7 @@ app.get('/api/admin/annual-pass/history', requireAuth, requireAdmin, (req: Reque
     totalLogs: history.length,
     history,
   });
-});
+}));
 
 // -------------------------------------------------------------
 // Authoritative Coupon Engine & Promotional Blocks API
@@ -2020,7 +2025,7 @@ app.get('/api/catalogue/by-slug/:slug', asyncRoute(async (req, res) => {
   const verified = req.headers.authorization ? await verifyStudentSessionToken(req.headers.authorization) : null;
   const item = await catalogueRepository.run(() => contentCmsManager.exportState().find(item => item.slug === req.params.slug && item.visible && (!item.status || item.status === 'published') && !item.isDeleted));
   if (!item) return res.status(404).json({ error: 'Resource not found' });
-  const canAccess = canReadPremiumContent(verified, item.annualPassIncluded);
+  const canAccess = verified?.valid ? await commerceRepository.run(() => hasPurchasedContentAccess(verified, item as any, paymentService, entitlementService)) : false;
   res.setHeader('Cache-Control', 'private, no-store');
   return res.json({ item: publicContent(item, canAccess) });
 }));
@@ -2878,7 +2883,7 @@ app.get('/api/broadcasts/active', asyncRoute(async (req: Request, res: Response)
       const verified = await verifyStudentSessionToken(authHeader);
       if (verified && verified.uid) {
         email = verified.email;
-        const passCheck = entitlementService.checkActiveEntitlement(verified.uid);
+        const passCheck = await commerceRepository.run(() => entitlementService.checkActiveEntitlement(verified.uid!));
         hasAnnualPass = Boolean(passCheck.active);
         isPro = Boolean(passCheck.active || verified.admin || verified.superAdmin);
       }
@@ -3069,51 +3074,26 @@ app.get('/api/admin/ai-activity', requireAuth, requireAdmin, (_req: Request, res
   ]);
 });
 
-app.get('/api/admin/orders', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+app.get('/api/admin/orders', requireAuth, requireAdmin, couponRoute(false, (_req: Request, res: Response) => {
   const stored = paymentService.getAllOrders();
   if (stored && stored.length > 0) {
     return res.json(
       stored.map((o: StoredOrder) => ({
         id: o.orderId,
         orderNumber: o.providerOrderId || o.orderId,
-        customerEmail: o.customerDetails?.email || 'student@mayf.co.in',
+        customerEmail: o.customerDetails?.email || '',
         planName: o.items[0]?.title || 'Annual Pass (Classes 5–10)',
-        amount: o.grossAmount,
+        amount: o.grossAmount - o.discount + (o.tax || 0),
         currency: o.currency,
         gateway: o.provider,
         status: o.status,
         createdAt: o.createdAt,
-        paymentId: o.providerPaymentId || 'pay_' + o.orderId.slice(0, 10),
+        paymentId: o.providerPaymentId || '',
       }))
     );
   }
-  return res.json([
-    {
-      id: 'ord-801',
-      orderNumber: 'MAYF-2026-8910',
-      customerEmail: 'arjun.sharma@mayf.co.in',
-      planName: 'Annual Pass (Classes 5–10)',
-      amount: 1999,
-      currency: 'INR',
-      gateway: 'razorpay',
-      status: 'captured',
-      createdAt: '2026-10-08T04:22:00.000Z',
-      paymentId: 'pay_rzp_98a7s6d5f4',
-    },
-    {
-      id: 'ord-802',
-      orderNumber: 'MAYF-2026-8909',
-      customerEmail: 'priya.patel@gmail.com',
-      planName: 'Annual Pass Family Pack (2 Children)',
-      amount: 2999,
-      currency: 'INR',
-      gateway: 'stripe',
-      status: 'paid',
-      createdAt: '2026-10-07T19:15:00.000Z',
-      paymentId: 'pi_3MtwBwLkdIwHu7ix28aZlKst',
-    },
-  ]);
-});
+  return res.json([]);
+}));
 
 const IN_MEMORY_BROADCASTS = [
   {
