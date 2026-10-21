@@ -6,8 +6,7 @@ import { configurePdfBucket } from '../src/lib/download/pdfObjectStorage';
 import type { FirestoreDocumentStore } from '../src/lib/firebase/documentStore';
 test('audit never creates CMS records or uploads PDFs',async()=>{
  let reads=0;
- const store={collection:()=>({doc:()=>({get:async()=>{reads++;return {exists:false,data:()=>undefined};}})})}
-   as unknown as FirestoreDocumentStore;
+ const store = { collection: () => ({ doc: () => ({ get: async () => { reads++; return { exists: false, data: () => undefined }; } }) }) } as unknown as FirestoreDocumentStore;
  const previous=DOWNLOADABLE_ITEMS.length;
  configurePdfBucket(null);
  const report=await auditLegacyPdfMigration(store);
