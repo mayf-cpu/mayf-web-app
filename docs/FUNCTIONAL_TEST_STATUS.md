@@ -123,3 +123,10 @@ Keep this PR in draft until the open durability and demonstration-path findings 
 - The privileged legacy set-claims endpoint now actually updates Firebase rather than returning invented success. It validates booleans, preserves unspecified claims, updates role flags together and blocks self-demotion through this route. No live user claims were changed for QA.
 - Three tests cover no initial sample audit data, fresh-service recovery, CSV handling, atomic catalogue/audit persistence, failed-write rollback and failed-response discard. 88 automated tests, TypeScript and production build pass.
 - Cloudflare reports successful deployment of e9e2379 (analytics). The browser reset removed the authenticated session, so new analytics/audit UI acceptance and live CSV exports remain pending; earlier authenticated SEO save/read-back/restore was completed before that reset. Security configuration persistence/enforcement and wider student-activity integration remain open.
+
+## Public-page follow-through
+
+- Live guest formula favorite add/reload/read-back passed; the QA favorite was removed afterward. Share menu showed canonical public social URLs without posting to any platform. One blank page after a deployment recovered on the next reload; the cause is not established.
+- Public UI testing exposed the hero's clipped share popover. Share popovers now render in a body portal, stay inside the viewport, choose space above/below the button and scroll internally. Decorative hero watermarks retain their own clipping. Live deployed visual acceptance of this fix is pending.
+- Formula copy actions now await clipboard completion and show browser-blocked errors rather than prematurely reporting success. Share copy fallback checks whether the copy actually succeeded. The cloud browser did not provide copied text, so clipboard success is not certified.
+- Cloudflare reports successful build/deployment of 949dba3 (durable audit batch). 88 automated tests passed for that batch; subsequent frontend fixes pass TypeScript and the production build.

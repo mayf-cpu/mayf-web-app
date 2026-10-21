@@ -136,12 +136,12 @@ export const HomePage: React.FC = () => {
   const renderHero = (block: HomepageBlock<HeroBlockConfig>) => {
     const config = block.config || {};
     return (
-      <section key={block.id} className="relative overflow-hidden pt-4 pb-8 md:py-12">
+      <section key={block.id} className="relative pt-4 pb-8 md:py-12">
         {config.showWatermark !== false && (
-          <>
+          <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
             <WatermarkGlyph glyph="∫" size="xl" className="opacity-40 -top-8 right-0" />
             <WatermarkGlyph glyph="π" size="lg" className="opacity-30 top-36 -left-6" />
-          </>
+          </div>
         )}
 
         <div className="max-w-3xl">

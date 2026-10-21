@@ -35,6 +35,7 @@ export const FormulaDetailPage: React.FC = () => {
   const { user, savedItemIds, toggleSavedItem } = useAuth();
 
   const [copiedFormula, setCopiedFormula] = useState(false);
+  const [copyError, setCopyError] = useState('');
 
   const slug = currentRoute.params.slug;
   const currentIndex = FORMULA_DECK_ITEMS.findIndex((f) => f.slug === slug);
@@ -146,10 +147,12 @@ export const FormulaDetailPage: React.FC = () => {
   }, [nextFormula.slug, prevFormula.slug, navigate]);
 
   // Copy Formula Expression
-  const handleCopyFormula = () => {
-    navigator.clipboard.writeText(formula.plainTextFormula);
-    setCopiedFormula(true);
-    setTimeout(() => setCopiedFormula(false), 2000);
+  const handleCopyFormula = async () => {
+    setCopiedFormula(false); setCopyError('');
+    try {
+      await navigator.clipboard.writeText(formula.plainTextFormula);
+      setCopiedFormula(true); setTimeout(() => setCopiedFormula(false), 2000);
+    } catch { setCopyError('Copy was blocked by your browser. Select the formula text to copy it manually.'); }
   };
 
   // Related formulas resolution
@@ -261,6 +264,7 @@ export const FormulaDetailPage: React.FC = () => {
                   <span>{copiedFormula ? 'Copied!' : 'Copy'}</span>
                 </Button>
 
+                {copyError && <p role="alert" className="text-xs text-red-700">{copyError}</p>}
                 {/* Reusable Share Component */}
                 <ShareButton
                   canonicalUrl={`https://mayf.co.in/formula/${formula.slug}`}
