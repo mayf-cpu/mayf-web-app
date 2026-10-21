@@ -38,3 +38,13 @@ test('admin ledger cannot hide fetch errors or export inert test amounts', () =>
   assert.match(ui, /safeCsvCell/);
   assert.match(ui, /ord\.currency === 'INR'/);
 });
+
+test('legacy browser payment verification and simulated webhooks are disabled by default', () => {
+  const server = read('server.ts');
+  const verify = server.slice(server.indexOf('async function handleVerifyPayment('), server.indexOf("app.post('/api/payments/verify-signature'"));
+  assert.match(verify, /process\.env\.MAYF_ENABLE_CHECKOUT !== 'true'/);
+  assert.match(verify, /if \(isProductionPaymentRuntime\(\)\)/);
+  const sim = server.slice(server.indexOf("app.post('/api/admin/payments/simulate-webhook'"),server.indexOf('// -------------------------------------------------------------',server.indexOf("app.post('/api/admin/payments/simulate-webhook'")));
+  assert.match(sim, /process\.env\.MAYF_ENABLE_PAYMENT_SIMULATION !== 'true'/);
+  assert.match(sim, /isProductionPaymentRuntime\(\)/);
+});
