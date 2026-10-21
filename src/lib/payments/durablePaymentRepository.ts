@@ -55,7 +55,7 @@ export class DurablePaymentRepository {
     // when no administrator edited the coupon during checkout.
     const startsMs = coupon.startDate ? Date.parse(coupon.startDate) : -Infinity;
     const endsMs = coupon.endDate
-      ? Date.parse(/^\\d{4}-\\d{2}-\\d{2}$/.test(coupon.endDate)
+      ? Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(coupon.endDate)
         ? coupon.endDate + 'T23:59:59.999Z' : coupon.endDate)
       : Infinity;
     if ((coupon.startDate && !Number.isFinite(startsMs)) ||
@@ -73,7 +73,18 @@ export class DurablePaymentRepository {
       if (!value || typeof value.userId !== 'string' ||
           !Number.isFinite(Date.parse(value.expiresAt)) ||
           !Number.isFinite(value.discount)) throw new Error('Invalid coupon hold');
-      if (Date.parse(value.expiresAt) > nowMs) active[key] = value;
+      if (Date.parse(value.expiresAt) > nowMs) {
+        active[key] = value;
+      } else {
+        // An expired timer is NOT evidence that the payment gateway cancelled
+        // its chargeable order. Never reallocate capacity tied to an
+        // unresolved persisted checkout.
+        const orderDoc = await this.store.collection(ORDER_COLLECTION).doc(validId(key)).get();
+        const existingOrder = orderDoc.exists ? orderDoc.data() as StoredOrder : null;
+        if (existingOrder && (existingOrder.status === 'created' || existingOrder.status === 'pending')) {
+          active[key] = value;
+        }
+      }
     }
     if (active[orderId]) throw new Error('This order already has a coupon reservation');
     if (Object.keys(active).length >= 100) throw new Error('Coupon reservation capacity is temporarily full');
