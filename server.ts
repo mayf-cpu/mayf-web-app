@@ -34,7 +34,7 @@ import { FORMULA_DECK_ITEMS } from './src/data/formulaDeckData';
 import { paymentService } from './src/lib/payments/paymentService';
 import { paymentSettingsRepository } from './src/lib/payments/paymentSettingsRepository';
 import { isProductionPaymentRuntime } from './src/lib/payments/runtime';
-import { validateAnnualPassCart } from './src/lib/payments/checkoutPolicy';
+import { validateAnnualPassCart, isSupportedLaunchPaymentMethod } from './src/lib/payments/checkoutPolicy';
 import { DurablePaymentRepository } from './src/lib/payments/durablePaymentRepository';
 import { initiateFullRefund } from './src/lib/payments/refundInitiation';
 import { readOwnedPaymentConfirmation } from './src/lib/payments/paymentConfirmation';
@@ -911,6 +911,13 @@ async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
       customerDetails,
     } = req.body;
     const userId = req.userAuth!.uid;
+    if (!isSupportedLaunchPaymentMethod(currency, provider)) {
+      return res.status(503).json({
+        success: false,
+        code: 'STRIPE_CHECKOUT_NOT_READY',
+        error: 'International/Stripe checkout is not available yet. Only INR payments through Razorpay are supported.',
+      });
+    }
 
     // Rate Limiting on checkout creation: max 10 orders per 5 minutes per user/IP
     const rawIp = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || '127.0.0.1');
@@ -964,8 +971,8 @@ async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
       grossAmount: authoritativeGross,
       annualPassDurationDays: passSettings.durationDays,
       coupon: chosenCoupon,
-      currency,
-      preferredProvider: provider as PaymentProvider,
+      currency: 'INR',
+      preferredProvider: 'razorpay' as PaymentProvider,
       customerDetails,
     }));
 

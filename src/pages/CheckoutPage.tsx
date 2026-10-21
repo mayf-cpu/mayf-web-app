@@ -572,14 +572,10 @@ export const CheckoutPage: React.FC = () => {
                   </span>
                 </div>
 
-                {/* Stripe International Option */}
+                {/* Keep international plans visible, but do not offer unsupported checkout. */}
                 <div
-                  onClick={() => setSelectedProvider('stripe')}
-                  className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between space-y-2 ${
-                    selectedProvider === 'stripe'
-                      ? 'border-[#00687A] bg-[#F0F9FF]'
-                      : 'border-[#E2E8F0] bg-white hover:border-[#CBD5E1]'
-                  }`}
+                  aria-disabled="true"
+                  className="p-4 rounded-xl border-2 border-[#E2E8F0] bg-slate-50 opacity-70 cursor-not-allowed flex flex-col justify-between space-y-2"
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-heading font-bold text-sm text-[#0F172A] flex items-center gap-1.5">
@@ -587,14 +583,14 @@ export const CheckoutPage: React.FC = () => {
                       <span>Stripe (International)</span>
                     </span>
                     <span className="text-[10px] bg-[#F1F5F9] text-[#64748B] font-bold px-1.5 py-0.5 rounded">
-                      GLOBAL
+                      COMING SOON
                     </span>
                   </div>
                   <p className="text-[11px] text-[#64748B]">
-                    International Cards (US, UK, UAE, Singapore) with multi-currency conversion
+                    International payments will be available after Stripe sandbox and settlement testing
                   </p>
                   <span className="font-mono font-bold text-sm text-[#635BFF]">
-                    ${appliedCoupon.toUpperCase() === 'BOARD2026' ? '24' : '29'} USD
+                    International checkout unavailable
                   </span>
                 </div>
               </div>

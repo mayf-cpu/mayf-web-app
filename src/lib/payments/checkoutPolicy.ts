@@ -9,3 +9,13 @@ export function validateAnnualPassCart(items: unknown): boolean {
   return !!item && typeof item === 'object' && item.annualPass === true &&
     Number(item.quantity ?? 1) === 1;
 }
+
+/**
+ * Interim production launch is INR/Razorpay only. Stripe implementation is
+ * preserved but remains unavailable until sandbox checkout acceptance.
+ * Never let an "auto" selection route INR orders to saved Stripe settings.
+ */
+export function isSupportedLaunchPaymentMethod(currency: unknown, provider: unknown): boolean {
+  return typeof currency === 'string' && currency.toUpperCase() === 'INR' &&
+    (provider === undefined || provider === null || provider === 'auto' || provider === 'razorpay');
+}

@@ -55,3 +55,7 @@
 - Deployed checkout no longer invokes the deliberately disabled legacy signature-settlement endpoint after the browser callback. It reads authenticated `/api/student/orders/:orderId/confirmation`, which confirms only the exact owner's paid order and matching active payment entitlement. This route cannot write or settle anything.
 - Confirmation polling is bounded, cancellable on account change/unmount, and shows a pending message with a read-only retry. A pending confirmation disables new checkout submission on that page. Only matching settled results show purchase confirmation. A full reload still relies on purchase history; complete live resume/reload acceptance before enablement.
 - Stripe's real sandbox/hosted checkout flow and paid-resource purchases remain release blockers. This change does not certify them or enable any checkout/refund flag.
+
+## Interim gateway availability
+
+For the requested first release, **Stripe is postponed**, not removed. The checkout page displays the international option as unavailable; server order creation only permits INR/Razorpay, including when the administrator has saved `activeProvider=stripe` and the client sends `auto`. `MAYF_ENABLE_CHECKOUT` remains false pending actual Razorpay sandbox settlement acceptance. Enabling Stripe later requires implementing and verifying hosted Checkout, signed settlement, refunds, and frontend confirmation; do not bypass the server gateway policy for a partially tested route.
