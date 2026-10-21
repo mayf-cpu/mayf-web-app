@@ -56,8 +56,39 @@ test('invalid coupon is rejected before creating a chargeable gateway order', as
 
 test('only the validated coupon is persisted with its authoritative discount', async t => {
   t.mock.method(RazorpayAdapter.prototype, 'createOrder', async () => result);
-  const service = new PaymentService({ createOrder: async () => undefined });
+  let reserved = 0;
+  const service = new PaymentService({
+    createOrder: async () => undefined,
+    reserveCoupon: async () => { reserved++; return { expiresAt: new Date(Date.now() + 1_800_000).toISOString() }; },
+    releaseCouponReservation: async () => undefined,
+  });
   const created = await service.createOrder({ ...request, coupon: 'board2026' });
+  assert.equal(reserved, 1);
+  assert.equal(created.order.couponReservationId, created.order.orderId);
   assert.equal(created.order.coupon, 'BOARD2026');
   assert.equal(created.order.discount, 100);
+});
+
+
+test('gateway failure releases reserved coupon before returning an error', async t => {
+  t.mock.method(RazorpayAdapter.prototype, 'createOrder', async () => {
+    throw new Error('Provider failed');
+  });
+  const releases: string[] = [];
+  const service = new PaymentService({
+    createOrder: async () => undefined,
+    reserveCoupon: async () => ({ expiresAt: new Date(Date.now() + 1_800_000).toISOString() }),
+    releaseCouponReservation: async (orderId: string) => { releases.push(orderId); },
+  });
+  await assert.rejects(service.createOrder({ ...request, coupon: 'board2026' }), /Provider failed/);
+  assert.equal(releases.length, 1);
+});
+
+test('coupon checkout fails closed when the durable reservation interface is absent', async t => {
+  const gateway = t.mock.method(RazorpayAdapter.prototype, 'createOrder', async () => result);
+  const service = new PaymentService({ createOrder: async () => undefined });
+  await assert.rejects(
+    service.createOrder({ ...request, coupon: 'board2026' }), /reservation storage is unavailable/,
+  );
+  assert.equal(gateway.mock.callCount(), 0);
 });
