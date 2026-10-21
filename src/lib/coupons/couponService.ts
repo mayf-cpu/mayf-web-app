@@ -423,6 +423,26 @@ export class CouponService {
     }
     if (updated.startDate && updated.endDate && updated.startDate > updated.endDate) throw new Error('End date must follow start date.');
     if (updated.scope === 'selected_products' && !updated.selectedProductIds?.length) throw new Error('Select at least one eligible product.');
+    // Previously sold uses plus outstanding gateway claims are financial
+    // obligations, even when a hold timer has expired. Do not let a CMS
+    // edit shrink limits below obligations and strand a captured payment.
+    const outstanding = Object.values(updated.activeReservations || {});
+    if (updated.usageLimit != null &&
+        updated.usageLimit < updated.timesUsed + outstanding.length) {
+      throw new Error('Coupon global limit cannot be below redeemed uses plus outstanding checkout reservations.');
+    }
+    const heldByStudent: Record<string, number> = {};
+    for (const hold of outstanding) {
+      if (!hold || typeof hold.userId !== 'string') throw new Error('Invalid outstanding coupon reservation.');
+      heldByStudent[hold.userId] = (heldByStudent[hold.userId] || 0) + 1;
+    }
+    if (updated.perUserLimit != null) {
+      for (const uid of new Set([...Object.keys(updated.userUsageMap), ...Object.keys(heldByStudent)])) {
+        if ((updated.userUsageMap[uid] || 0) + (heldByStudent[uid] || 0) > updated.perUserLimit) {
+          throw new Error('Coupon per-user limit cannot be below redeemed uses plus outstanding reservations.');
+        }
+      }
+    }
     this.couponsStore.set(rawCode, updated);
     return updated;
   }
