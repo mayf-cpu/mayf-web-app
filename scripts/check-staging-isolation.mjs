@@ -17,3 +17,15 @@ assert.equal(staging.vars?.MAYF_ENABLE_CHECKOUT,'false');
 assert.equal(staging.vars?.MAYF_ENABLE_COUPON_CHECKOUT,'false');
 assert.equal(staging.vars?.MAYF_ENABLE_PAYMENT_SIMULATION,'false');
 assert.equal(staging.triggers,undefined,'Staging must not run scheduled triggers');
+
+// Fail closed if future configuration edits accidentally enable commerce, privileged
+// refunds, custom domains or other production-facing bindings in staging.
+assert.equal(staging.vars?.MAYF_ENABLE_ADMIN_REFUNDS,'false');
+assert.equal(staging.workers_dev,undefined,'Staging worker URL must remain managed by isolated Wrangler config');
+assert.equal(staging.route,undefined,'Staging must not attach a custom route');
+assert.equal(staging.zone_id,undefined,'Staging must not attach a production zone');
+assert.equal(staging.env,undefined,'Staging must not silently inherit environment overrides');
+assert.equal(staging.services,undefined,'Staging must not bind production Workers');
+assert.equal(staging.d1_databases,undefined,'Staging must not bind unreviewed D1 databases');
+assert.equal(staging.kv_namespaces,undefined,'Staging must not bind unreviewed KV namespaces');
+assert.equal(staging.unsafe,undefined,'Staging must not contain unsafe Worker bindings');
