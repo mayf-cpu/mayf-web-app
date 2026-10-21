@@ -45,7 +45,7 @@ export class PaymentService {
   private settings: PaymentGatewaySettings;
   private initialSettings: PaymentGatewaySettings;
 
-  constructor(private durableOrders?: Pick<DurablePaymentRepository, 'createOrder'>) {
+  constructor(private durableOrders?: Pick<DurablePaymentRepository, 'createOrder'> & Partial<Pick<DurablePaymentRepository, 'reserveCoupon' | 'releaseCouponReservation'>>) {
     this.razorpayAdapter = new RazorpayAdapter();
     this.stripeAdapter = new StripeAdapter();
 
@@ -95,7 +95,7 @@ export class PaymentService {
   };
 
   /** Configure persistent storage before checkout. Never treat a missing store as success. */
-  configureDurableOrders(repository: Pick<DurablePaymentRepository, 'createOrder'>): void {
+  configureDurableOrders(repository: Pick<DurablePaymentRepository, 'createOrder'> & Partial<Pick<DurablePaymentRepository, 'reserveCoupon' | 'releaseCouponReservation'>>): void {
     this.durableOrders = repository;
   }
 
