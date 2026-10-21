@@ -402,6 +402,8 @@ export class CouponService {
       selectedProductIds: data.selectedProductIds || existing?.selectedProductIds || [],
       timesUsed: existing?.timesUsed || 0,
       userUsageMap: existing?.userUsageMap || {},
+      // Admin form inputs must never override active reservations or redemption ledger.
+      activeReservations: existing?.activeReservations || {},
       createdAt: existing?.createdAt || now,
       updatedAt: now,
     };
@@ -426,7 +428,12 @@ export class CouponService {
   }
 
   deleteCoupon(code: string): boolean {
-    return this.couponsStore.delete(code.toUpperCase());
+    const normalized = code.toUpperCase();
+    const coupon = this.couponsStore.get(normalized);
+    if (coupon && Object.values(coupon.activeReservations || {}).some(
+      hold => Number.isFinite(Date.parse(hold.expiresAt)) && Date.parse(hold.expiresAt) > Date.now()
+    )) throw new Error('Coupon has active checkout reservations. Disable it and retry after holds expire.');
+    return this.couponsStore.delete(normalized);
   }
 
   // --------------------------------------------------------------------------
