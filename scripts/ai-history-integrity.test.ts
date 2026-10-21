@@ -24,3 +24,15 @@ test('Gemini failure cannot masquerade as a solved math question', () => {
   assert.match(server, /await aiQuota\.consume\(quotaKey, userLimit\)/);
   assert.match(server, /await checkDownloadRateLimit\(`ai-\$\{quotaKey\}`, 15, 180000\)/);
 });
+
+
+test('AI admin telemetry never displays sample claims as measured results', () => {
+  const ui = read('src/components/admin/sections/AdminAiActivitySection.tsx');
+  for (const fabricated of ['680 ms', '1.42 M', '4.9 / 5.0', 'gemini-3.1-flash-lite']) {
+    assert.ok(!ui.includes(fabricated), 'Removed placeholder: ' + fabricated);
+  }
+  assert.match(ui, /averageLatency == null \? 'Not measured'/);
+  assert.match(ui, /tokens24h == null \? 'Not measured'/);
+  assert.match(ui, /helpfulShare == null \? 'Not measured'/);
+  assert.match(ui, /log\.resolved \? 'Resolved' : 'Needs review'/);
+});
