@@ -1,16 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { CouponsManagementTab } from '../CouponsManagementTab';
-import { auth } from '../../../lib/firebase/client';
 
 export const AdminCouponsSection: React.FC = () => {
-  const [token, setToken] = useState('Bearer dev-admin-token-2026vivekkushwah@gmail.com');
-
-  useEffect(() => {
-    if (auth?.currentUser) {
-      auth.currentUser.getIdToken().then((t) => setToken(`Bearer ${t}`));
-    }
-  }, []);
-
   return (
     <div className="space-y-4">
       <div>
@@ -21,7 +12,7 @@ export const AdminCouponsSection: React.FC = () => {
           Server-side validated promotional vouchers with usage limits, cart minimums, and Annual Pass restrictions.
         </p>
       </div>
-      <CouponsManagementTab authHeaders={{ Authorization: token }} />
+      <CouponsManagementTab />
     </div>
   );
 };

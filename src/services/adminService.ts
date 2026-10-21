@@ -242,7 +242,7 @@ export interface CanDeleteCategoryResponse {
 }
 
 class AdminService {
-  private async getAuthHeaders(): Promise<HeadersInit> {
+  async getAuthHeaders(): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };

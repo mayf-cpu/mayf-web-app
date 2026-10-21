@@ -18,7 +18,6 @@ import {
 import { Button } from '../../ui/Button';
 import { PromotionsManagementTab } from '../PromotionsManagementTab';
 import { adminService } from '../../../services/adminService';
-import { auth } from '../../../lib/firebase/client';
 import {
   AdSenseSettings,
   DEFAULT_ADSENSE_SETTINGS,
@@ -56,12 +55,8 @@ export const AdminAdsSection: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [statusMsg, setStatusMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
-  const [token, setToken] = useState('Bearer dev-admin-token-2026vivekkushwah@gmail.com');
 
   useEffect(() => {
-    if (auth?.currentUser) {
-      auth.currentUser.getIdToken().then((t) => setToken(`Bearer ${t}`));
-    }
     loadConfig();
   }, []);
 
@@ -554,7 +549,7 @@ export const AdminAdsSection: React.FC = () => {
       {/* ------------------------------------------------------------- */}
       {activeTab === 'promotions' && (
         <div className="space-y-4">
-          <PromotionsManagementTab authHeaders={{ Authorization: token }} />
+          <PromotionsManagementTab />
         </div>
       )}
     </div>
