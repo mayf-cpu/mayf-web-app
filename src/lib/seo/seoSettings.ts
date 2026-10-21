@@ -18,5 +18,8 @@ const state = {
 const repository = new DocumentStateRepository([{ collection: 'seoSettings', state }], getAdminFirestore, 'seoState');
 export const seoSettings = {
   read: () => repository.run(() => ({ ...current })),
-  save: (input: SeoSettings) => repository.run(() => { current = validateSeoSettings(input); return { ...current }; }, true),
+  save: (input: SeoSettings) => {
+    if (!getAdminFirestore()) throw new Error('SEO changes require configured Firestore storage.');
+    return repository.run(() => { current = validateSeoSettings(input); return { ...current }; }, true);
+  },
 };
