@@ -3114,45 +3114,34 @@ app.delete('/api/admin/broadcasts/:id', requireAuth, requireAdmin, asyncRoute(as
 /**
  * 57. Analytics Event Ingestion (Public, O(1) Atomic Counter Aggregation, Zero Student PII)
  */
-app.post('/api/analytics/track', (req: Request, res: Response) => {
-  try {
-    const { eventType, params } = req.body || {};
-    if (!eventType || typeof eventType !== 'string') {
-      return res.status(400).json({ success: false, error: 'eventType is required' });
-    }
-    aggregateMetricsService.recordEvent(eventType as any, params || {});
-    return res.status(200).json({ success: true });
-  } catch (err: any) {
-    return res.status(200).json({ success: false, note: 'non-blocking tracking' });
+// Only permitted public events are counted. Payment/AI/download activity is never trusted from the browser.
+app.post('/api/analytics/track', asyncRoute(async (req: Request, res: Response) => {
+  const { eventType, params } = req.body || {};
+  if (typeof eventType !== 'string' || (params !== undefined && (typeof params !== 'object' || params === null || Array.isArray(params)))) {
+    return res.status(400).json({ success: false, error: 'Invalid analytics event.' });
   }
-});
-
-/**
- * 58. Admin Analytics Dashboard Metrics (Pre-Aggregated O(1) Query, Zero Event Log Scanning)
- */
-app.get('/api/admin/analytics/dashboard', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
   try {
-    const timeframe = (req.query.timeframe as any) || '30d';
-    const data = aggregateMetricsService.getDashboardMetrics(timeframe);
-    return res.json({
-      success: true,
-      data,
-    });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err?.message || 'Failed to fetch analytics' });
+    const recorded = await aggregateMetricsService.recordEvent(eventType as any, params || {});
+    return res.json({ success: true, recorded });
+  } catch {
+    return res.status(503).json({ success: false, error: 'Analytics storage is unavailable.' });
   }
-});
+}));
 
-/**
- * 59. Admin Analytics Reset Baseline
- */
+// Reports use durable counters and verified paid orders, never sample numbers.
+app.get('/api/admin/analytics/dashboard', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const data = await aggregateMetricsService.getDashboardMetrics((req.query.timeframe as any) || '30d');
+    return res.json({ success: true, data });
+  } catch {
+    return res.status(503).json({ success: false, error: 'Analytics could not be loaded. Please retry.' });
+  }
+}));
+
+// Historical measured analytics may not be silently replaced with simulated baselines.
 app.post('/api/admin/analytics/reset', requireAuth, requireAdmin, (_req: AuthenticatedRequest, res: Response) => {
-  try {
-    const data = aggregateMetricsService.resetToBaseline();
-    return res.json({ success: true, message: 'Analytics reset to baseline successfully', data });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err?.message || 'Failed to reset analytics' });
-  }
+  return res.status(501).json({ success: false, error: 'Historical analytics are retained. Reset is unavailable.' });
 });
 
 app.get('/api/admin/ai-activity', requireAuth, requireAdmin, (_req: Request, res: Response) => {
