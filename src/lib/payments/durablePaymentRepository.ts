@@ -226,7 +226,10 @@ export class DurablePaymentRepository {
       { collection: ENTITLEMENT_COLLECTION, id: entitlementId, updateTime: passRef.updateTime,
         data: { ...pass, status: 'revoked', updatedAt: refundedAt, notes: 'Revoked after verified full refund' } },
       { collection: EVENT_COLLECTION, id: refundKey,
-        data: { provider, orderId, providerPaymentId, refundId, eventId, processedAt: refundedAt } },
+        data: { provider, orderId, providerPaymentId, refundId, eventId, processedAt: refundedAt,
+          // Interim abuse-resistant policy: refunds revoke access but do not
+          // silently restore scarce coupon capacity without operator review.
+          couponUsagePolicy: order.coupon ? 'retained_after_refund' : 'not_applicable' } },
     ]);
     return 'refunded';
   }
