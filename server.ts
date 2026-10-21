@@ -1,3 +1,4 @@
+import { probeStagingConnectivity } from './src/lib/ingestion/stagingConnectivity';
 import { auditLegacyPdfMigration } from './src/lib/download/legacyMigrationAudit';
 import { canReadPremiumContent, publicContent } from './src/lib/catalogue/catalogueAccess';
 import { asyncRoute } from './src/lib/http/asyncRoute';
@@ -1627,6 +1628,14 @@ app.post('/api/admin/set-claims', requireAuth, requireSuperAdmin, asyncRoute(asy
  * Staging operator diagnostics: credential presence is not a successful
  * connection test. Never expose credentials, bucket objects or file IDs.
  */
+app.get('/api/admin/staging-connectivity', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  const connectivity = await probeStagingConnectivity(getAdminFirestore(), getPdfBucket());
+  return res.json({ success: true, connectivity,
+    note: 'Read-only Firestore and R2 API checks. This does not test upload permissions, Drive OAuth, PDF delivery or payments.' });
+}));
+
 app.get('/api/admin/storage-readiness', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Robots-Tag', 'noindex, nofollow');
