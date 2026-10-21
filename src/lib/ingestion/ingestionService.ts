@@ -12,6 +12,7 @@
 import { ContentRegistryRow, IngestionJobRecord, ImportJobStatus, WebhookIngestResponse } from './types';
 import { copyDriveFileToProductionStorage } from './driveStorageAdapter';
 import { loadIngestionJobs, saveIngestionJob } from './durableIngestionJobs';
+import { ingestionJobIdForContent } from './ingestionJobId';
 import { ContentItem, StudentClass, ContentType } from '../firebase/types';
 import { getAdminFirestore } from '../firebase/admin';
 import { importPublicationPolicy } from './importPublicationPolicy';
@@ -264,7 +265,7 @@ export async function processRegistryRow(
 
   // Find existing job or create new one
   let existingJobIndex = INGESTION_JOBS_STORE.findIndex((j) => j.content_id === contentId);
-  const jobId = existingJobIndex !== -1 ? INGESTION_JOBS_STORE[existingJobIndex].id : `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const jobId = existingJobIndex !== -1 ? INGESTION_JOBS_STORE[existingJobIndex].id : ingestionJobIdForContent(contentId);
 
   // Handle intentional rejection
   if (row.status === 'Rejected') {
