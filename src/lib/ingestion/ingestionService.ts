@@ -515,9 +515,19 @@ export async function retryIngestionJob(jobId: string): Promise<IngestionJobReco
   job.updatedAt = new Date().toISOString();
 
   job.sourceRowMetadata.status = 'Approved';
-  const outcome = await processRegistryRow(job.sourceRowMetadata, 'admin_retry');
-
-  return outcome.job;
+  try {
+    const outcome = await processRegistryRow(job.sourceRowMetadata, 'admin_retry');
+    return outcome.job;
+  } catch (error) {
+    const failed = INGESTION_JOBS_STORE.find((item) => item.id === jobId) || job;
+    failed.status = 'failed';
+    failed.updatedAt = new Date().toISOString();
+    failed.errorMessage = error instanceof Error ? error.message : 'Unexpected import error';
+    failed.triggeredBy = 'admin_retry';
+    failed.sourceRowMetadata = { ...failed.sourceRowMetadata,
+      import_status: 'FAILED', import_error: failed.errorMessage };
+    return failed;
+  }
 }
 
 /**
