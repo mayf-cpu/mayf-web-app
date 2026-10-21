@@ -366,3 +366,16 @@ test('discounted order without coupon cannot grant a paid pass', async () => {
   await assert.rejects(repo.settleVerifiedPayment(payment), /unexplained discount/);
   assert.equal(docs.get('paymentOrders/ord-1')?.data.status, 'created');
 });
+
+
+test('stale coupon terms cannot be reserved after the admin edits the offer', async () => {
+  const { repo, docs } = couponFixture('EDITED');
+  docs.get('coupons/EDITED')!.data.updatedAt = '2026-10-21T11:55:00Z';
+  await assert.rejects(
+    repo.reserveCoupon({ orderId: 'ord-stale', userId: 'student-1', code: 'EDITED',
+      discount: 10, expectedUpdatedAt: '2026-10-21T11:00:00Z', now: reserveAt }),
+    /terms changed since quote/,
+  );
+  assert.equal(docs.has('paymentCouponReservations/ord-stale'), false);
+  assert.equal(Object.keys(docs.get('coupons/EDITED')!.data.activeReservations || {}).length, 0);
+});
