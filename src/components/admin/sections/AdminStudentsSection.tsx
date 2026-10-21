@@ -839,7 +839,7 @@ export const AdminStudentsSection: React.FC = () => {
                               <span>{ord.planName}</span>
                               <span
                                 className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                                  ord.status === 'captured' || ord.status === 'paid'
+                                  ord.status === 'paid'
                                     ? 'bg-emerald-100 text-emerald-800'
                                     : ord.status === 'refunded'
                                     ? 'bg-purple-100 text-purple-800'
