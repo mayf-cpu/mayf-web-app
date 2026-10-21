@@ -3151,46 +3151,26 @@ app.post('/api/admin/analytics/reset', requireAuth, requireAdmin, (_req: Authent
   return res.status(501).json({ success: false, error: 'Historical analytics are retained. Reset is unavailable.' });
 });
 
-app.get('/api/admin/ai-activity', requireAuth, requireAdmin, (_req: Request, res: Response) => {
-  return res.json([
-    {
-      id: 'ai-q-901',
-      timestamp: new Date().toISOString(),
-      studentGrade: 'Class 10',
-      topic: 'Quadratic Equations',
-      questionSnippet: 'Derive quadratic formula using completing the square method',
-      model: AI_TEACHER_MODEL,
-      latencyMs: 720,
-      tokensUsed: 480,
-      resolved: true,
-      rating: 5,
-    },
-    {
-      id: 'ai-q-902',
-      timestamp: new Date(Date.now() - 3600000).toISOString(),
-      studentGrade: 'Class 9',
-      topic: 'Circles',
-      questionSnippet: 'Proof that perpendicular from centre to chord bisects chord',
-      model: AI_TEACHER_MODEL,
-      latencyMs: 840,
-      tokensUsed: 520,
-      resolved: true,
-      rating: 5,
-    },
-    {
-      id: 'ai-q-903',
-      timestamp: new Date(Date.now() - 7200000).toISOString(),
-      studentGrade: 'Class 10',
-      topic: 'Trigonometry',
-      questionSnippet: 'Prove identity (sin A + cosec A)^2 + (cos A + sec A)^2 = 7 + tan^2 A + cot^2 A',
-      model: AI_TEACHER_MODEL,
-      latencyMs: 650,
-      tokensUsed: 610,
-      resolved: true,
-      rating: 5,
-    },
-  ]);
-});
+app.get('/api/admin/ai-activity', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  const db = getAdminFirestore();
+  if (!db) return res.status(503).json({ success: false, error: 'AI activity storage is unavailable.' });
+  const records = (await db.list('aiTeacherSessions'))
+    .map(doc => ({ ...doc.data, id: doc.id }))
+    .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).slice(0, 100);
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json(records.map(record => ({
+    id: record.id,
+    timestamp: record.timestamp,
+    studentGrade: record.studentClass,
+    topic: record.chapterTopic,
+    questionSnippet: String(record.question || '').slice(0, 180),
+    model: record.tokenMetadata?.model || getAiTeacherModel(),
+    latencyMs: record.latencyMs ?? null,
+    tokensUsed: record.tokenMetadata?.totalTokens ?? null,
+    resolved: record.responseStatus === 'success',
+    rating: record.userRating === 'helpful' ? 1 : record.userRating === 'unhelpful' ? 0 : undefined,
+  })));
+}));
 
 // SEO changes are authenticated and must be durably written before success.
 app.get('/api/admin/seo', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
