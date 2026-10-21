@@ -692,7 +692,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
     }
 
     // Authorize only real objects in the private R2 PDF bucket.
-    if (!(await pdfExists(item.id))) {
+    if (!(await pdfExists(item.id, item.objectKey))) {
       await logDownloadAudit({
         contentId: item.id, uid: verifiedUid, accessType: item.accessType,
         status: 'failed', action: 'authorize', reason: 'PDF asset is not uploaded to private R2 storage', req,
@@ -708,7 +708,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
     if (!tokenDb) return res.status(503).json({ success: false,
       code: 'DOWNLOAD_STORAGE_UNAVAILABLE', error: 'Secure download authorization is temporarily unavailable.' });
     await new DurableDownloadTokens(tokenDb).create(downloadToken, {
-      contentId: item.id, fileName: item.fileName,
+      contentId: item.id, objectKey: item.objectKey, fileName: item.fileName,
       accessType: item.accessType, uid: verifiedUid, clientIpHash,
       expiresAt: Date.now() + expiresInSeconds * 1000,
     });
@@ -787,7 +787,8 @@ app.get('/api/downloads/file/:token', asyncRoute(async (req: Request, res: Respo
   // Recheck current CMS state and paid entitlement before giving out bytes.
   const currentItem = await resolveDownloadableItem(tokenDb, tokenRecord.contentId);
   if (!currentItem || !currentItem.downloadAllowed ||
-      currentItem.accessType !== tokenRecord.accessType) {
+      currentItem.accessType !== tokenRecord.accessType ||
+      currentItem.objectKey !== tokenRecord.objectKey) {
     await logDownloadAudit({
       contentId: tokenRecord.contentId, uid: tokenRecord.uid,
       accessType: tokenRecord.accessType, status: 'failed', action: 'file_served',
@@ -810,7 +811,7 @@ app.get('/api/downloads/file/:token', asyncRoute(async (req: Request, res: Respo
     }
   }
 
-  const pdf = await readVerifiedPdf(tokenRecord.contentId);
+  const pdf = await readVerifiedPdf(tokenRecord.contentId, tokenRecord.objectKey);
   if (!pdf) {
     await logDownloadAudit({
       contentId: tokenRecord.contentId, uid: tokenRecord.uid,
