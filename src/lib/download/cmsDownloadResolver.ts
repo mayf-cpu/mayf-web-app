@@ -42,5 +42,7 @@ export async function resolveDownloadableItem(
       description: item.shortDescription || '',
     };
   }
-  return getDownloadableItem(idOrSlug);
+  // Firestore is authoritative once configured: a missing/deleted CMS record
+  // must not be resurrected by the bundled static sample registry.
+  return null;
 }

@@ -31,3 +31,11 @@ test('hidden, draft, archived, unlinked and view-only PDF never resolves',async(
    assert.equal(await resolveDownloadableItem(db({...pdf,...patch}),'topic'),null);
  }
 });
+
+test('configured Firestore never resurrects missing CMS documents from static registry', async () => {
+ const missing = {
+  collection: () => ({ doc: () => ({ get: async () => ({ exists: false, data: () => undefined }) }) }),
+  queryEqual: async () => [],
+ } as unknown as FirestoreDocumentStore;
+ assert.equal(await resolveDownloadableItem(missing,'dl-10-cheatsheet'), null);
+});
