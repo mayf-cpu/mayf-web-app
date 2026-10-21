@@ -130,3 +130,11 @@ Keep this PR in draft until the open durability and demonstration-path findings 
 - Public UI testing exposed the hero's clipped share popover. Share popovers now render in a body portal, stay inside the viewport, choose space above/below the button and scroll internally. Decorative hero watermarks retain their own clipping. Live deployed visual acceptance of this fix is pending.
 - Formula copy actions now await clipboard completion and show browser-blocked errors rather than prematurely reporting success. Share copy fallback checks whether the copy actually succeeded. The cloud browser did not provide copied text, so clipboard success is not certified.
 - Cloudflare reports successful build/deployment of 949dba3 (durable audit batch). 88 automated tests passed for that batch; subsequent frontend fixes pass TypeScript and the production build.
+
+## Student activity isolation
+
+- Removed invented starter activity and recently viewed records. Old act-sample local entries are filtered out. New accounts start with an empty history.
+- In-memory activity and recently viewed caches reset on account changes/sign-out. Subscribers are scoped to a user; a previous account's delayed Firestore result cannot replace current activity. Dashboard requests also check the currently displayed account before applying a response.
+- Firestore activity writes strip undefined optional fields, which previously caused SDK rejection. Client activity is still reported usage, not authoritative proof of purchases or entitlement. Live cross-account/offline acceptance, retention/index configuration, and connection of administrator profile history to the durable ledger remain pending. The legacy shared local bookmark cache also requires account scoping.
+- Two regression tests cover account switching/sign-out isolation, owner filtering and a delayed previous-account result. 90 automated tests, TypeScript and production build pass.
+- Cloudflare reports successful deployment of 3e546f9. Live visual inspection confirms the complete sharing menu is visible above its trigger, with all channels and copy control no longer clipped. No external social post was sent.

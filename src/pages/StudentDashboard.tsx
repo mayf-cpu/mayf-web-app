@@ -317,16 +317,20 @@ export const StudentDashboard: React.FC = () => {
   const [savedSearchQuery, setSavedSearchQuery] = useState('');
   const [savedCategoryFilter, setSavedCategoryFilter] = useState('All');
 
+  const activityUserRef = useRef(user?.uid);
+  activityUserRef.current = user?.uid;
+
   // Load user activities & recently viewed
   const fetchActivities = async () => {
     if (!user) return;
     setActivitiesLoading(true);
     try {
       const logs = await loadUserActivities(user.uid);
+      if (activityUserRef.current !== user.uid) return;
       setActivities(logs);
       setRecentlyViewed(getRecentlyViewed(user.uid));
     } finally {
-      setActivitiesLoading(false);
+      if (activityUserRef.current === user.uid) setActivitiesLoading(false);
     }
   };
 
@@ -338,7 +342,7 @@ export const StudentDashboard: React.FC = () => {
       const unsubscribe = subscribeToActivity((updated) => {
         setActivities(updated);
         setRecentlyViewed(getRecentlyViewed(user.uid));
-      });
+      }, user.uid);
 
       return () => unsubscribe();
     }

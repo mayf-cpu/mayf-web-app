@@ -1,3 +1,4 @@
+import { setActivityUser } from '../lib/activity/activityService';
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
@@ -124,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Listen to Firebase Auth state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      setActivityUser(fbUser?.uid || null);
       setFirebaseUser(fbUser);
 
       if (fbUser) {
@@ -367,6 +369,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     try {
       await signOutUser().catch(() => {});
+      setActivityUser(null);
       setUser(null);
       setFirebaseUser(null);
       setEntitlements(defaultAnonymousEntitlements);
