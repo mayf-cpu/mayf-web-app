@@ -48,3 +48,12 @@ test('legacy browser payment verification and simulated webhooks are disabled by
   assert.match(sim, /process\.env\.MAYF_ENABLE_PAYMENT_SIMULATION !== 'true'/);
   assert.match(sim, /isProductionPaymentRuntime\(\)/);
 });
+
+
+test('discounted checkout stays disabled without reservation approval, while coupons load from Firestore', () => {
+  const server = read('server.ts');
+  const block = server.slice(server.indexOf('async function handleCreateOrder('), server.indexOf("app.post('/api/payments/create-order'"));
+  assert.match(block, /process\.env\.MAYF_ENABLE_COUPON_CHECKOUT !== 'true'/);
+  assert.match(block, /COUPON_CHECKOUT_NOT_READY/);
+  assert.match(block, /catalogueRepository\.run\(\(\) => paymentService\.createOrder\(/);
+});
