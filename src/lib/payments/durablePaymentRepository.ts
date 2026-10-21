@@ -51,6 +51,18 @@ export class DurablePaymentRepository {
         !coupon.userUsageMap || typeof coupon.userUsageMap !== 'object') {
       throw new Error('Coupon is disabled or corrupt');
     }
+    // A quote crossing the coupon's validity window must be rejected even
+    // when no administrator edited the coupon during checkout.
+    const startsMs = coupon.startDate ? Date.parse(coupon.startDate) : -Infinity;
+    const endsMs = coupon.endDate
+      ? Date.parse(/^\\d{4}-\\d{2}-\\d{2}$/.test(coupon.endDate)
+        ? coupon.endDate + 'T23:59:59.999Z' : coupon.endDate)
+      : Infinity;
+    if ((coupon.startDate && !Number.isFinite(startsMs)) ||
+        (coupon.endDate && !Number.isFinite(endsMs)) ||
+        nowMs < startsMs || nowMs > endsMs) {
+      throw new Error('Coupon validity period ended before checkout reservation');
+    }
     if (args.expectedUpdatedAt && coupon.updatedAt !== args.expectedUpdatedAt) {
       throw new Error('Coupon terms changed since quote; please recalculate discount');
     }
