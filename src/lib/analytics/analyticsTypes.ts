@@ -161,28 +161,29 @@ export interface ConversionFunnelMetrics {
 }
 
 export interface DashboardAnalyticsData {
+  social?: { totalShares: number; byChannel: Record<string, number> };
   timeframe: 'today' | '7d' | '30d' | 'all';
   lastUpdated: string;
   architecture: {
     engine: 'pre_aggregated_rollups';
     queryTimeMs: number;
-    scannedRecords: 0; // Demonstrates O(1) index-free retrieval
+    scannedRecords: number;
     privacyEnforced: true;
   };
   summary: {
-    totalUsers: number;
-    newUsersToday: number;
-    userGrowthPct: number;
+    totalUsers: number | null;
+    newUsersToday: number | null;
+    userGrowthPct: number | null;
     activeUsers: {
-      dau: number;
-      wau: number;
-      mau: number;
-      currentActiveSessions: number;
+      dau: number | null;
+      wau: number | null;
+      mau: number | null;
+      currentActiveSessions: number | null;
     };
     traffic: {
       totalPageViews: number;
       pageViewsToday: number;
-      uniqueVisitors: number;
+      uniqueVisitors: number | null;
       dailyTrend: DailyDataPoint[];
     };
     downloads: {
@@ -208,11 +209,12 @@ export interface DashboardAnalyticsData {
       revenueToday: number;
       revenueThisMonth: number;
       currency: string;
+      byCurrency?: Record<string, number>;
     };
     annualPassSubscriptions: {
       activePasses: number;
       newPassesThisMonth: number;
-      renewalRate: number;
+      renewalRate: number | null;
     };
     conversion: ConversionFunnelMetrics;
   };
