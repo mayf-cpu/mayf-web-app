@@ -63,10 +63,11 @@ export const AdminPaymentSettingsPage: React.FC = () => {
   const { user, firebaseUser } = useAuth();
 
   const [activeTab, setActiveTab] = useState<'settings' | 'orders' | 'annual-pass' | 'coupons' | 'promotions' | 'idempotency' | 'simulator'>('settings');
-  const [authToken, setAuthToken] = useState('admin-dev-session');
+  const [authToken, setAuthToken] = useState('');
 
   useEffect(() => {
     async function loadToken() {
+      setAuthToken('');
       if (firebaseUser) {
         try {
           const t = await firebaseUser.getIdToken();
@@ -157,7 +158,8 @@ export const AdminPaymentSettingsPage: React.FC = () => {
     setLoading(true);
     setErrorMessage('');
     try {
-      const token = firebaseUser ? await firebaseUser.getIdToken() : 'admin-dev-session';
+      const token = await firebaseUser?.getIdToken();
+      if (!token) throw new Error('Administrator sign-in is required.');
       const authHeaders = {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
@@ -257,7 +259,8 @@ export const AdminPaymentSettingsPage: React.FC = () => {
     setActionSuccessMsg('');
 
     try {
-      const token = firebaseUser ? await firebaseUser.getIdToken() : 'admin-dev-session';
+      const token = await firebaseUser?.getIdToken();
+      if (!token) throw new Error('Administrator sign-in is required.');
       const res = await fetch('/api/admin/annual-pass/settings', {
         method: 'POST',
         headers: {
@@ -303,7 +306,8 @@ export const AdminPaymentSettingsPage: React.FC = () => {
     setErrorMessage('');
 
     try {
-      const token = firebaseUser ? await firebaseUser.getIdToken() : 'admin-dev-session';
+      const token = await firebaseUser?.getIdToken();
+      if (!token) throw new Error('Administrator sign-in is required.');
       const res = await fetch('/api/admin/annual-pass/grant', {
         method: 'POST',
         headers: {
@@ -342,7 +346,8 @@ export const AdminPaymentSettingsPage: React.FC = () => {
     setErrorMessage('');
 
     try {
-      const token = firebaseUser ? await firebaseUser.getIdToken() : 'admin-dev-session';
+      const token = await firebaseUser?.getIdToken();
+      if (!token) throw new Error('Administrator sign-in is required.');
       const res = await fetch('/api/admin/annual-pass/extend', {
         method: 'POST',
         headers: {
@@ -381,7 +386,8 @@ export const AdminPaymentSettingsPage: React.FC = () => {
     setErrorMessage('');
 
     try {
-      const token = firebaseUser ? await firebaseUser.getIdToken() : 'admin-dev-session';
+      const token = await firebaseUser?.getIdToken();
+      if (!token) throw new Error('Administrator sign-in is required.');
       const res = await fetch('/api/admin/annual-pass/revoke', {
         method: 'POST',
         headers: {
@@ -435,8 +441,9 @@ export const AdminPaymentSettingsPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (firebaseUser) void fetchData();
+    else { setLoading(false); setErrorMessage('Administrator sign-in is required.'); }
+  }, [firebaseUser?.uid]);
 
   const handleCopyUrl = (url: string, key: string) => {
     navigator.clipboard.writeText(url);
@@ -451,7 +458,8 @@ export const AdminPaymentSettingsPage: React.FC = () => {
     setSaveSuccess(false);
 
     try {
-      const token = firebaseUser ? await firebaseUser.getIdToken() : 'admin-dev-session';
+      const token = await firebaseUser?.getIdToken();
+      if (!token) throw new Error('Administrator sign-in is required.');
 
       // Build payload: only send secrets if user typed a new value
       const payload: Record<string, any> = {
@@ -517,7 +525,8 @@ export const AdminPaymentSettingsPage: React.FC = () => {
     setSimResult(null);
 
     try {
-      const token = firebaseUser ? await firebaseUser.getIdToken() : 'admin-dev-session';
+      const token = await firebaseUser?.getIdToken();
+      if (!token) throw new Error('Administrator sign-in is required.');
       const res = await fetch('/api/admin/payments/simulate-webhook', {
         method: 'POST',
         headers: {
@@ -1466,13 +1475,13 @@ export const AdminPaymentSettingsPage: React.FC = () => {
 
         {/* TAB: COUPONS ENGINE */}
         {activeTab === 'coupons' && (
-          <CouponsManagementTab authHeaders={{ Authorization: `Bearer ${authToken}` }} />
+          authToken ? <CouponsManagementTab authHeaders={{ Authorization: `Bearer ${authToken}` }} /> : <p role="status">Verifying administrator session…</p>
         )}
 
         {/* TAB: PROMOTIONAL BANNERS */}
         {activeTab === 'promotions' && (
-          <PromotionsManagementTab authHeaders={{ Authorization: `Bearer ${authToken}` }} />
-        )}
+          authToken ? <PromotionsManagementTab authHeaders={{ Authorization: `Bearer ${authToken}` }} /> : <p role="status">Verifying administrator session…</p>
+        )
 
         {/* TAB 1: GATEWAY SETTINGS */}
         {activeTab === 'settings' && (

@@ -18,7 +18,7 @@ export const AdminSocialSection: React.FC = () => {
           Social Sharing & In-App Browser Analytics
         </h2>
         <p className="text-xs text-slate-500 mt-0.5">
-          Real-time metrics on viral sharing, Web Share API invocations, and in-app browser banner triggers.
+          Sharing and in-app browser usage can be monitored here once authenticated measurement is implemented. Counts are currently not measured.
         </p>
       </div>
 
@@ -29,9 +29,9 @@ export const AdminSocialSection: React.FC = () => {
             Total Shares (30 Days)
           </span>
           <div className="mt-2 text-2xl font-heading font-extrabold text-slate-900">
-            28,490
+            Not measured
           </div>
-          <p className="text-[11px] text-emerald-600 mt-1">+34% from formula deck links</p>
+          <p className="text-[11px] text-emerald-600 mt-1">Share-event telemetry not yet available</p>
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs">
@@ -39,9 +39,9 @@ export const AdminSocialSection: React.FC = () => {
             WhatsApp Clicks
           </span>
           <div className="mt-2 text-2xl font-heading font-extrabold text-[#128C7E]">
-            18,220
+            Not measured
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">64% of all shared targets</p>
+          <p className="text-[11px] text-slate-500 mt-1">Target-specific attribution unavailable</p>
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs">
@@ -49,9 +49,9 @@ export const AdminSocialSection: React.FC = () => {
             In-App Browser Visits
           </span>
           <div className="mt-2 text-2xl font-heading font-extrabold text-blue-700">
-            9,410
+            Not measured
           </div>
-          <p className="text-[11px] text-blue-600 mt-1">Non-intrusive banner displayed</p>
+          <p className="text-[11px] text-blue-600 mt-1">In-app browser visits not tracked</p>
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs">
@@ -59,9 +59,9 @@ export const AdminSocialSection: React.FC = () => {
             Android Chrome Intents
           </span>
           <div className="mt-2 text-2xl font-heading font-extrabold text-amber-700">
-            6,140
+            Not measured
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">Direct external launch rate 65%</p>
+          <p className="text-[11px] text-slate-500 mt-1">External intent launches not tracked</p>
         </div>
       </div>
 
@@ -72,14 +72,15 @@ export const AdminSocialSection: React.FC = () => {
             <Smartphone className="w-4 h-4 text-blue-600" />
             <span>Detected In-App Browser Platforms</span>
           </h3>
+          <p role="status" className="text-xs text-slate-600">No verified per-platform visitor counts are available. The list below shows categories, not measured distribution.</p>
 
           <div className="space-y-3 text-xs">
             {[
-              { app: 'Instagram (iOS & Android)', pct: 54, count: '5,080 visits', color: 'bg-pink-500' },
-              { app: 'Facebook & Messenger', pct: 24, count: '2,260 visits', color: 'bg-blue-600' },
-              { app: 'X (Twitter)', pct: 11, count: '1,030 visits', color: 'bg-slate-900' },
-              { app: 'TikTok & ByteDance', pct: 7, count: '660 visits', color: 'bg-black' },
-              { app: 'Telegram & Other WebViews', pct: 4, count: '380 visits', color: 'bg-sky-500' },
+              { app: 'Instagram (iOS & Android)', pct: 0, count: 'Not measured', color: 'bg-pink-500' },
+              { app: 'Facebook & Messenger', pct: 0, count: 'Not measured', color: 'bg-blue-600' },
+              { app: 'X (Twitter)', pct: 0, count: 'Not measured', color: 'bg-slate-900' },
+              { app: 'TikTok & ByteDance', pct: 0, count: 'Not measured', color: 'bg-black' },
+              { app: 'Telegram & Other WebViews', pct: 0, count: 'Not measured', color: 'bg-sky-500' },
             ].map((item) => (
               <div key={item.app} className="space-y-1">
                 <div className="flex items-center justify-between text-xs">

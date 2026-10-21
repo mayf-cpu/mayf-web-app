@@ -10,26 +10,38 @@ import {
   Database,
 } from 'lucide-react';
 import { Button } from '../../ui/Button';
+import { adminService } from '../../../services/adminService';
 
 export const AdminImportSection: React.FC = () => {
-  const [spreadsheetId, setSpreadsheetId] = useState('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms');
+  const [spreadsheetId, setSpreadsheetId] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const handleTriggerSync = async () => {
+    if (syncing) return;
     setSyncing(true);
-    setSyncStatus('Connecting to Google Sheets curriculum registry...');
+    setSyncStatus(null);
+    setSyncError(null);
     try {
-      const res = await fetch('/api/ingestion/sync', { method: 'POST' });
-      if (res.ok) {
-        setSyncStatus('Curriculum database successfully synchronized. 64 chapters and formulas validated.');
-      } else {
-        setSyncStatus('Sync completed (simulated catalog verified).');
+      const res = await fetch('/api/admin/ingest/sync', {
+        method: 'POST',
+        headers: await adminService.getAuthHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok || data.success !== true) {
+        throw new Error(data.error || 'The import service could not synchronize approved jobs.');
       }
-    } catch {
-      setSyncStatus('Sync completed (local curriculum index up to date).');
+      const processed = Number(data.totalProcessed);
+      if (!Number.isFinite(processed) || processed < 0) {
+        throw new Error('Import service returned an invalid processing count.');
+      }
+      setSyncStatus('Import sync completed. ' + processed + ' existing approved/pending jobs processed. Check the import jobs list for individual results.');
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : 'Import sync failed.');
+    } finally {
+      setSyncing(false);
     }
-    setSyncing(false);
   };
 
   return (
@@ -40,7 +52,7 @@ export const AdminImportSection: React.FC = () => {
             Curriculum Ingestion & Drive / Sheets Pipeline
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Synchronize mathematics chapter PDFs, KaTeX formulas, and NCERT exemplars from Google Drive.
+            Process registered approved/pending import jobs. New Google Sheets edits arrive through the separately configured authenticated webhook.
           </p>
         </div>
 
@@ -57,16 +69,22 @@ export const AdminImportSection: React.FC = () => {
       </div>
 
       {syncStatus && (
-        <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-800 flex items-center gap-2">
+        <div role="status" className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-800 flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>{syncStatus}</span>
+        </div>
+      )}
+      {syncError && (
+        <div role="alert" className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs font-medium text-red-800 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+          <span>Sync failed: {syncError}</span>
         </div>
       )}
 
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-2xs space-y-4">
         <h3 className="font-heading font-bold text-sm text-slate-900 flex items-center gap-2">
           <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-          <span>Google Sheets Master Registry ID</span>
+          <span>Google Sheets Master Registry ID (reference only)</span>
         </h3>
 
         <div className="space-y-1.5">
@@ -75,10 +93,11 @@ export const AdminImportSection: React.FC = () => {
             type="text"
             value={spreadsheetId}
             onChange={(e) => setSpreadsheetId(e.target.value)}
+            placeholder="Enter your registry sheet ID for reference"
             className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-900"
           />
           <p className="text-[11px] text-slate-500">
-            Columns: Title, ClassLevels (5–10), SubjectCategory, ContentType (PDF/Course/Formula), FileDriveUrl.
+            This reference field is not connected to the server and is not saved. The button above processes existing registered import jobs; use the authenticated Apps Script webhook to submit new rows.
           </p>
         </div>
       </div>
