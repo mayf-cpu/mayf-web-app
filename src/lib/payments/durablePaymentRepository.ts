@@ -16,6 +16,7 @@ const COUPON_COLLECTION = 'coupons';
 const COUPON_REDEMPTION_COLLECTION = 'paymentCouponRedemptions';
 const COUPON_RESERVATION_COLLECTION = 'paymentCouponReservations';
 const COUPON_HOLD_MS = 30 * 60_000;
+const PAYMENT_RECONCILIATION_COLLECTION = 'paymentReconciliationCases';
 
 function validId(value: string): string {
   if (!value || value.includes('/') || value.length > 400) throw new Error('Invalid payment record identifier');
@@ -30,6 +31,57 @@ export class DurablePaymentRepository {
    * The coupon document is a shared optimistic-concurrency serialization point.
    * Expired holds are reclaimed lazily as part of the next reservation.
    */
+  /** Persist a limited, sanitized operator alert only after webhook signature verification. */
+  async recordVerifiedWebhookReconciliation(args: {
+    provider: PaymentProvider; eventId: string; providerOrderId?: string;
+    providerPaymentId?: string; reasonCode: 'SETTLEMENT_FAILED' | 'REFUND_FAILED' | 'ORDER_NOT_FOUND';
+    observedAt: string;
+  }): Promise<'recorded' | 'duplicate'> {
+    const { provider, eventId, reasonCode } = args;
+    const id = validId(provider + ':' + validId(eventId));
+    if (!['SETTLEMENT_FAILED', 'REFUND_FAILED', 'ORDER_NOT_FOUND'].includes(reasonCode) ||
+        !Number.isFinite(Date.parse(args.observedAt))) throw new Error('Invalid reconciliation case');
+    const ref = await this.store.collection(PAYMENT_RECONCILIATION_COLLECTION).doc(id).get();
+    if (ref.exists) {
+      const previous = ref.data();
+      if (previous?.provider === provider && previous?.eventId === eventId) return 'duplicate';
+      throw new Error('Webhook reconciliation identifier conflict');
+    }
+    await this.store.commit([{
+      collection: PAYMENT_RECONCILIATION_COLLECTION, id,
+      data: { provider, eventId, providerOrderId: args.providerOrderId || null,
+        providerPaymentId: args.providerPaymentId || null,
+        reasonCode, status: 'open', firstObservedAt: args.observedAt },
+    }]);
+    return 'recorded';
+  }
+
+  /** A later verified successful webhook can resolve the exact matching failure. */
+  async resolveVerifiedWebhookReconciliation(provider: PaymentProvider, eventId: string, resolvedAt: string): Promise<void> {
+    const id = validId(provider + ':' + validId(eventId));
+    if (!Number.isFinite(Date.parse(resolvedAt))) throw new Error('Invalid resolution time');
+    const ref = await this.store.collection(PAYMENT_RECONCILIATION_COLLECTION).doc(id).get();
+    if (!ref.exists) return;
+    const previous = ref.data();
+    if (!ref.updateTime || previous?.provider !== provider || previous?.eventId !== eventId) {
+      throw new Error('Invalid reconciliation case revision');
+    }
+    if (previous.status === 'resolved') return;
+    await this.store.commit([{
+      collection: PAYMENT_RECONCILIATION_COLLECTION, id, updateTime: ref.updateTime,
+      data: { ...previous, status: 'resolved', resolvedAt },
+    }]);
+  }
+
+  /** Review-only data: never expose these records through public or student routes. */
+  async getOpenReconciliationCases(): Promise<Record<string, any>[]> {
+    const cases = await this.store.list(PAYMENT_RECONCILIATION_COLLECTION);
+    return cases.filter(item => item.data.status === 'open')
+      .map(item => ({ id: item.id, ...item.data } as Record<string, any>))
+      .sort((a, b) => String(b.firstObservedAt).localeCompare(String(a.firstObservedAt)))
+      .slice(0, 100);
+  }
+
   async reserveCoupon(args: {
     orderId: string; userId: string; code: string; discount: number;
     expectedUpdatedAt?: string; now?: Date;
