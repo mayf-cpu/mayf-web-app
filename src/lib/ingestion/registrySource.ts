@@ -26,7 +26,15 @@ export async function readRegistrySheet(source: RegistryConfig, tokenProvider = 
   const data = await response.json();
   const values: any[][] = data.values || [];
   const headers = (values[0] || []).map(value => String(value).trim().toLowerCase());
-  for (const required of ['content_id', 'title', 'status', 'visibility', 'content_type', 'access_type']) if (!headers.includes(required)) throw new Error(`Registry is missing the ${required} column.`);
+  // Import must never look successful if the sheet cannot record its outcome.
+  // These columns also allow the next sync to skip already imported rows.
+  const requiredColumns = ['content_id', 'title', 'status', 'visibility', 'content_type',
+    'access_type', 'firestore_id', 'import_status', 'import_error', 'last_imported_at'];
+  for (const required of requiredColumns) {
+    if (headers.filter(name => name === required).length !== 1) {
+      throw new Error(`Registry requires exactly one ${required} column.`);
+    }
+  }
   const booleanColumns = new Set(['annual_pass_included', 'download_allowed', 'featured']);
   const rows = values.slice(1).map((cells, index) => {
     const row: Record<string, any> = {};
@@ -36,6 +44,10 @@ export async function readRegistrySheet(source: RegistryConfig, tokenProvider = 
   return { rows, headers, token };
 }
 export async function writeRegistryResult(source: RegistryConfig, sheetRow: number, headers: string[], outcome: { success: boolean; firestore_id?: string; error?: string }, token: string) {
+  if (!Number.isSafeInteger(sheetRow) || sheetRow < 2) throw new Error('Invalid Google Sheets registry row number');
+  for (const required of ['status', 'firestore_id', 'import_status', 'import_error', 'last_imported_at']) {
+    if (headers.filter(name => name === required).length !== 1) throw new Error(`Cannot record import: registry requires exactly one ${required} column`);
+  }
   const updates: Record<string, string> = { status: outcome.success ? 'Imported' : 'Approved', firestore_id: outcome.firestore_id || '', import_status: outcome.success ? 'SUCCESS' : 'FAILED', import_error: outcome.error || '', last_imported_at: new Date().toISOString() };
   const columnName = (index: number) => { let result = ''; for (let n = index + 1; n > 0; n = Math.floor((n - 1) / 26)) result = String.fromCharCode(65 + (n - 1) % 26) + result; return result; };
   const data = Object.entries(updates).filter(([name]) => headers.includes(name)).map(([name, value]) => ({ range: `'${source.tabName.replace(/'/g, "''")}'!${columnName(headers.indexOf(name))}${sheetRow}`, values: [[value]] }));

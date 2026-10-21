@@ -11,7 +11,7 @@ test('real Google Sheets source reads records and preserves Approved-only semant
    assert.ok(String(input).startsWith('https://sheets.googleapis.com/v4/spreadsheets/'));
    assert.equal(options.redirect,'manual');
    return { ok: true, json: async () => ({ values: [
-     ['content_id','title','status','visibility','content_type','access_type','drive_file_id'],
+     ['content_id','title','status','visibility','content_type','access_type','drive_file_id','firestore_id','import_status','import_error','last_imported_at'],
      ['M-1','Chapter One','Approved','Visible','pdf','free','drive123'],
      ['M-2','Chapter Two','Draft','Hidden','pdf','paid','drive456']
    ] }) } as any;
@@ -54,4 +54,27 @@ test('admin Sheets configuration and sync APIs require authorization and do not 
  assert.match(service, /readRegistrySheet\(source\)/);
  assert.match(service, /\.filter\(item => item\.row\.status === 'Approved'\)\.slice\(0, 5\)/);
  assert.match(service, /await writeRegistryResult\(/);
+});
+
+test('registry refuses missing or duplicate writeback columns before importing', async () => {
+ const originalFetch=globalThis.fetch;
+ let requested=0;
+ const base=['content_id','title','status','visibility','content_type','access_type',
+   'firestore_id','import_status','import_error','last_imported_at'];
+ let headers=[...base];
+ globalThis.fetch = (async () => {
+  requested++;
+  return {ok:true,json:async()=>({values:[headers,['M-1','A','Approved','Visible','pdf','free']]})} as any;
+ }) as typeof fetch;
+ const source={spreadsheetId:'TEST_SHEET_123456',tabName:'Content Registry'};
+ try {
+  headers=base.filter(name=>name!=='import_status');
+  await assert.rejects(()=>readRegistrySheet(source,async()=> 'token'),/exactly one import_status/);
+  headers=[...base,'status'];
+  await assert.rejects(()=>readRegistrySheet(source,async()=> 'token'),/exactly one status/);
+  assert.equal(requested,2);
+  await assert.rejects(()=>writeRegistryResult(source,2,base.filter(name=>name!=='last_imported_at'),{success:true},'token'),/last_imported_at/);
+  await assert.rejects(()=>writeRegistryResult(source,1,base,{success:true},'token'),/row number/);
+  assert.equal(requested,2,'Invalid sheet updates never reach provider');
+ } finally {globalThis.fetch=originalFetch;}
 });

@@ -49,3 +49,7 @@ At runtime, when `APP_ENV=staging`, the Firebase Admin configuration will refuse
 ## Authenticated staging read-only API matrix
 
 After Cloudflare preflight passes and the isolated Worker is deployed, run `node scripts/staging-http-smoke.mjs https://staging-acceptance-mayf.YOUR-ACCOUNT.workers.dev`. Securely supply `MAYF_STAGING_ADMIN_TOKEN` to cover the 13 authenticated read-only admin endpoints (CMS, SEO, import, analytics, settings, ledger and student list) in addition to anonymous access restrictions, checkout-disabled configuration and Firestore/R2 connectivity. The script refuses production domains and does not make any POST/PUT/DELETE calls. Then execute real staging-only write tests separately using disposable accounts and content. The branch/Worker URL must be confirmed from Wrangler deployment output.
+
+## Google Sheets status-column integrity
+
+The source tab must have exactly one header each for `content_id`, `title`, `status`, `visibility`, `content_type`, `access_type`, `firestore_id`, `import_status`, `import_error` and `last_imported_at`. A missing/duplicate status column blocks the import **before** transferring PDFs. Without reliable `status=Imported` writeback, retries might repeatedly reprocess approved rows and misleadingly indicate success. The integration now rejects ambiguous column mappings and invalid row numbers; writeback API failures remain visible.
