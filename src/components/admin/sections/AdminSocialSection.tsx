@@ -20,6 +20,6 @@ export const AdminSocialSection: React.FC = () => {
     {error && <p role="alert" className="p-4 bg-red-50 text-red-800 rounded-lg">{error}</p>}
     {data && <><div className="border rounded-xl bg-white p-5"><p className="text-sm text-slate-600">Total reported shares</p><p className="text-3xl font-bold">{data.totalShares.toLocaleString()}</p></div>
       <div className="border rounded-xl bg-white p-5 space-y-3"><h2 className="font-bold">Channels</h2>{Object.entries(data.byChannel).map(([channel, count]) => <p key={channel}>{labels[channel] || channel}: {count.toLocaleString()}</p>)}{!data.totalShares && <p>No saved sharing actions in this period.</p>}</div></>}
-    <p className="text-sm text-slate-600">Sharing actions do not confirm that a recipient opened a link. In-app browser visits and external browser launches are **Not measured**.</p>
+    <p className="text-sm text-slate-600">Sharing actions do not confirm that a recipient opened a link. In-app browser visits and external browser launches are Not measured.</p>
   </section>;
 };
