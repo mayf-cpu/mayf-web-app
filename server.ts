@@ -3372,7 +3372,7 @@ app.get('/api/ai-teacher/history', requireAuth, asyncRoute(async (req: Authentic
   if (!db) return res.status(503).json({ success: false, error: 'AI history storage is unavailable.' });
   const history = (await db.queryEqual('aiTeacherSessions', 'userId', req.userAuth!.uid))
     .map(doc => ({ ...doc.data, id: doc.id }))
-    .sort((x, y) => String(y.timestamp).localeCompare(String(x.timestamp))).slice(0, 100);
+    .sort((x, y) => String((y as any).timestamp).localeCompare(String((x as any).timestamp))).slice(0, 100);
   res.setHeader('Cache-Control', 'no-store');
   return res.json({ success: true, history, total: history.length });
 }));
