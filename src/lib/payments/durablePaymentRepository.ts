@@ -92,6 +92,7 @@ export class DurablePaymentRepository {
     const reservationRef = await this.store.collection(COUPON_RESERVATION_COLLECTION).doc(orderId).get();
     if (!reservationRef.exists) return;
     const reservation = reservationRef.data();
+    if (!reservation) throw new Error('Corrupt reservation record');
     if (reservation.code !== couponCode) throw new Error('Coupon reservation ownership mismatch');
     if (reservation.status === 'released') return;
     if (reservation.status !== 'reserved' || !reservationRef.updateTime) {
@@ -100,6 +101,7 @@ export class DurablePaymentRepository {
     const couponRef = await this.store.collection(COUPON_COLLECTION).doc(couponCode).get();
     if (!couponRef.exists || !couponRef.updateTime) throw new Error('Coupon was removed before release');
     const coupon = couponRef.data();
+    if (!coupon) throw new Error('Coupon record missing');
     if (coupon.activeReservations?.[orderId]?.userId !== reservation.userId) {
       throw new Error('Coupon hold no longer matches the reservation');
     }
