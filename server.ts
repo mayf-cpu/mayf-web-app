@@ -935,8 +935,19 @@ async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
     }
     const authoritativeGross = authoritativePassPrice;
     const chosenCoupon = coupon || couponCode;
+    // Coupon quota is committed at signed settlement. Until bounded
+    // reservations are implemented at checkout, never charge a discounted
+    // order that may be rejected if its final coupon allowance expires.
+    if (chosenCoupon && process.env.MAYF_ENABLE_COUPON_CHECKOUT !== 'true') {
+      return res.status(503).json({
+        success: false, code: 'COUPON_CHECKOUT_NOT_READY',
+        error: 'Discounted checkout is temporarily unavailable while coupon reservations are being finalized.',
+      });
+    }
 
-    const result = await paymentService.createOrder({
+    // Import the latest authoritative coupon definitions from Firestore
+    // before calculating prices; do not trust isolate memory or client totals.
+    const result = await catalogueRepository.run(() => paymentService.createOrder({
       userId,
       items: [{
         id: 'item-annual-pass',
@@ -951,7 +962,7 @@ async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
       currency,
       preferredProvider: provider as PaymentProvider,
       customerDetails,
-    });
+    }));
 
     return res.json({
       success: true,
