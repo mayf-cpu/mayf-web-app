@@ -18,7 +18,8 @@ const entitlement: Entitlement = {
 };
 function fixture() {
   const docs = new Map<string, { data: any; revision: number }>();
-  let revision = 0;
+  // Seeded fixtures may start at revision 1; fresh commits must advance past it.
+  let revision = 1;
   const store = {
     collection: (collection: string) => ({ doc: (id: string) => ({
       get: async () => {
