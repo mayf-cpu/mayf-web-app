@@ -4,7 +4,7 @@ import { hasPdfMarkers } from '../download/pdfIntegrity';
  * Never invent a public storage URL. Only confirmed PDF uploads are successes.
  */
 import crypto from 'node:crypto';
-import { getPdfBucket, keyForPdf } from '../download/pdfObjectStorage';
+import { getPdfBucket, keyForPdf, versionedPdfKey } from '../download/pdfObjectStorage';
 
 export interface StorageIngestResult {
   productionFileUrl: string;
@@ -67,12 +67,6 @@ export async function copyDriveFileToProductionStorage(
   if (!contentId) throw new Error('Content registry ID is required for private storage');
   const bucket = getPdfBucket();
   if (!bucket?.put) throw new Error('Private R2 PDF bucket is not configured for uploads');
-  const key = keyForPdf(contentId);
-  // Never replace bytes behind an already published CMS record. An R2 upload
-  // and Firestore catalogue commit cannot be atomic across providers.
-  if (await bucket.head(key)) {
-    throw new Error('PDF already exists in private storage; replacement requires an explicit versioned publishing workflow.');
-  }
   const token = await getDriveAccessToken(getServiceAccount());
   const url = 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(driveFileId) + '?alt=media';
   const response = await fetch(url, {
@@ -104,7 +98,12 @@ export async function copyDriveFileToProductionStorage(
   for (const chunk of chunks) { bytes.set(chunk, cursor); cursor += chunk.byteLength; }
   if (!hasPdfMarkers(bytes))
     throw new Error('Google Drive source is not a valid PDF');
-  await bucket.put(key, bytes, { httpMetadata: { contentType: 'application/pdf' } });
+  // Immutable content-addressed object: a competing importer can never
+  // replace previously published PDF bytes with a different version.
+  const key = versionedPdfKey(contentId, crypto.createHash('sha256').update(bytes).digest('hex'));
+  if (!(await bucket.head(key))) {
+    await bucket.put(key, bytes, { httpMetadata: { contentType: 'application/pdf' } });
+  }
   const stored = await bucket.head(key);
   if (!stored || stored.size !== bytes.length)
     throw new Error('R2 upload verification failed; import was not published');

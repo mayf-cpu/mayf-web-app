@@ -15,7 +15,7 @@ test('private R2 and fail-closed PDF delivery remain wired', () => {
   assert.ok(wrangler.r2_buckets?.some((entry: any) => entry.binding === 'MAYF_PDF_BUCKET'));
   const server = read('server.ts');
   assert.match(server, /await resolveDownloadableItem\(getAdminFirestore\(\), contentId\)/);
-  assert.match(server, /await readVerifiedPdf\(tokenRecord\.contentId\)/);
+  assert.ok(server.includes('readVerifiedPdf(tokenRecord.contentId, tokenRecord.objectKey)'));
   assert.match(server, /await tokens\.consume\(token, tokenRecord\)/);
   assert.match(server, /await getAuthoritativePassStatus\(tokenRecord\.uid\)/);
 });

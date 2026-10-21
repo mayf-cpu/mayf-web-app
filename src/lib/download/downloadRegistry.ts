@@ -6,6 +6,7 @@
 
 export interface DownloadableItem {
   id: string;
+  objectKey?: string;
   slug: string;
   title: string;
   accessType: 'free' | 'paid';
