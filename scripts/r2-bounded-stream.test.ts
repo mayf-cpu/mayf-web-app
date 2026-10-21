@@ -10,7 +10,7 @@ function mock(bytes: Uint8Array, declaredSize: number, onCancel?: () => void) {
     get: async () => ({size: declaredSize, body: new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(bytes);
-        controller.close();
+        if (!onCancel) controller.close();
       },
       cancel() { onCancel?.(); },
     })}),
