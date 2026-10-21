@@ -40,3 +40,12 @@ test('staging deployment fails closed before building a frontend with wrong Fire
   'MAYF_STAGING_FIREBASE_PROJECT_ID']) assert.ok(workflow.includes(key), key);
  assert.ok(!workflow.includes('      - run: npm run build'));
 });
+
+test('manual staging deploy runs the same production audit and Firestore security emulator gates as PR CI', () => {
+ const audit = workflow.indexOf('npm audit --omit=dev --audit-level=high');
+ const rules = workflow.indexOf('npm run test:rules');
+ const deploy = workflow.indexOf('Deploy ONLY isolated staging Worker');
+ assert.ok(audit >= 0 && rules > audit && deploy > rules);
+ assert.match(workflow,/actions\/setup-java@v4/);
+ assert.match(workflow,/java-version: '21'/);
+});

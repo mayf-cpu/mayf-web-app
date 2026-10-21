@@ -53,3 +53,7 @@ After Cloudflare preflight passes and the isolated Worker is deployed, run `node
 ## Google Sheets status-column integrity
 
 The source tab must have exactly one header each for `content_id`, `title`, `status`, `visibility`, `content_type`, `access_type`, `firestore_id`, `import_status`, `import_error` and `last_imported_at`. A missing/duplicate status column blocks the import **before** transferring PDFs. Without reliable `status=Imported` writeback, retries might repeatedly reprocess approved rows and misleadingly indicate success. The integration now rejects ambiguous column mappings and invalid row numbers; writeback API failures remain visible.
+
+## CI parity before manual staging deploy
+
+The manual staging workflow independently reruns the exact candidate commit's production dependency audit, TypeScript validation, application regression tests, **Firestore security rules emulator** (Java 21), frontend build, Worker dry-run and staging-only Cloudflare resource preflight **before deployment**. This reduces the risk that a manually dispatched candidate bypasses required security checks even if an unrelated pull-request CI run is stale. It still does **not** deploy Firebase rules, configure staging secrets or prove actual external service integration.
