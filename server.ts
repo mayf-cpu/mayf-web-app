@@ -36,6 +36,7 @@ import { paymentSettingsRepository } from './src/lib/payments/paymentSettingsRep
 import { isProductionPaymentRuntime } from './src/lib/payments/runtime';
 import { validateAnnualPassCart } from './src/lib/payments/checkoutPolicy';
 import { DurablePaymentRepository } from './src/lib/payments/durablePaymentRepository';
+import { initiateFullRefund } from './src/lib/payments/refundInitiation';
 import { processVerifiedRazorpayFullRefund } from './src/lib/payments/durableRefundProcessor';
 import { settleVerifiedAnnualPassWebhook } from './src/lib/payments/durableWebhookProcessor';
 import { entitlementService } from './src/lib/payments/entitlementService';
@@ -2168,15 +2169,42 @@ app.post('/api/admin/security/config', requireAuth, requireSuperAdmin, (req: Aut
  * 18. Order Refund Endpoint
  * Logs audit entry: refund-related changes
  */
-// Refunds must be confirmed with the payment provider and durably reconciled.
-// The signed Razorpay refund webhook handles verified FULL refunds; initiating
-// a gateway refund from this admin route is not implemented and must not report success.
-app.post('/api/admin/orders/:orderId/refund', requireAuth, requireAdmin, (_req: AuthenticatedRequest, res: Response) => {
-  return res.status(501).json({
-    success: false, code: 'REFUND_INITIATION_NOT_IMPLEMENTED',
-    error: 'Refund initiation from the admin panel is not available. Verify the transaction with the gateway and allow the signed refund webhook to reconcile the ledger and access. Do not treat this order as refunded yet.',
+// Initiation is gated independently of new purchases. Signed webhooks alone settle refunds.
+app.get('/api/admin/payments/refunds', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  const db = getAdminFirestore();
+  res.setHeader('Cache-Control', 'no-store');
+  if (!db) return res.status(503).json({ success: false, error: 'Refund storage is unavailable.' });
+  const requests = await db.list('paymentRefundRequests');
+  return res.json({ success: true, requests: requests.map(({ data }) => ({
+    orderId: data.orderId, providerPaymentId: data.providerPaymentId, providerRefundId: data.providerRefundId || null,
+    amountInSubunits: data.amount, currency: data.currency, status: data.status,
+    requestedAt: data.requestedAt, actorUid: data.actorUid, reason: data.reason,
+  })).sort((a, b) => String(b.requestedAt).localeCompare(String(a.requestedAt))).slice(0, 100) });
+}));
+app.post('/api/admin/orders/:orderId/refund', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (process.env.MAYF_ENABLE_ADMIN_REFUNDS !== 'true') return res.status(503).json({
+    success: false, error: 'Admin refund initiation is unavailable pending sandbox acceptance.',
   });
-});
+  const db = getAdminFirestore();
+  if (!db) return res.status(503).json({ success: false, error: 'Refund storage is unavailable.' });
+  try {
+    const refund = await paymentSettingsRepository.run(async () => {
+      paymentService.assertRefundConfigured();
+      return initiateFullRefund(db, { orderId: String(req.params.orderId), amount: req.body.amount,
+        reason: req.body.reason, actorUid: req.userAuth!.uid }, intent => paymentService.initiateFullRefund(intent));
+    });
+    return res.status(202).json({ success: true, refundStatus: refund.status,
+      message: refund.status === 'completed' ? 'Refund confirmed by the provider webhook.' :
+        refund.status === 'awaiting_webhook' ? 'Refund submitted; awaiting verified provider confirmation.' :
+        'Refund outcome requires gateway reconciliation. Do not submit another refund manually without checking this request.',
+    });
+  } catch {
+    return res.status(409).json({ success: false,
+      error: 'Refund could not be initiated or its result could not be saved. Refresh the ledger and reconcile the gateway before retrying. Only full INR refunds of the latest paid Razorpay pass are supported.',
+    });
+  }
+}));
 
 // -------------------------------------------------------------
 // Complete Content CMS Endpoints
@@ -3248,6 +3276,7 @@ app.get('/api/admin/orders', requireAuth, requireAdmin, asyncRoute(async (_req: 
     currency: order.currency,
     gateway: order.provider,
     status: order.status,
+    refundRequestStatus: order.metadata?.refundRequestStatus,
     createdAt: order.createdAt,
     paymentId: order.providerPaymentId || '',
   })));

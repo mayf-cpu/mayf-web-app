@@ -7,6 +7,7 @@ export async function readStudentOrders(db: FirestoreDocumentStore | null, uid: 
     customerEmail: order.customerDetails?.email || '', planName: (order.items || []).map((item: any) => item.title).filter(Boolean).join(', ') || 'Resource purchase',
     amount: Number(order.grossAmount) - Number(order.discount || 0) + Number(order.tax || 0), currency: order.currency,
     gateway: order.provider, status: order.status, createdAt: order.createdAt, paymentId: order.providerPaymentId || '',
+    refundRequestStatus: order.metadata?.refundRequestStatus,
   })).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 }
 export async function readStudentActivity(db: FirestoreDocumentStore | null, uid: string, now = Date.now()) {

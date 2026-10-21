@@ -26,8 +26,8 @@ export const AdminOrdersSection: React.FC = () => {
   }, []);
   const exportLedger = () => {
     if (!orders.length || error) return;
-    const columns = ['Order Number', 'Customer Email', 'Plan', 'Amount', 'Currency', 'Gateway', 'Status', 'Created At', 'Payment ID'];
-    const rows = orders.map(order => [order.orderNumber, order.customerEmail, order.planName, order.amount, order.currency, order.gateway, order.status, order.createdAt, order.paymentId].map(safeCsvCell).join(','));
+    const columns = ['Order Number', 'Customer Email', 'Plan', 'Amount', 'Currency', 'Gateway', 'Status', 'Refund Request', 'Created At', 'Payment ID'];
+    const rows = orders.map(order => [order.orderNumber, order.customerEmail, order.planName, order.amount, order.currency, order.gateway, order.status, order.refundRequestStatus, order.createdAt, order.paymentId].map(safeCsvCell).join(','));
     const csv = [columns.map(safeCsvCell).join(','), ...rows].join('\r\n');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     const anchor = document.createElement('a');
@@ -100,6 +100,7 @@ export const AdminOrdersSection: React.FC = () => {
                       <CheckCircle2 className="w-3 h-3 text-emerald-700" />
                       {ord.status.toUpperCase()}
                     </span>
+                    {ord.refundRequestStatus && <div className="mt-1 text-[11px] text-amber-800">Refund: {ord.refundRequestStatus.replaceAll('_', ' ')}</div>}
                   </td>
                   <td className="px-5 py-3.5 text-right font-mono text-[11px] text-slate-500">
                     {ord.createdAt.split('T')[0]}

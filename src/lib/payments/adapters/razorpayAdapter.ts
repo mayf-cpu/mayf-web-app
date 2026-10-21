@@ -56,6 +56,38 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
     return Boolean(this.webhookSecret && this.webhookSecret.length > 4);
   }
 
+  assertRefundConfigured(): void {
+    if (!/^rzp_(test|live)_[A-Za-z0-9]+$/.test(this.keyId) || !this.keySecret ||
+        /sandbox|demo/i.test(this.keySecret + this.keyId) || !this.hasWebhookSecret() ||
+        (this.testMode ? !this.keyId.startsWith('rzp_test_') : !this.keyId.startsWith('rzp_live_'))) {
+      throw new Error('Real gateway credentials, matching mode and a refund webhook secret are required');
+    }
+  }
+
+  /** https://razorpay.com/docs/api/refunds/normal-refunds-idempotent */
+  async initiateFullRefund(intent: import('../refundInitiation').RefundIntent): Promise<{ refundId: string }> {
+    this.assertRefundConfigured();
+    if (!/^pay_[A-Za-z0-9]+$/.test(intent.providerPaymentId) ||
+        !/^[A-Za-z0-9_-]{10,100}$/.test(intent.idempotencyKey) ||
+        !Number.isSafeInteger(intent.amount) || intent.amount <= 0 || intent.currency !== 'INR') {
+      throw new Error('Invalid provider refund request');
+    }
+    const response = await fetch(`https://api.razorpay.com/v1/payments/${intent.providerPaymentId}/refund`, {
+      method: 'POST', signal: AbortSignal.timeout(15000),
+      headers: { Authorization: `Basic ${Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64')}`,
+        'Content-Type': 'application/json', 'X-Refund-Idempotency': intent.idempotencyKey },
+      body: JSON.stringify({ amount: intent.amount, speed: 'normal' }),
+    });
+    if (!response.ok) throw new Error(`Gateway refund outcome requires review (${response.status})`);
+    const result = await response.json() as any;
+    if (!/^rfnd_[A-Za-z0-9]+$/.test(result.id || '') || result.entity !== 'refund' ||
+        result.payment_id !== intent.providerPaymentId || result.amount !== intent.amount ||
+        result.currency !== intent.currency || !['pending', 'processed'].includes(result.status)) {
+      throw new Error('Gateway returned an unconfirmed refund outcome');
+    }
+    return { refundId: result.id };
+  }
+
   /**
    * Generates Razorpay Order
    * Razorpay amounts are strictly represented in smallest currency unit (Paise: INR 1 = 100 paise)

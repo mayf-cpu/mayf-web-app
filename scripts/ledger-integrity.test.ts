@@ -9,9 +9,10 @@ test('admin refund endpoint never claims gateway funds refunded without initiati
   const end = server.indexOf('// -------------------------------------------------------------', start);
   assert.ok(start > -1 && end > start);
   const route = server.slice(start, end);
-  assert.match(route, /status\(501\)/);
-  assert.match(route, /REFUND_INITIATION_NOT_IMPLEMENTED/);
-  assert.doesNotMatch(route, /REFUND_PROCESSED|status: 'refunded'|success: true/);
+  assert.match(route, /MAYF_ENABLE_ADMIN_REFUNDS/);
+  assert.match(route, /initiateFullRefund/);
+  assert.match(route, /status\(202\)/);
+  assert.doesNotMatch(route, /REFUND_PROCESSED|status: 'refunded'/);
 });
 
 test('admin orders are always from the durable ledger and never seeded examples', () => {

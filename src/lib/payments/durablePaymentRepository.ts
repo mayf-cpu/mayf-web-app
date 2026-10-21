@@ -269,12 +269,20 @@ export class DurablePaymentRepository {
         typeof cursor.previousExpiresAt !== 'string' || !Number.isFinite(Date.parse(cursor.previousExpiresAt))) {
       throw new Error('Refund requires manual reconciliation: renewal cursor is missing or newer purchases exist');
     }
+    const requestRef = await this.store.collection('paymentRefundRequests').doc(orderId).get();
+    const request = requestRef.data();
+    if (requestRef.exists && (!requestRef.updateTime || request?.providerPaymentId !== providerPaymentId ||
+        request?.amount !== payable || request?.currency !== currency.toUpperCase() ||
+        (request?.providerRefundId && request.providerRefundId !== refundId))) {
+      throw new Error('Verified refund conflicts with the saved initiation request; manual reconciliation required');
+    }
     await this.store.commit([
       { collection: RENEWAL_CURSOR_COLLECTION, id: cursorId, updateTime: cursorRef.updateTime,
         data: { ...cursor, expiresAt: cursor.previousExpiresAt, lastOrderId: cursor.previousOrderId || null,
           previousExpiresAt: cursor.previousExpiresAt, updatedAt: refundedAt } },
       { collection: ORDER_COLLECTION, id: validId(orderId), updateTime: orderRef.updateTime,
-        data: { ...order, status: 'refunded', refundedAt, refundId } },
+        data: { ...order, status: 'refunded', refundedAt, refundId,
+          metadata: { ...order.metadata, refundRequestStatus: 'completed' } } },
       { collection: ENTITLEMENT_COLLECTION, id: entitlementId, updateTime: passRef.updateTime,
         data: { ...pass, status: 'revoked', updatedAt: refundedAt, notes: 'Revoked after verified full refund' } },
       { collection: EVENT_COLLECTION, id: refundKey,
@@ -282,6 +290,9 @@ export class DurablePaymentRepository {
           // Interim abuse-resistant policy: refunds revoke access but do not
           // silently restore scarce coupon capacity without operator review.
           couponUsagePolicy: order.coupon ? 'retained_after_refund' : 'not_applicable' } },
+      ...(requestRef.exists ? [{ collection: 'paymentRefundRequests', id: orderId,
+        updateTime: requestRef.updateTime,
+        data: { ...request, status: 'completed', providerRefundId: refundId, completedAt: refundedAt } }] : []),
     ]);
     return 'refunded';
   }

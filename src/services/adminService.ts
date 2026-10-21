@@ -103,6 +103,7 @@ export interface OrderRecord {
   currency: string;
   gateway: 'razorpay' | 'stripe';
   status: 'created' | 'pending' | 'paid' | 'failed' | 'refunded' | 'cancelled';
+  refundRequestStatus?: string;
   createdAt: string;
   paymentId: string;
 }
@@ -561,7 +562,7 @@ class AdminService {
     orderId: string,
     amount: number,
     reason: string
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<{ success: boolean; error?: string; refundStatus?: string; message?: string }> {
     const headers = await this.getAuthHeaders();
     try {
       const res = await fetch(`/api/admin/orders/${orderId}/refund`, {
@@ -571,7 +572,7 @@ class AdminService {
       });
       const data = await res.json();
       if (!res.ok) return { success: false, error: data.error || 'Failed to process refund' };
-      return { success: true };
+      return { success: data.success === true, refundStatus: data.refundStatus, message: data.message };
     } catch (e: any) {
       return { success: false, error: e?.message || 'Network error' };
     }

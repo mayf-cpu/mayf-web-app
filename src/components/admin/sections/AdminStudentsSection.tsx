@@ -262,12 +262,13 @@ export const AdminStudentsSection: React.FC = () => {
     setActionLoading(false);
     if (res.success) {
       setStudentOrders((prev) =>
-        prev.map((o) => (o.id === order.id ? { ...o, status: 'refunded' } : o))
+        prev.map((o) => (o.id === order.id ? { ...o, refundRequestStatus: res.refundStatus,
+          ...(res.refundStatus === 'completed' ? { status: 'refunded' as const } : {}) } : o))
       );
       setRefundOrderId(null);
       setActionMessage({
         type: 'success',
-        text: `Refund processed for order ${order.orderNumber}. Audit log recorded.`,
+        text: res.message || 'Refund request recorded; awaiting verified provider confirmation.',
       });
     } else {
       setActionMessage({ type: 'error', text: res.error || 'Failed to process refund.' });
@@ -862,7 +863,7 @@ export const AdminStudentsSection: React.FC = () => {
                             <span className="font-heading font-extrabold text-sm text-slate-900">
                               {new Intl.NumberFormat('en-IN', { style: 'currency', currency: ord.currency }).format(ord.amount)}
                             </span>
-                            {ord.status !== 'refunded' && (
+                            {ord.status === 'paid' && ord.gateway === 'razorpay' && !ord.refundRequestStatus && (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -871,6 +872,9 @@ export const AdminStudentsSection: React.FC = () => {
                               >
                                 Refund Order
                               </Button>
+                            )}
+                            {ord.status === 'paid' && ord.refundRequestStatus && (
+                              <span className="text-xs text-amber-800">Refund: {ord.refundRequestStatus.replaceAll('_', ' ')}</span>
                             )}
                           </div>
                         </div>

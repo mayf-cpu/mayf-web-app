@@ -196,6 +196,11 @@ export class PaymentService {
     return this.settings.activeProvider === 'stripe' ? this.stripeAdapter : this.razorpayAdapter;
   }
 
+  assertRefundConfigured(): void { this.razorpayAdapter.assertRefundConfigured(); }
+  initiateFullRefund(intent: import('./refundInitiation').RefundIntent) {
+    return this.razorpayAdapter.initiateFullRefund(intent);
+  }
+
   /**
    * STEP 1: Server Creates Order
    * Computes verified pricing, discounts, tax, and registers the order in status 'created'
