@@ -445,3 +445,33 @@ test('date-only coupon expiry is recognized as end of the named UTC day', async 
   });
   assert.ok(docs.has('paymentCouponReservations/ord-1'));
 });
+
+
+test('verified coupon refund revokes access but retains scarce redemption capacity', async () => {
+  const { repo, docs } = couponFixture('NO_REUSE', 1);
+  const hold = await repo.reserveCoupon({
+    orderId: 'ord-1', userId: 'student-1', code: 'NO_REUSE',
+    discount: 10, now: reserveAt,
+  });
+  await repo.createOrder({ ...order, coupon: 'NO_REUSE', discount: 10,
+    couponReservationId: 'ord-1', couponReservationExpiresAt: hold.expiresAt });
+  await repo.settleVerifiedPayment({
+    ...payment, entitlement: { ...entitlement, id: 'payment-ord-1' },
+  });
+  const args = {
+    orderId: 'ord-1', provider: 'razorpay' as const, providerOrderId: 'gateway-1',
+    providerPaymentId: 'pay-1', refundId: 'rfnd-coupon', eventId: 'evt-refund-coupon',
+    refundAmount: 90, currency: 'INR', refundedAt: '2026-10-22T00:00:00Z',
+  };
+  assert.equal(await repo.recordVerifiedFullRefund(args), 'refunded');
+  assert.equal(docs.get('coupons/NO_REUSE')?.data.timesUsed, 1);
+  assert.equal(docs.get('paymentCouponRedemptions/ord-1')?.data.code, 'NO_REUSE');
+  assert.equal(docs.get('paymentWebhookEvents/razorpay:refund:rfnd-coupon')?.data.couponUsagePolicy,
+    'retained_after_refund');
+  assert.equal(docs.get('paymentEntitlements/payment-ord-1')?.data.status, 'revoked');
+  assert.equal(await repo.recordVerifiedFullRefund(args), 'duplicate');
+  await assert.rejects(repo.reserveCoupon({
+    orderId: 'ord-2', userId: 'student-2', code: 'NO_REUSE',
+    discount: 10, now: new Date('2026-10-22T01:00:00Z'),
+  }), /capacity exhausted/);
+});
