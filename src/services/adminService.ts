@@ -88,8 +88,8 @@ export interface AiActivityRecord {
   topic: string;
   questionSnippet: string;
   model: string;
-  latencyMs: number;
-  tokensUsed: number;
+  latencyMs: number | null;
+  tokensUsed: number | null;
   resolved: boolean;
   rating?: number;
 }
@@ -551,14 +551,12 @@ class AdminService {
   }
 
   async getAiActivity(): Promise<AiActivityRecord[]> {
-    try {
-      const headers = await this.getAuthHeaders();
-      const res = await fetch('/api/admin/ai-activity', { headers });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    } catch {
-      return [];
-    }
+    const headers = await this.getAuthHeaders();
+    const res = await fetch('/api/admin/ai-activity', { headers });
+    if (!res.ok) throw new Error('AI activity is unavailable (' + res.status + ').');
+    const result = await res.json();
+    if (!Array.isArray(result)) throw new Error('Invalid AI activity response.');
+    return result;
   }
 
   async getOrders(): Promise<OrderRecord[]> {
