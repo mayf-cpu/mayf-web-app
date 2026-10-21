@@ -7,7 +7,7 @@ const LEASE_MS = 180_000;
 
 export class IngestionLock {
   constructor(private readonly store: LockStore) {}
-  async acquire(contentId: string, now = Date.now()): Promise<{ release: () => Promise<void> }> {
+  async acquire(contentId: string, now = Date.now()): Promise<{ release: () => Promise<void>; renew: () => Promise<void>; assertOwner: () => Promise<void> }> {
     if (!contentId?.trim()) throw new Error('Import content ID required');
     const id = crypto.createHash('sha256').update(contentId.trim()).digest('hex');
     const owner = crypto.randomBytes(24).toString('hex');
@@ -22,7 +22,28 @@ export class IngestionLock {
       collection: COLLECTION, id, data: { contentId: contentId.trim(), owner, expiresAt: now + LEASE_MS },
       ...(current.updateTime ? { updateTime: current.updateTime } : {}),
     }]);
+    const assertOwner = async () => {
+      const latest = await ref.get();
+      if (!latest.exists || latest.data()?.owner !== owner ||
+          !Number.isFinite(latest.data()?.expiresAt) ||
+          latest.data()!.expiresAt <= Date.now()) {
+        throw new Error('Import lock expired or ownership lost');
+      }
+    };
+    const renew = async () => {
+      const latest = await ref.get();
+      if (!latest.exists || latest.data()?.owner !== owner || !latest.updateTime ||
+          !Number.isFinite(latest.data()?.expiresAt) ||
+          latest.data()!.expiresAt <= Date.now()) {
+        throw new Error('Import lock expired or ownership lost');
+      }
+      await this.store.commit([{
+        collection: COLLECTION, id, updateTime: latest.updateTime,
+        data: { contentId: contentId.trim(), owner, expiresAt: Date.now() + LEASE_MS },
+      }]);
+    };
     return {
+      assertOwner, renew,
       release: async () => {
         const latest = await ref.get();
         if (!latest.exists || latest.data()?.owner !== owner) return;
