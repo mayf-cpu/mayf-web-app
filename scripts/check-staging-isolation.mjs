@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 const production = JSON.parse(readFileSync(new URL('../wrangler.jsonc',import.meta.url),'utf8'));
 const staging = JSON.parse(readFileSync(new URL('../wrangler.staging.jsonc',import.meta.url),'utf8'));
 assert.notEqual(staging.name,production.name,'Staging Worker must be separate');
-assert.equal(staging.name,'mayf-staging-acceptance');
+assert.equal(staging.name,'staging-acceptance-mayf');
 assert.equal(staging.main,'worker.ts');
 assert.deepEqual(staging.assets.run_worker_first,['/api/*']);
 assert.equal(staging.r2_buckets?.length,1);
