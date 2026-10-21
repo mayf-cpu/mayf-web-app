@@ -44,6 +44,7 @@
     "wrangler": "4.151.2"
   },
   "overrides": {
-    "iconv-lite": "0.7.0"
+    "iconv-lite": "0.7.0",
+    "@grpc/grpc-js": "1.14.6"
   }
 }

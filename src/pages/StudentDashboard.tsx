@@ -317,6 +317,7 @@ export const StudentDashboard: React.FC = () => {
   const [savedSearchQuery, setSavedSearchQuery] = useState('');
   const [savedCategoryFilter, setSavedCategoryFilter] = useState('All');
 
+  const [logoutError, setLogoutError] = useState('');
   const activityUserRef = useRef(user?.uid);
   activityUserRef.current = user?.uid;
 
@@ -757,6 +758,7 @@ export const StudentDashboard: React.FC = () => {
 
               </div>
 
+              {logoutError && <p role="alert" className="p-3 text-sm text-red-700 bg-red-50 rounded-lg">{logoutError}</p>}
               {/* Quick Sign Out Action */}
               <div className="flex justify-between items-center bg-white rounded-xl border border-[#E2E8F0] p-4 text-xs">
                 <span className="text-[#64748B]">
@@ -765,9 +767,10 @@ export const StudentDashboard: React.FC = () => {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => {
-                    logout();
-                    navigate('/login');
+                  onClick={async () => {
+                    setLogoutError('');
+                    try { await logout(); navigate('/login'); }
+                    catch { setLogoutError('Sign-out failed. Please retry.'); }
                   }}
                   className="text-[#DC2626] hover:bg-[#FEF2F2]"
                 >

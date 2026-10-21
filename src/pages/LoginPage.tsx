@@ -54,7 +54,8 @@ export const LoginPage: React.FC = () => {
               fullWidth
               size="sm"
               onClick={async () => {
-                await logout();
+                setLoginError(null);
+                try { await logout(); } catch { setLoginError('Sign-out failed. Please retry.'); }
               }}
               className="text-xs text-slate-500 hover:text-slate-800"
             >

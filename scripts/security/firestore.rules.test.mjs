@@ -54,7 +54,7 @@ test('profiles reject escalation, unknown fields, ownership changes and invalid 
   await assertFails(setDoc(doc(user, 'users/one'), { ...profile('one'), superAdmin: true }));
   await assertFails(setDoc(doc(user, 'users/one'), { ...profile('one'), pro: true }));
   await assertSucceeds(setDoc(doc(user, 'users/one'), profile('one')));
-  await assertSucceeds(updateDoc(doc(user, 'users/one'), { studentClass: 'Class 9' }));
+  await assertSucceeds(updateDoc(doc(user, 'users/one'), { studentClass: 'Class 9', board: 'State Board' }));
   for (const patch of [{ role: 'admin' }, { uid: 'two' }, { displayName: {} }, { displayName: 'x'.repeat(121) }, { email: 'other@example.test' }]) await assertFails(updateDoc(doc(user, 'users/one'), patch));
   await assertFails(setDoc(doc(user, 'users/two'), profile('two')));
 });

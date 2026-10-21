@@ -43,6 +43,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   const { user, entitlements, logout } = useAuth();
   const { navigate } = useNavigation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [logoutError, setLogoutError] = useState('');
 
   const [showAllSections, setShowAllSections] = useState(false);
   const [sectionSearch, setSectionSearch] = useState('');
@@ -243,10 +244,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             })}
           </div>
 
+          {logoutError && <p role="alert" className="px-3 text-xs text-rose-300">{logoutError}</p>}
           {/* Sidebar Footer */}
           <div className="p-3 border-t border-slate-800 space-y-2">
             <button
-              onClick={() => logout().then(() => navigate('/'))}
+              onClick={async () => { setLogoutError(''); try { await logout(); navigate('/'); } catch { setLogoutError('Sign-out failed. Please retry.'); } }}
               className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-rose-400 hover:text-white hover:bg-rose-950/40 border border-rose-900/30 transition-colors cursor-pointer"
             >
               <LogOut className="w-3.5 h-3.5" />

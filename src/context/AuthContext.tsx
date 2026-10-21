@@ -1,3 +1,5 @@
+import { SessionGuard } from '../lib/auth/sessionGuard';
+import { completeLogout } from '../lib/auth/sessionLogout';
 import { readBookmarks, writeBookmarks } from '../lib/bookmarks/bookmarkStorage';
 import { setActivityUser } from '../lib/activity/activityService';
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
@@ -119,13 +121,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Listen to Firebase Auth state
   useEffect(() => {
+    const guard = new SessionGuard();
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      const active = guard.begin();
+      const isCurrent = () => active() && (auth.currentUser?.uid || null) === (fbUser?.uid || null);
+      setLoading(true);
+      if (isProductionClient) { setUser(null); setEntitlements(defaultAnonymousEntitlements); }
       setActivityUser(fbUser?.uid || null);
       setFirebaseUser(fbUser);
 
       if (fbUser) {
         // 1. Fetch claims cryptographically signed by Firebase
         const claims = await getVerifiedClaims(fbUser);
+        if (!isCurrent()) return;
         const email = (fbUser.email || '').toLowerCase().trim();
         const isAuthorizedEmail = fbUser.emailVerified && [
           '2026vivekkushwah@gmail.com',
@@ -155,6 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           const userDocRef = doc(db, 'users', fbUser.uid);
           const snap = await getDoc(userDocRef);
+          if (!isCurrent()) return;
 
           if (snap.exists()) {
             const existing = snap.data() as UserProfileDoc;
@@ -204,12 +213,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             };
 
             await setDoc(userDocRef, JSON.parse(JSON.stringify(newProfile)));
+            if (!isCurrent()) return;
             setUser(newProfile);
             if (typeof window !== 'undefined') {
               localStorage.setItem('mayf_user_profile', JSON.stringify(newProfile));
             }
           }
         } catch (dbError) {
+          if (!isCurrent()) return;
           console.warn('[MAYF Auth] Firestore profile fetch note:', dbError);
           // Graceful fallback profile with Google credentials
           const fallbackProfile: UserProfileDoc = {
@@ -232,10 +243,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // When unauthenticated: Keep user profile null or in fallback state
         // Notice: Free study material will still work completely without authentication!
       }
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => { guard.invalidate(); unsubscribe(); };
   }, []);
 
   useEffect(() => {
@@ -363,12 +374,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     setLoading(true);
     try {
-      await signOutUser().catch(() => {});
-      setActivityUser(null);
-      setUser(null);
-      setFirebaseUser(null);
-      setEntitlements(defaultAnonymousEntitlements);
-      localStorage.removeItem('mayf_user_profile');
+      await completeLogout(signOutUser, () => {
+        setActivityUser(null); setUser(null); setFirebaseUser(null);
+        setEntitlements(defaultAnonymousEntitlements);
+        try { localStorage.removeItem('mayf_user_profile'); } catch { /* Browser storage can be unavailable. */ }
+      });
     } finally {
       setLoading(false);
     }
