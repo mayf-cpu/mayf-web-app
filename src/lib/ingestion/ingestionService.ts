@@ -514,11 +514,6 @@ export async function retryIngestionJob(jobId: string): Promise<IngestionJobReco
   job.status = 'importing';
   job.updatedAt = new Date().toISOString();
 
-  // If previous error was mock perm issue, replace with clean ID on retry
-  if (job.sourceRowMetadata.drive_file_id?.includes('INVALID_PERMS')) {
-    job.sourceRowMetadata.drive_file_id = '1dr_RECOVERED_VALID_FILE_' + Date.now();
-  }
-
   job.sourceRowMetadata.status = 'Approved';
   const outcome = await processRegistryRow(job.sourceRowMetadata, 'admin_retry');
 
