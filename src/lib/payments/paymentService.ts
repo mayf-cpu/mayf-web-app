@@ -276,6 +276,18 @@ export class PaymentService {
       customerDetails,
     };
 
+    let couponReserved = false;
+    if (validatedCoupon) {
+      if (!this.durableOrders?.reserveCoupon || !this.durableOrders?.releaseCouponReservation) {
+        throw new Error('Coupon not applicable: reservation storage is unavailable.');
+      }
+      const claim = await this.durableOrders.reserveCoupon({
+        orderId, userId, code: validatedCoupon, discount,
+      });
+      newOrder.couponReservationId = orderId;
+      newOrder.couponReservationExpiresAt = claim.expiresAt;
+      couponReserved = true;
+    }
     // Call adapter to generate gateway order / checkout session
     const providerResult = await adapter.createOrder(newOrder);
     newOrder.providerOrderId = providerResult.providerOrderId;
