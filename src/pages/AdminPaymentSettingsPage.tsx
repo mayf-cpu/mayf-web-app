@@ -1481,7 +1481,7 @@ export const AdminPaymentSettingsPage: React.FC = () => {
         {/* TAB: PROMOTIONAL BANNERS */}
         {activeTab === 'promotions' && (
           authToken ? <PromotionsManagementTab authHeaders={{ Authorization: `Bearer ${authToken}` }} /> : <p role="status">Verifying administrator session…</p>
-        )
+        )}
 
         {/* TAB 1: GATEWAY SETTINGS */}
         {activeTab === 'settings' && (
