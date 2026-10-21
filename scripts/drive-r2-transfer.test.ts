@@ -18,7 +18,7 @@ test('Drive import verifies authenticated downloaded bytes before declaring an R
     client_email: 'test@example.iam.gserviceaccount.com',
     private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
   });
-  const valid = new TextEncoder().encode('%PDF-1.4\nfixture-data-123');
+  const valid = new TextEncoder().encode('%PDF-1.4\nfixture-data-123\n%%EOF\n');
   const objects = new Map<string,Uint8Array>();
   const calls:string[] = [];
   configurePdfBucket({
