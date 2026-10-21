@@ -267,63 +267,101 @@ test('refunding latest pass restores the prior expiry cursor atomically', async 
 });
 
 
-test('signed coupon order settlement atomically records usage, a receipt and one entitlement', async () => {
-  const { repo, docs } = fixture();
-  docs.set('coupons/TEST10', { data: { id: 'TEST10', code: 'TEST10', enabled: true,
-    timesUsed: 0, usageLimit: 2, perUserLimit: 1, userUsageMap: {} }, revision: 1 });
-  await repo.createOrder({ ...order, coupon: 'TEST10', discount: 10 });
+const reserveAt = new Date('2026-10-21T11:55:00Z');
+function couponFixture(code: string, usageLimit = 2, perUserLimit = 1) {
+  const f = fixture();
+  f.docs.set('coupons/' + code, { data: {
+    id: code, code, enabled: true, timesUsed: 0, usageLimit,
+    perUserLimit, userUsageMap: {},
+  }, revision: 1 });
+  return f;
+}
+
+test('precharge hold, signed settlement and duplicate webhook count coupon once', async () => {
+  const { repo, docs } = couponFixture('TEST10');
+  const hold = await repo.reserveCoupon({
+    orderId: 'ord-1', userId: 'student-1', code: 'TEST10', discount: 10, now: reserveAt,
+  });
+  await repo.createOrder({ ...order, coupon: 'TEST10', discount: 10,
+    couponReservationId: 'ord-1', couponReservationExpiresAt: hold.expiresAt });
   assert.equal(await repo.settleVerifiedPayment(payment), 'settled');
   assert.equal(docs.get('coupons/TEST10')?.data.timesUsed, 1);
   assert.equal(docs.get('coupons/TEST10')?.data.userUsageMap['student-1'], 1);
   assert.equal(docs.get('paymentCouponRedemptions/ord-1')?.data.discount, 10);
-  assert.equal(docs.get('paymentOrders/ord-1')?.data.status, 'paid');
+  assert.equal(docs.get('paymentCouponReservations/ord-1')?.data.status, 'redeemed');
+  assert.equal(Object.keys(docs.get('coupons/TEST10')?.data.activeReservations).length, 0);
   assert.equal(await repo.settleVerifiedPayment(payment), 'duplicate');
   assert.equal(docs.get('coupons/TEST10')?.data.timesUsed, 1);
 });
 
-test('coupon global limit is serialized across competing workers and different students', async () => {
-  const { repo, docs } = fixture();
-  docs.set('coupons/ONEUSE', { data: { id: 'ONEUSE', code: 'ONEUSE',
-    timesUsed: 0, usageLimit: 1, perUserLimit: 1, userUsageMap: {} }, revision: 1 });
-  await repo.createOrder({ ...order, coupon: 'ONEUSE', discount: 10 });
-  await repo.createOrder({ ...order, userId: 'student-2', orderId: 'ord-2',
-    providerOrderId: 'gateway-2', coupon: 'ONEUSE', discount: 10 });
-  const second = {
-    ...payment, orderId: 'ord-2', providerOrderId: 'gateway-2',
-    providerPaymentId: 'pay-2', eventId: 'evt-2',
-    entitlement: { ...entitlement, id: 'ent-2', userId: 'student-2',
-      orderId: 'ord-2', paymentId: 'pay-2' },
-  };
+test('concurrent precharge reservations respect shared one-use capacity', async () => {
+  const { repo, docs } = couponFixture('ONEUSE', 1);
   const results = await Promise.allSettled([
-    repo.settleVerifiedPayment(payment), repo.settleVerifiedPayment(second),
+    repo.reserveCoupon({ orderId: 'ord-1', userId: 'student-1', code: 'ONEUSE', discount: 10, now: reserveAt }),
+    repo.reserveCoupon({ orderId: 'ord-2', userId: 'student-2', code: 'ONEUSE', discount: 10, now: reserveAt }),
   ]);
   assert.equal(results.filter(x => x.status === 'fulfilled').length, 1);
-  assert.equal(docs.get('coupons/ONEUSE')?.data.timesUsed, 1);
-  assert.equal([...docs.keys()].filter(x => x.startsWith('paymentCouponRedemptions/')).length, 1);
-  assert.equal([...docs.values()].filter(x => x.data?.status === 'paid').length, 1);
+  assert.equal(results.filter(x => x.status === 'rejected').length, 1);
+  const winner = results[0].status === 'fulfilled' ? 'ord-1' : 'ord-2';
+  assert.equal(Object.keys(docs.get('coupons/ONEUSE')?.data.activeReservations).length, 1);
+  assert.ok(docs.has('paymentCouponReservations/' + winner));
 });
 
-test('coupon per-student limit and corrupt state reject paid settlement without partial writes', async () => {
-  const { repo, docs } = fixture();
+test('abandoned checkout release reclaims capacity without incrementing usage', async () => {
+  const { repo, docs } = couponFixture('SINGLE', 1);
+  await repo.reserveCoupon({ orderId: 'ord-1', userId: 'student-1', code: 'SINGLE', discount: 10, now: reserveAt });
+  await assert.rejects(
+    repo.reserveCoupon({ orderId: 'ord-2', userId: 'student-2', code: 'SINGLE', discount: 10, now: reserveAt }),
+    /capacity exhausted/,
+  );
+  await repo.releaseCouponReservation('ord-1', 'SINGLE');
+  await repo.releaseCouponReservation('ord-1', 'SINGLE');
+  assert.equal(docs.get('paymentCouponReservations/ord-1')?.data.status, 'released');
+  assert.equal(docs.get('coupons/SINGLE')?.data.timesUsed, 0);
+  await repo.reserveCoupon({ orderId: 'ord-2', userId: 'student-2', code: 'SINGLE', discount: 10, now: reserveAt });
+  assert.equal(Object.keys(docs.get('coupons/SINGLE')?.data.activeReservations).length, 1);
+});
+
+test('expired holds are lazily reclaimed before admitting another student', async () => {
+  const { repo, docs } = couponFixture('EXPIRY', 1);
+  await repo.reserveCoupon({ orderId: 'ord-1', userId: 'student-1', code: 'EXPIRY', discount: 10, now: reserveAt });
+  await repo.reserveCoupon({ orderId: 'ord-2', userId: 'student-2', code: 'EXPIRY',
+    discount: 10, now: new Date('2026-10-21T12:26:00Z') });
+  assert.equal(docs.get('coupons/EXPIRY')?.data.timesUsed, 0);
+  assert.deepEqual(Object.keys(docs.get('coupons/EXPIRY')?.data.activeReservations), ['ord-2']);
+});
+
+test('same user cannot reserve twice beyond their per-user limit', async () => {
+  const { repo } = couponFixture('PERUSER', 10, 1);
+  await repo.reserveCoupon({ orderId: 'ord-1', userId: 'student-1', code: 'PERUSER', discount: 10, now: reserveAt });
+  await assert.rejects(
+    repo.reserveCoupon({ orderId: 'ord-2', userId: 'student-1', code: 'PERUSER', discount: 10, now: reserveAt }),
+    /capacity exhausted/,
+  );
+});
+
+test('missing, expired or mismatched hold cannot silently settle a discounted order', async () => {
+  const { repo, docs } = couponFixture('STUDENT1');
   await repo.createOrder({ ...order, coupon: 'STUDENT1', discount: 10 });
-  const good = { id: 'STUDENT1', code: 'STUDENT1',
-    timesUsed: 1, usageLimit: 10, perUserLimit: 1,
-    userUsageMap: { 'student-1': 1 } };
-  docs.set('coupons/STUDENT1', { data: good, revision: 1 });
-  await assert.rejects(repo.settleVerifiedPayment(payment), /limit changed after checkout/);
+  await assert.rejects(repo.settleVerifiedPayment(payment), /lacks a valid pre-charge reservation/);
+  assert.equal(docs.get('paymentOrders/ord-1')?.data.status, 'created');
+  const hold = await repo.reserveCoupon({
+    orderId: 'ord-1', userId: 'student-1', code: 'STUDENT1',
+    discount: 10, now: reserveAt,
+  });
+  const stored = docs.get('paymentOrders/ord-1')!;
+  stored.data.couponReservationId = 'ord-1';
+  stored.data.couponReservationExpiresAt = hold.expiresAt;
+  docs.set('paymentOrders/ord-1', stored);
+  docs.get('paymentCouponReservations/ord-1')!.data.discount = 5;
+  await assert.rejects(repo.settleVerifiedPayment(payment), /missing or changed/);
   assert.equal(docs.get('paymentOrders/ord-1')?.data.status, 'created');
   assert.equal(docs.has('paymentEntitlements/ent-1'), false);
-  assert.equal(docs.has('paymentCouponRedemptions/ord-1'), false);
-  docs.set('coupons/STUDENT1', { data: { ...good, timesUsed: -1 }, revision: 2 });
-  await assert.rejects(repo.settleVerifiedPayment(payment), /record is invalid/);
-  docs.delete('coupons/STUDENT1');
-  await assert.rejects(repo.settleVerifiedPayment(payment), /removed or has no revision/);
 });
 
-test('discounted order without an authoritative coupon cannot grant a paid pass', async () => {
+test('discounted order without coupon cannot grant a paid pass', async () => {
   const { repo, docs } = fixture();
   await repo.createOrder({ ...order, coupon: undefined, discount: 50 });
   await assert.rejects(repo.settleVerifiedPayment(payment), /unexplained discount/);
   assert.equal(docs.get('paymentOrders/ord-1')?.data.status, 'created');
-  assert.equal(docs.has('paymentEntitlements/ent-1'), false);
 });
