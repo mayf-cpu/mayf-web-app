@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { sealGatewaySettings, openGatewaySettings } from '../src/lib/payments/settingsEncryption';
+import { PaymentService } from '../src/lib/payments/paymentService';
 
 test('payment gateway secret values are encrypted at rest and recoverable', () => {
   const originalKey = process.env.PAYMENT_SETTINGS_ENCRYPTION_KEY;
@@ -39,4 +40,13 @@ test('payment configuration only acknowledges successful durable Firestore commi
   assert.match(server, /\['\/api\/payments', '\/api\/admin\/payments\/settings'\]/);
   assert.match(module, /collection: 'paymentRuntimeSettings'/);
   assert.match(module, /getAdminFirestore/);
+});
+
+test('deleted Firestore settings cannot leave previous gateway credentials active', () => {
+  const service = new PaymentService();
+  const initial = service.getMaskedSettings().maskedRazorpayKeySecret;
+  service.updateSettings({ razorpayKeySecret: 'overridden_custom_secret_1234567' });
+  assert.notEqual(service.getMaskedSettings().maskedRazorpayKeySecret, initial);
+  service.settingsState.importState([]);
+  assert.equal(service.getMaskedSettings().maskedRazorpayKeySecret, initial);
 });
