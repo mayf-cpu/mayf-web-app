@@ -1,4 +1,4 @@
-# Functional test status — 20 October 2026
+# Functional test status — 21 October 2026
 
 This is an evidence log, not certification that the entire application works. Earlier QA_AUDIT.md PASS labels do not establish live end-to-end functionality.
 
@@ -14,7 +14,7 @@ This is an evidence log, not certification that the entire application works. Ea
 
 ## Repair implementation and local validation
 
-44 regression tests, TypeScript, the production Vite build and four workerd API checks pass. External-service tests use fixtures where applicable; they do not validate real payments or media delivery.
+54 regression tests, TypeScript and the production Vite build pass for the 21 October repair batch. The preceding commit passed four workerd API checks; the new Worker runtime check remains unverified because automatic approval review blocked its execution. External-service tests use fixtures where applicable; they do not validate real payments or media delivery.
 
 - Express runs in the Worker via the Node HTTP server adapter. Firestore storage uses authenticated HTTPS REST rather than unsupported native gRPC. Runtime service-account JSON is parsed safely and diagnostics expose only configuration presence.
 - Real Firebase tokens are cryptographically verified. Forged/development tokens fail closed in production. Actual Firebase Auth records feed student/admin lists; mutation errors propagate and unrelated custom claims are preserved. No real student account was disabled, deleted or charged during testing.
@@ -26,12 +26,22 @@ This is an evidence log, not certification that the entire application works. Ea
 - Dashboard cards no longer claim fabricated conversion, AI success rates, revenue, uptime percentages or infrastructure guarantees. The admin content background was corrected for readable headings.
 - Root error recovery renders independently of navigation/auth providers. Reloading after stale deployment chunks restores current assets.
 
+## 21 October continuation batch
+
+- Resumed from GitHub head `7fe28ff`, which already contains the admin contrast fix. Existing live CMS evidence above belongs to the preceding session and was not repeated in this new browser.
+- Extracted the existing conditional Firestore repository for reuse with a separate coupon revision marker. Coupon/promotion CRUD now reads durable state and buffers success until commit; conflicts and failed writes reject and roll back. Empty/deleted offers stay deleted across fresh instances. Production no longer starts with invented coupon use or published demo promotions.
+- Checkout and coupon quotes rebuild canonical line items from the persisted catalogue. Client-supplied price, title, annual-pass flag and gross amount cannot override a resource. Hidden/unknown/free products, duplicate digital purchases, invalid quantities and unsupported currencies are rejected. Pass enablement and promotion dates affect the price. Existing USD pass pricing remains the server-set $29; other resources are INR only.
+- Coupon validation uses the verified session identity, enforces actual product scope, rejects malformed configuration and prevents INR discounts from applying to USD orders. Callback and webhook paths record redemption before setting a previously unpaid order paid. This does not yet make the order and redemption one durable transaction.
+- Ordinary resource orders no longer grant an Annual Pass. Individual paid-resource entitlement delivery remains incomplete and must be verified before checkout rollout.
+- Ten new regression tests cover cart tampering, scope/currency validation, coupon/promotion restart persistence, rollback and production defaults. Tests use a Firestore fixture; they are not live Firebase acceptance evidence.
+- This session's browser opens the admin sign-in page; its earlier authenticated session is not present. New authenticated preview tests await secure sign-in.
+
 ## Still incomplete
 
 | Area | Remaining work / acceptance check |
 | --- | --- |
-| Payments and annual pass | Orders, webhook deduplication and entitlements need durable transactions. Finish authoritative SKU pricing and genuine provider adapters. Configure test keys; verify callbacks, retries, refunds and entitlement delivery without charging real users. Production simulations are blocked. |
-| Coupons and promotions | Replace memory-only state and invented usage counts; synchronize validation/redemption with durable payment transactions. |
+| Payments and annual pass | Orders, webhook deduplication and entitlements need durable transactions. Canonical catalogue/pass pricing is implemented locally; finish genuine provider adapters. Configure test keys; verify callbacks, retries, refunds and entitlement delivery without charging real users. Production simulations are blocked. |
+| Coupons and promotions | Firestore persistence, failed-write rollback and restart recovery are implemented and tested locally. Authenticated preview CRUD/read-back still needs verification. Redemption counters are durable, but atomic coordination with order completion and reservation of limited offers remains pending. |
 | Media and downloads | Replace example curriculum files with owner-supplied assets and implement genuine protected delivery. The example PDF iframe was blocked by Chromium; that is a failed media test. The current synthetic file endpoint is not a real PDF download. |
 | AI Teacher | Configure Gemini runtime secret/model; verify real answers, quotas, failures and access limits. |
 | Turnstile / App Check | Configure intended protections and test real verification and rejection paths. |

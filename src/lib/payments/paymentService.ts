@@ -28,6 +28,7 @@ import {
 import { RazorpayAdapter } from './adapters/razorpayAdapter';
 import { StripeAdapter } from './adapters/stripeAdapter';
 import { couponService } from '../coupons/couponService';
+import { couponRepository } from '../coupons/couponRepository';
 
 export class PaymentService {
   private razorpayAdapter: RazorpayAdapter;
@@ -171,15 +172,15 @@ export class PaymentService {
 
     // Calculate coupon discount securely on server (never trust client-calculated discounts)
     let discount = 0;
-    let validatedCoupon = coupon ? coupon.trim().toUpperCase() : undefined;
+    let validatedCoupon = this.settings.allowCouponDiscounts && coupon ? coupon.trim().toUpperCase() : undefined;
     if (this.settings.allowCouponDiscounts && validatedCoupon) {
-      const val = couponService.validateCoupon({
-        code: validatedCoupon,
+      const val = await couponRepository.run(() => couponService.validateCoupon({
+        code: validatedCoupon!,
         userId,
         cartGrossAmount: grossAmount,
         currency,
         items,
-      });
+      }));
       if (val.valid) {
         discount = val.discountAmount;
         validatedCoupon = val.code;
@@ -224,7 +225,7 @@ export class PaymentService {
       ],
       grossAmount,
       discount,
-      coupon: coupon ? coupon.trim().toUpperCase() : undefined,
+      coupon: validatedCoupon,
       tax,
       currency: currency.toUpperCase(),
       provider: providerType,
@@ -317,14 +318,13 @@ export class PaymentService {
       };
     }
 
-    // Cryptographic verification succeeded!
+    // Do not publish an in-memory paid state if durable redemption fails.
+    if (order.coupon) {
+      await couponRepository.run(() => couponService.recordCouponRedemption(order.coupon, order.userId), true);
+    }
     order.status = 'paid';
     order.providerPaymentId = verification.providerPaymentId;
     order.paidAt = new Date().toISOString();
-
-    if (order.coupon) {
-      couponService.recordCouponRedemption(order.coupon, order.userId);
-    }
 
     return {
       success: true,
@@ -400,6 +400,9 @@ export class PaymentService {
             Math.round(webhookResult.rawAmount! * 100) !== expectedAmount ||
             webhookResult.currency?.toUpperCase() !== targetOrder.currency.toUpperCase()) {
           return { success: false, status: 'failed', message: 'Webhook payment amount or currency does not match the stored order.' };
+        }
+        if (targetOrder.status !== 'paid' && targetOrder.coupon) {
+          await couponRepository.run(() => couponService.recordCouponRedemption(targetOrder!.coupon, targetOrder!.userId), true);
         }
         targetOrder.status = 'paid';
         targetOrder.providerPaymentId = webhookResult.providerPaymentId || targetOrder.providerPaymentId;

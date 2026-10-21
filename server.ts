@@ -22,6 +22,8 @@ import { FORMULA_DECK_ITEMS } from './src/data/formulaDeckData';
 import { paymentService } from './src/lib/payments/paymentService';
 import { entitlementService } from './src/lib/payments/entitlementService';
 import { couponService } from './src/lib/coupons/couponService';
+import { couponRepository, couponRoute } from './src/lib/coupons/couponRepository';
+import { resolveCheckoutCart } from './src/lib/payments/checkoutPricing';
 import { PaymentProvider, StoredOrder } from './src/lib/payments/types';
 import { adminUserManager } from './src/lib/admin/adminUserManager';
 import { auditLogService } from './src/lib/audit/auditLogger';
@@ -849,41 +851,22 @@ async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
       });
     }
 
-    // AUTHORITATIVE PRICE CALCULATION: Prevent price manipulation
-    // Never trust client-supplied amounts for Annual Pass or catalog items.
-    const isUsd = currency.toUpperCase() === 'USD';
-    const passSettings = entitlementService.getSettings();
-    const authoritativePassPrice = isUsd ? 29 : (passSettings.salePrice || 999);
-
-    let authoritativeGross = authoritativePassPrice;
-    if (items && Array.isArray(items) && items.length > 0) {
-      authoritativeGross = items.reduce((sum: number, it: any) => {
-        if (it.annualPass || it.id?.includes('pass')) {
-          return sum + authoritativePassPrice;
-        }
-        const unitPrice = Math.max(Number(it.unitPrice) || 0, isUsd ? 9 : 199);
-        const qty = Math.max(1, Math.min(10, Number(it.quantity) || 1));
-        return sum + (unitPrice * qty);
-      }, 0);
+    if (provider && !['razorpay', 'stripe'].includes(provider)) return res.status(400).json({ success: false, error: 'Unsupported payment provider.' });
+    let cart;
+    try {
+      cart = await catalogueRepository.run(() => resolveCheckoutCart(items, currency, entitlementService.getSettings(), id => contentCmsManager.getItem(id)));
+    } catch (error: any) {
+      return res.status(400).json({ success: false, error: error.message || 'Invalid checkout cart.' });
     }
 
     const chosenCoupon = coupon || couponCode;
 
     const result = await paymentService.createOrder({
       userId,
-      items: items.length > 0 ? items : [
-        {
-          id: 'item-annual-pass',
-          title: 'Maths at Your Fingertips Annual Pass (Class 5–10)',
-          unitPrice: authoritativeGross,
-          quantity: 1,
-          annualPass: true,
-          description: '1-Year Unlimited Access to All Formula Decks, Chapter Materials, & AI Teacher',
-        },
-      ],
-      grossAmount: authoritativeGross,
+      items: cart.items,
+      grossAmount: cart.grossAmount,
       coupon: chosenCoupon,
-      currency,
+      currency: cart.currency,
       preferredProvider: provider as PaymentProvider,
       customerDetails,
     });
@@ -956,11 +939,11 @@ async function handleVerifyPayment(req: AuthenticatedRequest, res: Response) {
 
     // Authoritatively create or renew entitlement upon verified payment for the ORDER OWNER ONLY
     const targetUserId = verification.order?.userId || userId;
-    const entitlementGrant = entitlementService.createOrRenewFromPayment({
+    const entitlementGrant = verification.order?.items.some(item => item.annualPass === true) ? entitlementService.createOrRenewFromPayment({
       userId: targetUserId,
       orderId: verification.order?.orderId || orderId,
       paymentId: verification.order?.providerPaymentId || `PAY-${Date.now()}`,
-    });
+    }) : null;
 
     return res.json({
       success: true,
@@ -997,7 +980,7 @@ app.post('/api/payments/webhook/razorpay', asyncRoute(async (req: Request, res: 
     // Provision entitlement ONLY on genuine first-time processed payment, NEVER on duplicate webhook replays!
     if (result.success && result.status === 'processed' && result.orderId) {
       const order = paymentService.getAllOrders().find((o) => o.orderId === result.orderId);
-      if (order && order.status === 'paid') {
+      if (order && order.status === 'paid' && order.items.some(item => item.annualPass === true)) {
         entitlementService.createOrRenewFromPayment({
           userId: order.userId,
           orderId: order.orderId,
@@ -1040,7 +1023,7 @@ app.post('/api/payments/webhook/stripe', asyncRoute(async (req: Request, res: Re
     // Provision entitlement ONLY on genuine first-time processed payment, NEVER on duplicate webhook replays!
     if (result.success && result.status === 'processed' && result.orderId) {
       const order = paymentService.getAllOrders().find((o) => o.orderId === result.orderId);
-      if (order && order.status === 'paid') {
+      if (order && order.status === 'paid' && order.items.some(item => item.annualPass === true)) {
         entitlementService.createOrRenewFromPayment({
           userId: order.userId,
           orderId: order.orderId,
@@ -1341,33 +1324,24 @@ app.get('/api/admin/annual-pass/history', requireAuth, requireAdmin, (req: Reque
  * Never trusts client discounts. Evaluates start/end dates, min cart, max discount,
  * usage limits, per-user limits, and product scope (all / annual pass / selected).
  */
-app.post('/api/coupons/validate', asyncRoute(async (req: Request, res: Response) => {
+app.post('/api/coupons/validate', couponRoute(false, async (req: Request, res: Response) => {
   try {
-    const { code, cartGrossAmount, cartAmount, amount, currency = 'INR', items = [], userId } = req.body;
-
-    let effectiveUserId = userId;
+    const { code, currency = 'INR', items = [] } = req.body;
+    let effectiveUserId: string | undefined;
     const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.split('Bearer ')[1];
-      const verified = await verifyStudentSessionToken(token);
-      if (verified) {
-        effectiveUserId = verified.uid;
-      }
+    if (authHeader?.startsWith('Bearer ')) {
+      const verified = await verifyStudentSessionToken(authHeader.slice(7));
+      if (!verified) return res.status(401).json({ success: false, error: 'Sign in again to validate this coupon.' });
+      effectiveUserId = verified.uid;
     }
-
-    const computedGross = Number(
-      cartGrossAmount ??
-      cartAmount ??
-      amount ??
-      (Array.isArray(items) ? items.reduce((s: number, i: any) => s + (Number(i.price) || 0), 0) : 0)
-    ) || 0;
+    const cart = await catalogueRepository.run(() => resolveCheckoutCart(items, currency, entitlementService.getSettings(), id => contentCmsManager.getItem(id)));
 
     const validation = couponService.validateCoupon({
       code,
       userId: effectiveUserId,
-      cartGrossAmount: computedGross,
-      currency,
-      items,
+      cartGrossAmount: cart.grossAmount,
+      currency: cart.currency,
+      items: cart.items,
     });
 
     return res.json({
@@ -1383,7 +1357,7 @@ app.post('/api/coupons/validate', asyncRoute(async (req: Request, res: Response)
 /**
  * Public: Get Published Promotional Blocks for Homepage or Catalogue
  */
-app.get('/api/promotions', (req: Request, res: Response) => {
+app.get('/api/promotions', couponRoute(false, (req: Request, res: Response) => {
   try {
     const placement = req.query.placement as 'homepage' | 'catalogue' | undefined;
     const promotions = couponService.getPublicPromotions(placement);
@@ -1394,12 +1368,12 @@ app.get('/api/promotions', (req: Request, res: Response) => {
   } catch (error: any) {
     return res.status(500).json({ success: false, error: 'Failed to retrieve promotions' });
   }
-});
+}));
 
 /**
  * Admin: List All Configured Coupons
  */
-app.get('/api/admin/coupons', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+app.get('/api/admin/coupons', requireAuth, requireAdmin, couponRoute(false, (_req: Request, res: Response) => {
   try {
     const coupons = couponService.getAllCoupons();
     return res.json({
@@ -1409,12 +1383,12 @@ app.get('/api/admin/coupons', requireAuth, requireAdmin, (_req: Request, res: Re
   } catch (error: any) {
     return res.status(500).json({ success: false, error: 'Failed to list coupons' });
   }
-});
+}));
 
 /**
  * Admin: Create or Update Coupon
  */
-app.post('/api/admin/coupons', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/coupons', requireAuth, requireAdmin, couponRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const saved = couponService.saveCoupon(req.body);
     return res.json({
@@ -1425,12 +1399,12 @@ app.post('/api/admin/coupons', requireAuth, requireAdmin, (req: AuthenticatedReq
   } catch (err: any) {
     return res.status(400).json({ success: false, error: err?.message || 'Failed to save coupon' });
   }
-});
+}));
 
 /**
  * Admin: Delete Coupon
  */
-app.delete('/api/admin/coupons/:code', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/admin/coupons/:code', requireAuth, requireAdmin, couponRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const code = req.params.code;
     const deleted = couponService.deleteCoupon(code);
@@ -1455,12 +1429,12 @@ app.delete('/api/admin/coupons/:code', requireAuth, requireAdmin, (req: Authenti
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message || 'Failed to delete coupon' });
   }
-});
+}));
 
 /**
  * Admin: List All Promotional Blocks
  */
-app.get('/api/admin/promotions', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+app.get('/api/admin/promotions', requireAuth, requireAdmin, couponRoute(false, (_req: Request, res: Response) => {
   try {
     const promotions = couponService.getAllPromotions();
     return res.json({
@@ -1470,12 +1444,12 @@ app.get('/api/admin/promotions', requireAuth, requireAdmin, (_req: Request, res:
   } catch (error: any) {
     return res.status(500).json({ success: false, error: 'Failed to list promotional blocks' });
   }
-});
+}));
 
 /**
  * Admin: Create or Update Promotional Block
  */
-app.post('/api/admin/promotions', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/promotions', requireAuth, requireAdmin, couponRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const saved = couponService.savePromotion(req.body);
     return res.json({
@@ -1486,12 +1460,12 @@ app.post('/api/admin/promotions', requireAuth, requireAdmin, (req: Authenticated
   } catch (err: any) {
     return res.status(400).json({ success: false, error: err?.message || 'Failed to save promotional block' });
   }
-});
+}));
 
 /**
  * Admin: Delete Promotional Block
  */
-app.delete('/api/admin/promotions/:id', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/admin/promotions/:id', requireAuth, requireAdmin, couponRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const id = req.params.id;
     const deleted = couponService.deletePromotion(id);
@@ -1516,7 +1490,7 @@ app.delete('/api/admin/promotions/:id', requireAuth, requireAdmin, (req: Authent
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message || 'Failed to delete promotional block' });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Admin Privileged Custom Claims Setter
@@ -1594,7 +1568,8 @@ app.get('/api/admin/verify-access', requireAuth, (req: AuthenticatedRequest, res
 async function refreshAdminUsers(_req: Request, _res: Response, next: NextFunction) {
   try { await adminUserManager.refreshUsers(); next(); } catch (error) { next(error); }
 }
-app.get('/api/admin/metrics', requireAuth, requireAdmin, refreshAdminUsers, (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/admin/metrics', requireAuth, requireAdmin, refreshAdminUsers, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
+  const activeCoupons = await couponRepository.run(() => couponService.getAllCoupons().filter(coupon => coupon.enabled).length);
   const users = adminUserManager.searchStudents({ includeDisabled: true });
   return res.json({
     totalStudents: users.filter(user => user.role === 'student').length,
@@ -1603,11 +1578,11 @@ app.get('/api/admin/metrics', requireAuth, requireAdmin, refreshAdminUsers, (req
     aiDoubtsSolved: null,
     aiTeacherConfigured: Boolean(geminiApiKey),
     firebaseConfigured: getFirebaseAdminConfig().isReady, totalFormulas: FORMULA_DECK_ITEMS.length, totalChapters: contentCmsManager.exportState().length,
-    activeCoupons: couponService.getAllCoupons().filter(coupon => coupon.enabled).length,
+    activeCoupons,
     serverStatus: 'healthy', cloudflareAccessActive: false, edgeVerifiedEmail: req.userAuth?.email,
     uptimeHours: Math.floor(process.uptime() / 3600),
   });
-});
+}));
 
 // -------------------------------------------------------------
 // Admin User Management & Firebase Admin SDK Endpoints
