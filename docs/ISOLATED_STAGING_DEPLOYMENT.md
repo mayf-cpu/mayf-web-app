@@ -10,6 +10,8 @@ Run `node scripts/check-staging-isolation.mjs` before deployment. Once the isola
 
 ` .github/workflows/deploy-staging.yml` is a manual-only workflow that hard-pins the candidate branch. On 2026-10-21 the same workflow definition was **registered on default `main`** as a configuration-only commit `77dfe56bf7654623c6238aae8101dde800b9f93d`. This does **not** merge the unreleased app to main, and does not deploy anything. A manual GitHub Actions dispatch must explicitly select branch `staging/consolidated-mayf-2026-10-21`, set `confirm_isolated_staging=true`, and provide protected `mayf-staging` variables/secrets. Never dispatch against main or enable production checkout. The local CLI route remains possible for a separately approved isolated operator.
 
+A new **read-only Cloudflare resource preflight** checks that `mayf-staging-materials` actually exists in the authorized account and that the existing `staging-acceptance-mayf` Worker has a `FIREBASE_SERVICE_ACCOUNT_JSON` secret binding **before deploying**. It checks only metadata, never reads the service account value or writes any Cloudflare resource. The staging Worker and its secret must therefore be bootstrapped in the staging account first; until then a workflow dispatch will fail safely. Staging resource existence alone does not establish that its Firebase credentials belong to the right project. Follow with authenticated runtime checks.
+
 The HTTP smoke check is read-only and does not prove Drive OAuth, PDF uploads, student downloads, browser experience or Razorpay sandbox payments. Complete `docs/STAGING_ACCEPTANCE_GATES.md` before considering a release.
 
 ## Deployment preflight

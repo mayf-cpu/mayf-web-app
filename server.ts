@@ -377,7 +377,12 @@ app.get('/api/health', (_req: Request, res: Response) => {
     // Configuration presence is not proof of a successful external connection.
     firebaseConfigured: getFirebaseAdminConfig().isReady,
     firebaseConfiguration: getFirebaseAdminDiagnostics(),
-    firebaseProjectMatchesWebConfig: getFirebaseAdminConfig().projectId === publicFirebaseConfig.projectId,
+    // The bundled fallback web config is production-only; comparing against it
+    // during staging incorrectly says that a correctly isolated Firebase project
+    // is mismatched. Until an independently verified staging web project is
+    // available at Worker runtime, show "unverified" rather than false.
+    firebaseProjectMatchesWebConfig: process.env.APP_ENV === 'staging' ? null :
+      getFirebaseAdminConfig().projectId === publicFirebaseConfig.projectId,
     services: {
       geminiAiTeacher: Boolean(geminiApiKey),
       cloudflareTurnstile: Boolean(process.env.TURNSTILE_SECRET_KEY),

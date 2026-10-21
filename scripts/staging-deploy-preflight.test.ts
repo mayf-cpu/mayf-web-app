@@ -21,6 +21,14 @@ test('only the consolidated candidate can be explicitly dispatched for isolated 
  assert.ok(!workflow.includes('push:'));
 });
 
+test('Cloudflare staging resource preflight runs before any deploy', () => {
+ const preflight = workflow.indexOf('Verify Cloudflare staging R2 and service-account binding (read-only)');
+ const deploy = workflow.indexOf('Deploy ONLY isolated staging Worker');
+ assert.ok(preflight >= 0 && deploy > preflight);
+ assert.match(workflow, /node scripts\/check-staging-cloudflare-resources\.mjs/);
+ assert.match(workflow, /CLOUDFLARE_API_TOKEN:.*MAYF_STAGING_CLOUDFLARE_API_TOKEN/);
+});
+
 test('staging deployment fails closed before building a frontend with wrong Firebase config', () => {
  const guard = workflow.indexOf('Verify isolated staging frontend Firebase configuration');
  const build = workflow.indexOf('Build frontend with isolated staging Firebase configuration');

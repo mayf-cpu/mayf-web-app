@@ -34,8 +34,9 @@ const check = async (path, token) => {
 };
 const health = await check('/api/health');
 if (health.status !== 200 || health.body.status !== 'ok' ||
-    health.body.app !== 'Maths at Your Fingertips') {
-  throw Error('Staging health endpoint failed');
+    health.body.app !== 'Maths at Your Fingertips' ||
+    health.body.environment !== 'staging') {
+  throw Error('Staging health endpoint failed or Worker APP_ENV is not staging');
 }
 console.log('PASS: backend health responds as MAYF JSON');
 for (const path of ['/api/admin/verify-access','/api/admin/storage-readiness',
