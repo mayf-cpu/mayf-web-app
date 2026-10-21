@@ -27,9 +27,8 @@ export const AdminSeoSection: React.FC = () => {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch('/api/admin/seo', { headers: await adminService.getAuthHeaders() });
-        const data = await response.json();
-        if (!response.ok || !data.success) throw new Error(data.error || 'Unable to load SEO settings.');
+        const data = await adminService.getSeoSettings();
+        if (!data.settings) throw new Error('Unable to load SEO settings.');
         setCanonicalDomain(data.settings.canonicalDomain); setDefaultTitle(data.settings.defaultTitle); setDefaultDesc(data.settings.defaultDesc);
       } catch (error: any) { setError(error.message); }
       finally { setLoading(false); }
@@ -38,9 +37,8 @@ export const AdminSeoSection: React.FC = () => {
   const handleSave = async () => {
     setSaving(true); setError(''); setSaved(false);
     try {
-      const response = await fetch('/api/admin/seo', { method: 'PUT', headers: await adminService.getAuthHeaders(), body: JSON.stringify({ canonicalDomain, defaultTitle, defaultDesc }) });
-      const data = await response.json();
-      if (!response.ok || !data.success) throw new Error(data.error || 'SEO settings were not saved.');
+      const data = await adminService.saveSeoSettings({ canonicalDomain, defaultTitle, defaultDesc });
+      if (!data.settings) throw new Error('SEO settings were not saved.');
       setCanonicalDomain(data.settings.canonicalDomain); setSaved(true);
     } catch (error: any) { setError(error.message); }
     finally { setSaving(false); }
