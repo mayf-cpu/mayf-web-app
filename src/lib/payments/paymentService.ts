@@ -209,6 +209,7 @@ export class PaymentService {
     // Calculate coupon discount securely on server (never trust client-calculated discounts)
     let discount = 0;
     let validatedCoupon = coupon ? coupon.trim().toUpperCase() : undefined;
+    let quotedCouponUpdatedAt: string | undefined;
     if (validatedCoupon) {
       if (!this.settings.allowCouponDiscounts) {
         throw new Error('Coupon not applicable: coupon discounts are currently disabled.');
@@ -227,6 +228,7 @@ export class PaymentService {
       }
       discount = val.discountAmount;
       validatedCoupon = val.code;
+      quotedCouponUpdatedAt = val.coupon?.updatedAt;
     }
     // Cap discount to gross amount
     discount = Math.min(discount, grossAmount);
@@ -283,6 +285,7 @@ export class PaymentService {
       }
       const claim = await this.durableOrders.reserveCoupon({
         orderId, userId, code: validatedCoupon, discount,
+        expectedUpdatedAt: quotedCouponUpdatedAt,
       });
       newOrder.couponReservationId = orderId;
       newOrder.couponReservationExpiresAt = claim.expiresAt;
