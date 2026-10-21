@@ -1,6 +1,6 @@
 # Isolated MAYF staging deployment
 
-The integrated candidate is in `staging/integrated-acceptance-2026-10-21`. **Do not deploy production or enable checkout.**
+The consolidated release candidate is in `staging/consolidated-mayf-2026-10-21` (draft PR #77). **Do not deploy production or enable checkout.**
 
 The file `wrangler.staging.jsonc` targets Worker `staging-acceptance-mayf` and the separate R2 bucket `mayf-staging-materials`. Neither the bucket nor required credentials are created by this change.
 
@@ -17,3 +17,9 @@ The HTTP smoke check is read-only and does not prove Drive OAuth, PDF uploads, s
 The manual GitHub Actions workflow refuses to deploy without the staging-only secrets `MAYF_STAGING_CLOUDFLARE_API_TOKEN` and `MAYF_STAGING_CLOUDFLARE_ACCOUNT_ID`, and the environment variable `MAYF_STAGING_FIREBASE_PROJECT_ID`. The Firebase project ID must not be the production-default project `maths-at-your-fingertips`. Configure all three in the protected `mayf-staging` GitHub environment.
 
 **Important:** This preflight validates only supplied configuration values, not the actual Firebase project bound to the Worker. Before deploying, separately ensure the staging Worker secret `FIREBASE_SERVICE_ACCOUNT_JSON`, and if used, `GOOGLE_SERVICE_ACCOUNT_KEY`, contain staging-only service accounts, and verify a staging R2 bucket exists. A project ID variable by itself does not isolate Firestore or grant Drive access. Do not assume deploy success establishes external service connectivity.
+
+## Additional isolation constraints
+
+The preflight also fails if staging enables administrator refunds or gains custom route/zone settings, environment overrides, Worker service bindings, D1/KV bindings or unsafe bindings without an explicit reviewed update to the isolation policy. Staging checkout, coupon checkout, simulations and admin refunds must all remain `false`.
+
+These **static safeguards are not live acceptance**. GitHub's `MAYF_STAGING_FIREBASE_PROJECT_ID` variable must be cross-checked against the actual staging Worker service-account project and real Firebase initialization. Do not deploy until isolation is verified at the runtime/configuration boundary; never set production secrets in the staging environment.
