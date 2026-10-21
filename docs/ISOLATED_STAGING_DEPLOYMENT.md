@@ -11,3 +11,9 @@ Run `node scripts/check-staging-isolation.mjs` before deployment. Once the isola
 `.github/workflows/deploy-staging.yml` is a manual-only workflow and hard-pins the source branch. **GitHub generally requires workflow_dispatch workflow files to exist on the default branch before the Run workflow UI is available.** Because this remains a draft integration branch and must not be merged to main prematurely, the local CLI route above is the safe documented alternative. Do not merge simply to enable the workflow.
 
 The HTTP smoke check is read-only and does not prove Drive OAuth, PDF uploads, student downloads, browser experience or Razorpay sandbox payments. Complete `docs/STAGING_ACCEPTANCE_GATES.md` before considering a release.
+
+## Deployment preflight
+
+The manual GitHub Actions workflow refuses to deploy without the staging-only secrets `MAYF_STAGING_CLOUDFLARE_API_TOKEN` and `MAYF_STAGING_CLOUDFLARE_ACCOUNT_ID`, and the environment variable `MAYF_STAGING_FIREBASE_PROJECT_ID`. The Firebase project ID must not be the production-default project `maths-at-your-fingertips`. Configure all three in the protected `mayf-staging` GitHub environment.
+
+**Important:** This preflight validates only supplied configuration values, not the actual Firebase project bound to the Worker. Before deploying, separately ensure the staging Worker secret `FIREBASE_SERVICE_ACCOUNT_JSON`, and if used, `GOOGLE_SERVICE_ACCOUNT_KEY`, contain staging-only service accounts, and verify a staging R2 bucket exists. A project ID variable by itself does not isolate Firestore or grant Drive access. Do not assume deploy success establishes external service connectivity.
