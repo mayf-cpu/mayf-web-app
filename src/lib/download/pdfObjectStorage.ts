@@ -45,8 +45,31 @@ export async function readVerifiedPdf(contentId: string, key?: string): Promise<
   const data = await bucket.get(allowedPdfKey(contentId, key));
   if (!data || !data.body || !Number.isSafeInteger(data.size) ||
       data.size <= 8 || data.size > MAX_PDF_BYTES) return null;
-  const bytes = new Uint8Array(await new Response(data.body).arrayBuffer());
-  if (bytes.length !== data.size || bytes.length < 8) return null;
+  // R2 metadata is not a substitute for bounding the actual streamed bytes.
+  const reader = data.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_PDF_BYTES || total > data.size) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  if (total !== data.size || total < 8) return null;
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
   // Reject text, HTML error pages and non-PDF objects even if metadata says PDF.
   if (!hasPdfMarkers(bytes)) return null;
   return bytes;
