@@ -58,6 +58,7 @@ for (const [paths, initialize] of [
   [['/api/adsense', '/api/admin/adsense'], () => adSenseService.initFromFirestore()],
   [['/api/broadcasts', '/api/admin/broadcasts'], () => broadcastService.initStore()],
   [['/api/payments', '/api/admin/payments/settings'], () => paymentSettingsRepository.run(() => undefined)],
+  [['/api/payments/create-order'], () => catalogueRepository.run(() => undefined)],
 ] as [string[], () => Promise<void>][]) {
   app.use(paths, async (_req, res, next) => {
     try { await initialize(); next(); }
@@ -1403,6 +1404,12 @@ app.get('/api/admin/annual-pass/history', requireAuth, requireAdmin, (req: Reque
  * Never trusts client discounts. Evaluates start/end dates, min cart, max discount,
  * usage limits, per-user limits, and product scope (all / annual pass / selected).
  */
+// Coupon and promotion mutation success is valid only after a real durable write.
+const requirePersistentOffers = (_req: Request, res: Response, next: NextFunction) => {
+  if (!getAdminFirestore()) return res.status(503).json({ success: false, error: 'Offer storage is unavailable; nothing was saved.' });
+  next();
+};
+
 app.post('/api/coupons/validate', asyncRoute(async (req: Request, res: Response) => {
   try {
     const { code, cartGrossAmount, cartAmount, amount, currency = 'INR', items = [], userId } = req.body;
