@@ -10,3 +10,13 @@ test('staging deploy checks required credentials before deployment',()=>{
  assert.ok(workflow.includes('Do not use the production Firebase project'));
  assert.ok(workflow.includes('wrangler.staging.jsonc'));
 });
+
+
+test('only the consolidated candidate can be explicitly dispatched for isolated staging', () => {
+ assert.match(workflow, /if: github\.ref_name == 'staging\/consolidated-mayf-2026-10-21'/);
+ assert.match(workflow, /inputs\.confirm_isolated_staging == true/);
+ assert.match(workflow, /STAGING_CONFIRM.*inputs\.confirm_isolated_staging/);
+ assert.ok(!workflow.includes("if: github.ref_name == 'staging/integrated-acceptance-2026-10-21'"));
+ assert.match(workflow, /test "\$STAGING_CONFIRM" = "true"/);
+ assert.ok(!workflow.includes('push:'));
+});
