@@ -1,3 +1,5 @@
+import { auditContext } from '../audit/auditContext';
+import type { AuditLogEntry } from '../audit/auditLogger';
 import type { FirestoreDocumentStore } from './documentStore';
 
 type State = { exportState(): Record<string, any>[]; importState(items: Record<string, any>[]): void };
@@ -17,7 +19,8 @@ export class DocumentStateRepository {
       const before = this.states.map(({ state }, i) => loaded ? loaded[i].map(doc => ({ ...doc.data, id: doc.id })) : state.exportState());
       this.states.forEach(({ state }, i) => state.importState(structuredClone(loaded && !marker?.exists && !loaded[i].length ? this.defaults[i] : before[i])));
       try {
-        const result = await operation();
+        const auditEntries: AuditLogEntry[] = [];
+        const result = await auditContext.run(auditEntries, operation);
         if (write && db && !(result as any)?.failed) {
           const changes = this.states.flatMap(({ collection, state }, i) => {
             const old = new Map(loaded![i].map(doc => [doc.id, doc]));
@@ -31,6 +34,7 @@ export class DocumentStateRepository {
           // Serialize catalogue-wide invariants (unique slugs and category references)
           // even when concurrent operations modify different document IDs.
           changes.push({ collection: this.markerCollection, id: 'initialized', data: { initialized: true }, updateTime: marker?.updateTime });
+          changes.push(...auditEntries.map(entry => ({ collection: 'auditLogs', id: entry.id, data: entry, updateTime: undefined })));
           await db.commit(changes);
         }
         if ((result as any)?.failed) this.states.forEach(({ state }, i) => state.importState(before[i]));

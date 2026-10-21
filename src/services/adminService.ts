@@ -1045,35 +1045,19 @@ class AdminService {
   }
 
   async getAuditLogs(category?: string): Promise<AuditLogRecord[]> {
-    try {
-      const headers = await this.getAuthHeaders();
-      const url = `/api/admin/audit-logs${category && category !== 'all' ? `?category=${category}` : ''}`;
-      const res = await fetch(url, { headers });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    } catch {
-      return [];
-    }
+    const headers = await this.getAuthHeaders();
+    const url = `/api/admin/audit-logs${category && category !== 'all' ? `?category=${encodeURIComponent(category)}` : ''}`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`Audit records could not be loaded (${res.status}).`);
+    const data = await res.json();
+    if (!Array.isArray(data)) throw new Error('Invalid audit response.');
+    return data;
   }
 
   async getSecurityConfig(): Promise<SecurityConfigRecord> {
-    try {
-      const headers = await this.getAuthHeaders();
-      const res = await fetch('/api/admin/security/config', { headers });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    } catch {
-      return {
-        cloudflareAccessAud: '566895799712-cfaccess-aud-mayf-2026',
-        cloudflareTeamDomain: 'mayf.cloudflareaccess.com',
-        requireCloudflareAccess: false,
-        authorizedAdminEmails: ['2026vivekkushwah@gmail.com', 'ntnagrawal146@gmail.com', 'admin@mayf.co.in'],
-        emergencyMaintenanceMode: false,
-        tokenRevocationWindowMinutes: 60,
-        updatedAt: new Date().toISOString(),
-        updatedBy: '2026vivekkushwah@gmail.com',
-      };
-    }
+    const res = await fetch('/api/admin/security/config', { headers: await this.getAuthHeaders() });
+    if (!res.ok) throw new Error(`Security configuration could not be loaded (${res.status}).`);
+    return res.json();
   }
 
   async updateSecurityConfig(

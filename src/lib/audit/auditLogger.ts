@@ -1,3 +1,8 @@
+import crypto from 'node:crypto';
+import { getAdminFirestore } from '../firebase/admin';
+import type { FirestoreDocumentStore } from '../firebase/documentStore';
+import { auditContext } from './auditContext';
+
 /**
  * Server-Side Audit Logging Service.
  *
@@ -59,151 +64,38 @@ export interface AuditLogEntry {
   status: 'success' | 'failed';
 }
 
-class AuditLogService {
-  private logs: AuditLogEntry[] = [
-    {
-      id: 'audit-101',
-      timestamp: new Date(Date.now() - 3600000 * 24 * 3).toISOString(),
-      action: 'ADMIN_CREATED',
-      category: 'admin',
-      actorUid: 'admin-super-001',
-      actorEmail: '2026vivekkushwah@gmail.com',
-      actorRole: 'superAdmin',
-      targetId: 'admin-002',
-      targetEmail: 'admin@mayf.co.in',
-      targetType: 'admin_account',
-      details: { roleAssigned: 'admin', claims: { admin: true, superAdmin: false } },
-      ipAddress: '103.21.244.0',
-      status: 'success',
-    },
-    {
-      id: 'audit-102',
-      timestamp: new Date(Date.now() - 3600000 * 24 * 2).toISOString(),
-      action: 'SECURITY_CONFIG_UPDATED',
-      category: 'security',
-      actorUid: 'admin-super-001',
-      actorEmail: '2026vivekkushwah@gmail.com',
-      actorRole: 'superAdmin',
-      targetId: 'sys-firebase-auth-policy',
-      targetType: 'auth_policy',
-      details: {
-        change: 'Enforced direct Firebase Auth token verification on administrative routes',
-        requireEdgeVerification: false,
-      },
-      ipAddress: '103.21.244.0',
-      status: 'success',
-    },
-    {
-      id: 'audit-103',
-      timestamp: new Date(Date.now() - 3600000 * 18).toISOString(),
-      action: 'ANNUAL_PASS_GRANTED',
-      category: 'subscription',
-      actorUid: 'admin-002',
-      actorEmail: 'admin@mayf.co.in',
-      actorRole: 'admin',
-      targetId: 'student-1001',
-      targetEmail: 'arjun.sharma@mayf.co.in',
-      targetType: 'student_entitlement',
-      details: {
-        tier: 'annual_pass',
-        expiryDate: '2027-03-31',
-        reason: 'Academic scholarship sponsorship',
-      },
-      ipAddress: '103.22.200.12',
-      status: 'success',
-    },
-    {
-      id: 'audit-104',
-      timestamp: new Date(Date.now() - 3600000 * 8).toISOString(),
-      action: 'CONTENT_DELETED',
-      category: 'content',
-      actorUid: 'admin-002',
-      actorEmail: 'admin@mayf.co.in',
-      actorRole: 'admin',
-      targetId: 'draft-ch-old-circles',
-      targetType: 'chapter',
-      details: {
-        title: 'Deprecated Circles 2024 Practice Sheet',
-        replacedBy: 'ch-class10-circles-ncert-2026',
-      },
-      ipAddress: '103.22.200.12',
-      status: 'success',
-    },
-    {
-      id: 'audit-105',
-      timestamp: new Date(Date.now() - 3600000 * 4).toISOString(),
-      action: 'REFUND_PROCESSED',
-      category: 'refund',
-      actorUid: 'admin-super-001',
-      actorEmail: '2026vivekkushwah@gmail.com',
-      actorRole: 'superAdmin',
-      targetId: 'ord-802',
-      targetEmail: 'priya.patel@gmail.com',
-      targetType: 'payment_order',
-      details: {
-        amount: 2999,
-        currency: 'INR',
-        provider: 'stripe',
-        reason: 'Customer accidental double checkout',
-      },
-      ipAddress: '103.21.244.0',
-      status: 'success',
-    },
-  ];
-
-  public log(entry: Omit<AuditLogEntry, 'id' | 'timestamp'>): AuditLogEntry {
-    const fullEntry: AuditLogEntry = {
-      id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      timestamp: new Date().toISOString(),
-      ...entry,
-    };
-
-    this.logs.unshift(fullEntry);
-    if (this.logs.length > 500) {
-      this.logs.pop();
-    }
-
-    console.info(`[AUDIT LOG] ${fullEntry.action} by ${fullEntry.actorEmail} on ${fullEntry.targetId}:`, fullEntry.details);
+export class AuditLogService {
+  private local: AuditLogEntry[] = [];
+  constructor(private getStore: () => FirestoreDocumentStore | null = getAdminFirestore) {}
+  public async log(entry: Omit<AuditLogEntry, 'id' | 'timestamp'>): Promise<AuditLogEntry> {
+    const fullEntry: AuditLogEntry = { ...entry, id: `audit-${crypto.randomUUID()}`, timestamp: new Date().toISOString() };
+    const staged = auditContext.getStore();
+    if (staged) { staged.push(fullEntry); return fullEntry; }
+    const db = this.getStore();
+    if (db) await db.collection('auditLogs').doc(fullEntry.id).set(fullEntry, { exists: false });
+    else if (process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'production') throw new Error('Audit storage is not configured.');
+    else this.local.unshift(fullEntry);
     return fullEntry;
   }
-
-  public getLogs(filter?: {
-    category?: string;
-    action?: string;
-    actorEmail?: string;
-    targetId?: string;
-    limit?: number;
-  }): AuditLogEntry[] {
-    let result = [...this.logs];
-
-    if (filter?.category && filter.category !== 'all') {
-      result = result.filter((l) => l.category === filter.category);
-    }
-    if (filter?.action) {
-      result = result.filter((l) => l.action === filter.action);
-    }
-    if (filter?.actorEmail) {
-      result = result.filter((l) => l.actorEmail.toLowerCase().includes(filter.actorEmail!.toLowerCase()));
-    }
-    if (filter?.targetId) {
-      result = result.filter((l) => l.targetId === filter.targetId);
-    }
-
-    const limit = filter?.limit || 100;
-    return result.slice(0, limit);
+  public async getLogs(filter?: { category?: string; action?: string; actorEmail?: string; targetId?: string; limit?: number }): Promise<AuditLogEntry[]> {
+    const db = this.getStore();
+    if (!db && (process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'production')) throw new Error('Audit storage is not configured.');
+    let result = db ? (await db.list('auditLogs')).map(doc => ({ ...doc.data, id: doc.id } as AuditLogEntry)) : [...this.local];
+    if (filter?.category && filter.category !== 'all') result = result.filter(row => row.category === filter.category);
+    if (filter?.action) result = result.filter(row => row.action === filter.action);
+    if (filter?.actorEmail) result = result.filter(row => row.actorEmail.toLowerCase().includes(filter.actorEmail!.toLowerCase()));
+    if (filter?.targetId) result = result.filter(row => row.targetId === filter.targetId);
+    const limit = Number.isFinite(filter?.limit) ? Math.max(1, Math.min(1000, Math.floor(filter!.limit!))) : 100;
+    return result.sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, limit);
   }
-
-  public exportCsv(category?: string): string {
-    const items = this.getLogs(category ? { category } : undefined);
-    const headers = 'ID,Timestamp,Action,Category,ActorEmail,ActorRole,TargetId,TargetType,Status,Details\n';
-    const rows = items
-      .map((i) => {
-        const detailsEscaped = JSON.stringify(i.details).replace(/"/g, '""');
-        return `"${i.id}","${i.timestamp}","${i.action}","${i.category}","${i.actorEmail}","${i.actorRole}","${i.targetId}","${i.targetType}","${i.status}","${detailsEscaped}"`;
-      })
-      .join('\n');
-    return headers + rows;
+  public async exportCsv(category?: string): Promise<string> {
+    const items = await this.getLogs({ category, limit: 1000 });
+    const cell = (value: unknown) => {
+      let text = String(value ?? '');
+      if (/^[\s]*[=+@-]/.test(text)) text = "'" + text;
+      return '"' + text.replace(/"/g, '""') + '"';
+    };
+    return 'ID,Timestamp,Action,Category,ActorEmail,ActorRole,TargetId,TargetType,Status,Details\n' + items.map(i => [i.id, i.timestamp, i.action, i.category, i.actorEmail, i.actorRole, i.targetId, i.targetType, i.status, JSON.stringify(i.details)].map(cell).join(',')).join('\n');
   }
 }
-
 export const auditLogService = new AuditLogService();

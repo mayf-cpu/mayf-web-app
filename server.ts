@@ -466,9 +466,7 @@ interface DownloadAuditLog {
   };
 }
 
-const DOWNLOAD_AUDIT_LOGS: DownloadAuditLog[] = [];
-
-function logDownloadAudit(params: {
+async function logDownloadAudit(params: {
   contentId: string;
   uid: string | null;
   accessType: 'free' | 'paid';
@@ -496,10 +494,9 @@ function logDownloadAudit(params: {
     },
   };
 
-  DOWNLOAD_AUDIT_LOGS.unshift(entry);
-  if (DOWNLOAD_AUDIT_LOGS.length > 500) {
-    DOWNLOAD_AUDIT_LOGS.pop();
-  }
+  const db = getAdminFirestore();
+  if (!db) throw new Error('Download audit storage is unavailable.');
+  await db.collection('downloadAuditLogs').doc(entry.id).set(entry, { exists: false });
 
   console.info(`[MAYF Download Audit] ${params.action} | ${params.contentId} | ${params.accessType} | ${params.status}${params.reason ? ` | ${params.reason}` : ''}`);
 }
@@ -525,7 +522,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
 
   // Rate Limiting: max 10 authorization attempts per minute per IP
   if (checkDownloadRateLimit(`auth-ip-${rawIp}`, 10, 60 * 1000)) {
-    logDownloadAudit({
+    await logDownloadAudit({
       contentId: req.body?.contentId || 'unknown',
       uid: null,
       accessType: 'free',
@@ -552,7 +549,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
     // Lookup item in download registry
     const item = await resolveDownloadResource(contentId);
     if (!item) {
-      logDownloadAudit({
+      await logDownloadAudit({
         contentId,
         uid: null,
         accessType: 'free',
@@ -565,7 +562,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
     }
 
     if (!item.downloadAllowed) {
-      logDownloadAudit({
+      await logDownloadAudit({
         contentId,
         uid: null,
         accessType: item.accessType,
@@ -580,7 +577,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
     // Turnstile Server-Side Verification (Managed mode / Siteverify)
     const turnstileResult = await verifyTurnstileTokenServer(turnstileToken, rawIp);
     if (!turnstileResult.success) {
-      logDownloadAudit({
+      await logDownloadAudit({
         contentId,
         uid: null,
         accessType: item.accessType,
@@ -619,7 +616,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
     // Access control: PAID files require verified authentication & entitlement
     if (item.accessType === 'paid') {
       if (!authHeader || !verifiedUid) {
-        logDownloadAudit({
+        await logDownloadAudit({
           contentId,
           uid: null,
           accessType: 'paid',
@@ -636,7 +633,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
 
       if (!userHasEntitlement) {
         const passCheck = await commerceRepository.run(() => entitlementService.checkActiveEntitlement(verifiedUid!));
-        logDownloadAudit({
+        await logDownloadAudit({
           contentId,
           uid: verifiedUid,
           accessType: 'paid',
@@ -671,7 +668,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
       used: false,
     });
 
-    logDownloadAudit({
+    await logDownloadAudit({
       contentId: item.id,
       uid: verifiedUid,
       accessType: item.accessType,
@@ -713,7 +710,7 @@ app.get('/api/downloads/file/:token', asyncRoute(async (req: Request, res: Respo
     res.setHeader('Content-Length', String(bytes.length));
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    logDownloadAudit({ contentId: resource.id, uid: ticket.uid, accessType: ticket.accessType, status: 'successful', action: 'file_served', req });
+    await logDownloadAudit({ contentId: resource.id, uid: ticket.uid, accessType: ticket.accessType, status: 'successful', action: 'file_served', req });
     await aggregateMetricsService.recordEvent('content_download', { content_id: resource.id }, true).catch(() => {});
     return res.send(bytes);
   } catch (error: any) {
@@ -725,13 +722,14 @@ app.get('/api/downloads/file/:token', asyncRoute(async (req: Request, res: Respo
 /**
  * Admin Download Audit Logs Endpoint
  */
-app.get('/api/admin/downloads/audit-logs', requireAuth, requireAdmin, (_req: Request, res: Response) => {
-  return res.json({
-    success: true,
-    totalLogs: DOWNLOAD_AUDIT_LOGS.length,
-    logs: DOWNLOAD_AUDIT_LOGS,
-  });
-});
+app.get('/api/admin/downloads/audit-logs', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  const db = getAdminFirestore();
+  if (!db) return res.status(503).json({ success: false, error: 'Download audit storage is unavailable.' });
+  const records = await db.list('downloadAuditLogs');
+  const logs = records.map(doc => ({ ...doc.data, id: doc.id })).sort((a: any, b: any) => String(b.timestamp).localeCompare(String(a.timestamp))).slice(0, 500);
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({ success: true, totalLogs: records.length, logs });
+}));
 
 // -------------------------------------------------------------
 // Provider-Independent Payment Gateway API
@@ -1425,10 +1423,16 @@ app.post('/api/admin/set-claims', requireAuth, requireSuperAdmin, asyncRoute(asy
       return res.status(400).json({ error: 'Invalid role specified' });
     }
 
-    // Server-side custom claims assignment logic
-    console.info(`[MAYF SuperAdmin] Setting custom claims for ${targetUid}:`, { role, pro, annualPass });
+    if (typeof targetUid !== 'string' || !targetUid.trim() || ['pro', 'annualPass'].some(key => req.body[key] !== undefined && typeof req.body[key] !== 'boolean')) return res.status(400).json({ error: 'User ID and boolean entitlement values are required.' });
+    if (role === undefined && pro === undefined && annualPass === undefined) return res.status(400).json({ error: 'No claim changes were supplied.' });
+    if (targetUid === req.userAuth!.uid && role && role !== 'superAdmin') return res.status(400).json({ error: 'You cannot remove your own super administrator role.' });
+    const patch: Record<string, unknown> = {};
+    if (role !== undefined) Object.assign(patch, { role, admin: role === 'admin' || role === 'superAdmin', superAdmin: role === 'superAdmin' });
+    if (pro !== undefined) patch.pro = pro;
+    if (annualPass !== undefined) patch.annualPass = annualPass;
+    await adminSetCustomUserClaims(targetUid.trim(), patch);
 
-    auditLogService.log({
+    await auditLogService.log({
       action: 'ADMIN_CLAIMS_UPDATED',
       category: 'admin',
       actorUid: req.userAuth!.uid,
@@ -1436,18 +1440,15 @@ app.post('/api/admin/set-claims', requireAuth, requireSuperAdmin, asyncRoute(asy
       actorRole: 'superAdmin',
       targetId: targetUid,
       targetType: 'user_claims',
-      details: { role, pro, annualPass },
+      details: { changedClaims: patch },
       status: 'success',
     });
 
     return res.json({
       success: true,
       targetUid,
-      claimsSet: {
-        role: role || 'student',
-        pro: Boolean(pro),
-        annualPass: Boolean(annualPass),
-      },
+      claimsSet: patch,
+      forceTokenRefresh: true,
     });
   } catch (error) {
     console.error('[MAYF Admin] Set claims failure:', error);
@@ -1808,7 +1809,7 @@ app.post('/api/admin/admins/claim', requireAuth, requireAdmin, asyncRoute(async 
   const target = await auth.getUserByEmail(String(email).trim());
   await adminSetCustomUserClaims(target.uid, { role: role || 'admin', admin: true, superAdmin: role === 'superAdmin' });
   const isSuper = role === 'superAdmin';
-  auditLogService.log({
+  await auditLogService.log({
     action: 'ADMIN_CREATED',
     category: 'admin',
     actorUid: req.userAuth?.uid || 'admin',
@@ -1837,27 +1838,27 @@ app.post('/api/admin/admins/claim', requireAuth, requireAdmin, asyncRoute(async 
  * 14. Audit Logs Retrieval
  * Returns audit entries filtered by category (admin, subscription, content, refund, security, user)
  */
-app.get('/api/admin/audit-logs', requireAuth, requireAdmin, (req: Request, res: Response) => {
+app.get('/api/admin/audit-logs', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   const { category, action, actorEmail, limit } = req.query as Record<string, string>;
-  const logs = auditLogService.getLogs({
+  const logs = await auditLogService.getLogs({
     category,
     action,
     actorEmail,
     limit: limit ? parseInt(limit, 10) : 100,
   });
   return res.json(logs);
-});
+}));
 
 /**
  * 15. Export Audit Logs as CSV
  */
-app.get('/api/admin/audit-logs/export', requireAuth, requireAdmin, (req: Request, res: Response) => {
+app.get('/api/admin/audit-logs/export', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   const { category } = req.query as Record<string, string>;
-  const csv = auditLogService.exportCsv(category);
+  const csv = await auditLogService.exportCsv(category);
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename="mayf-audit-logs-${new Date().toISOString().split('T')[0]}.csv"`);
   return res.send(csv);
-});
+}));
 
 /**
  * 16. Security Configuration: Get Settings
@@ -1871,14 +1872,14 @@ app.get('/api/admin/security/config', requireAuth, requireAdmin, (_req: Request,
  * 17. Security Configuration: Update Settings
  * RBAC GATED: ONLY superAdmin can modify critical security configuration
  */
-app.post('/api/admin/security/config', requireAuth, requireSuperAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/security/config', requireAuth, requireSuperAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const actor = {
     uid: req.userAuth!.uid,
     email: req.userAuth!.email,
     role: req.userAuth!.role as 'superAdmin',
   };
 
-  const result = adminUserManager.updateSecurityConfig(req.body, actor);
+  const result = await adminUserManager.updateSecurityConfig(req.body, actor);
   if (!result.success) {
     return res.status(403).json({ error: result.error });
   }
@@ -1888,7 +1889,7 @@ app.post('/api/admin/security/config', requireAuth, requireSuperAdmin, (req: Aut
     config: result.config,
     message: 'Critical security configuration successfully updated.',
   });
-});
+}));
 
 /**
  * 18. Order Refund Endpoint

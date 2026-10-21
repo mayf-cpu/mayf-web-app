@@ -53,6 +53,8 @@ export const AdminSettingsSection: React.FC = () => {
       ]);
       setConfig(secConfig);
       setAuditLogs(logs);
+    } catch (error: any) {
+      setErrorMessage(error.message || 'Settings and audit records could not be loaded.');
     } finally {
       setLoading(false);
     }
@@ -77,19 +79,24 @@ export const AdminSettingsSection: React.FC = () => {
     if (res.success) {
       setSavedMessage('Critical security settings saved and recorded in audit log.');
       setTimeout(() => setSavedMessage(null), 3000);
-      const logs = await adminService.getAuditLogs('security');
-      setAuditLogs(logs);
+      try { setAuditLogs(await adminService.getAuditLogs('security')); }
+      catch (error: any) { setErrorMessage(error.message || 'Audit reload failed.'); }
     } else {
       setErrorMessage(res.error || 'Failed to update security configuration.');
     }
   };
 
-  const handleExportAuditCsv = () => {
-    const url = `/api/admin/audit-logs/export${auditCategory !== 'all' ? `?category=${auditCategory}` : ''}`;
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `mayf-audit-logs-${auditCategory}-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
+  const handleExportAuditCsv = async () => {
+    setErrorMessage(null);
+    try {
+      const path = `/api/admin/audit-logs/export${auditCategory !== 'all' ? `?category=${encodeURIComponent(auditCategory)}` : ''}`;
+      const response = await fetch(path, { headers: await adminService.getAuthHeaders() });
+      if (!response.ok) throw new Error(`Audit export failed (${response.status}).`);
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a'); link.href = url;
+      link.download = `mayf-audit-logs-${auditCategory}-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click(); URL.revokeObjectURL(url);
+    } catch (error: any) { setErrorMessage(error.message || 'Audit export failed.'); }
   };
 
   return (

@@ -328,7 +328,7 @@ class AdminUserManager {
     await adminUpdateUserDisabledStatus(uid, disabled);
 
     // Audit Log
-    auditLogService.log({
+    await auditLogService.log({
       action: disabled ? 'USER_DISABLED' : 'USER_ENABLED',
       category: 'user',
       actorUid: actor.uid,
@@ -370,7 +370,7 @@ class AdminUserManager {
     await adminDeleteAuthUser(uid);
 
     // Audit Log
-    auditLogService.log({
+    await auditLogService.log({
       action: 'USER_DELETED_POLICY',
       category: 'user',
       actorUid: actor.uid,
@@ -411,7 +411,7 @@ class AdminUserManager {
     });
 
     // Audit Log
-    auditLogService.log({
+    await auditLogService.log({
       action: grant ? 'PRO_GRANTED' : 'PRO_REVOKED',
       category: 'subscription',
       actorUid: actor.uid,
@@ -461,7 +461,7 @@ class AdminUserManager {
     });
 
     // Audit Log
-    auditLogService.log({
+    await auditLogService.log({
       action: grant ? 'ANNUAL_PASS_GRANTED' : 'ANNUAL_PASS_REVOKED',
       category: 'subscription',
       actorUid: actor.uid,
@@ -505,7 +505,7 @@ class AdminUserManager {
     });
 
     // Audit Log
-    auditLogService.log({
+    await auditLogService.log({
       action: 'ANNUAL_PASS_EXPIRY_UPDATED',
       category: 'subscription',
       actorUid: actor.uid,
@@ -575,7 +575,7 @@ class AdminUserManager {
 
     // Audit Log
     const isDemotion = targetRole === 'student';
-    auditLogService.log({
+    await auditLogService.log({
       action: isDemotion ? 'ADMIN_REMOVED' : 'ADMIN_CREATED',
       category: 'admin',
       actorUid: actor.uid,
@@ -596,10 +596,10 @@ class AdminUserManager {
     return { ...this.securityConfig };
   }
 
-  public updateSecurityConfig(
+  public async updateSecurityConfig(
     updates: Partial<SecurityConfigState>,
     actor: { uid: string; email: string; role: 'admin' | 'superAdmin' }
-  ): { success: boolean; config?: SecurityConfigState; error?: string } {
+  ): Promise<{ success: boolean; config?: SecurityConfigState; error?: string }> {
     // Strict RBAC: Only superAdmin can modify critical security configuration
     if (actor.role !== 'superAdmin') {
       return { success: false, error: 'Forbidden: Only superAdmin can modify critical security configuration' };
@@ -614,7 +614,7 @@ class AdminUserManager {
     };
 
     // Audit Log
-    auditLogService.log({
+    await auditLogService.log({
       action: 'SECURITY_CONFIG_UPDATED',
       category: 'security',
       actorUid: actor.uid,

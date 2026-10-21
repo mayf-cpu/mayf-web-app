@@ -206,7 +206,7 @@ class BroadcastService {
     this.broadcastsStore.set(id, item);
     await this.persistToFirestore();
 
-    auditLogService.log({
+    await auditLogService.log({
       action: 'BROADCAST_CREATED',
       category: 'admin',
       actorUid: actor.uid,
@@ -259,7 +259,7 @@ class BroadcastService {
     this.broadcastsStore.set(id, updated);
     await this.persistToFirestore();
 
-    auditLogService.log({
+    await auditLogService.log({
       action: 'BROADCAST_UPDATED',
       category: 'admin',
       actorUid: actor.uid,
@@ -287,7 +287,7 @@ class BroadcastService {
     this.broadcastsStore.delete(id);
     await this.persistToFirestore();
 
-    auditLogService.log({
+    await auditLogService.log({
       action: 'BROADCAST_DELETED',
       category: 'admin',
       actorUid: actor.uid,

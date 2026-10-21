@@ -237,7 +237,7 @@ class SiteSettingsService {
     await this.syncWithHomepageBlocks(newSettings, actor);
 
     // Audit logging
-    auditLogService.log({
+    await auditLogService.log({
       action: 'SECURITY_CONFIG_UPDATED',
       category: 'security',
       actorUid: actor.uid,

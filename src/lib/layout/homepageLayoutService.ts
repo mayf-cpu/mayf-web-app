@@ -186,7 +186,7 @@ class HomepageLayoutService {
     this.cacheTimestamp = Date.now();
 
     // Audit Log
-    auditLogService.log({
+    await auditLogService.log({
       action: 'SECURITY_CONFIG_UPDATED',
       category: 'security',
       actorUid: actor.uid,

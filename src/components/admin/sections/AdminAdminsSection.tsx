@@ -37,6 +37,8 @@ export const AdminAdminsSection: React.FC = () => {
       ]);
       setAdmins(adminList);
       setAuditLogs(logs);
+    } catch (error: any) {
+      setStatusMessage({ type: 'error', text: error.message || 'Administrator data could not be loaded.' });
     } finally {
       setLoading(false);
     }
