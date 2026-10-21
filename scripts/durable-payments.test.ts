@@ -379,3 +379,14 @@ test('stale coupon terms cannot be reserved after the admin edits the offer', as
   assert.equal(docs.has('paymentCouponReservations/ord-stale'), false);
   assert.equal(Object.keys(docs.get('coupons/EDITED')!.data.activeReservations || {}).length, 0);
 });
+
+
+test('coupon validity window is rechecked immediately before reservation', async () => {
+  const { repo, docs } = couponFixture('DAYBOUNDARY');
+  docs.get('coupons/DAYBOUNDARY')!.data.endDate = '2026-10-20';
+  await assert.rejects(
+    repo.reserveCoupon({ orderId: 'ord-late', userId: 'student-1', code: 'DAYBOUNDARY',
+      discount: 10, now: reserveAt }), /validity period ended/,
+  );
+  assert.equal(docs.has('paymentCouponReservations/ord-late'), false);
+});
