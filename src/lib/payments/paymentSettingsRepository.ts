@@ -5,6 +5,10 @@ import { paymentService } from './paymentService';
 /** Separate storage boundary: gateway credentials never join public catalogue state. */
 export const paymentSettingsRepository = new DocumentStateRepository(
   [{ collection: 'paymentRuntimeSettings', state: paymentService.settingsState }],
-  getAdminFirestore,
+  () => {
+    const db = getAdminFirestore();
+    if (!db) throw new Error('Payment settings require configured Firestore storage');
+    return db;
+  },
   'paymentSettingsState',
 );
