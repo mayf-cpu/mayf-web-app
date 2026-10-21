@@ -3,6 +3,7 @@ import type { FirestoreDocumentStore } from '../firebase/documentStore';
 
 export type StoredDownloadToken = {
   contentId: string;
+  objectKey?: string;
   fileName: string;
   accessType: 'free' | 'paid';
   uid: string | null;
