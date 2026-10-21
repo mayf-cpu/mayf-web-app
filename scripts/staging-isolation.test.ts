@@ -7,6 +7,8 @@ test('staging configuration remains isolated from production', () => {
  const wrangler=JSON.parse(readFileSync(new URL('../wrangler.staging.jsonc',import.meta.url),'utf8'));
  assert.equal(wrangler.name,'staging-acceptance-mayf');
  assert.equal(wrangler.r2_buckets[0].bucket_name,'mayf-staging-materials');
+ assert.equal(wrangler.vars.MAYF_ENABLE_ADMIN_REFUNDS,'false');
+ for (const key of ['route','routes','zone_id','env','services','d1_databases','kv_namespaces','unsafe']) assert.equal(wrangler[key],undefined,`Unexpected staging binding: ${key}`);
 });
 test('manual workflow never targets production configuration', () => {
  const flow=readFileSync(new URL('../.github/workflows/deploy-staging.yml',import.meta.url),'utf8');
