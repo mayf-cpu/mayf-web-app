@@ -37,7 +37,7 @@ test('concurrent activity survives restarts and timeframe uses IST calendar days
 test('analytics uses paid ledger totals, separates currencies, and excludes refunded or pending orders', async () => {
   const f = fixture();
   for (const [id, status, currency] of [['a', 'paid', 'INR'], ['b', 'paid', 'USD'], ['c', 'refunded', 'INR'], ['d', 'pending', 'INR']]) {
-    await f.store.collection('orders').doc(id).set({ status, currency, grossAmount: 100, discount: 10, tax: 5, createdAt: '2026-10-21T10:00:00Z', paidAt: '2026-10-21T11:00:00Z' });
+    await f.store.collection('paymentOrders').doc(id).set({ status, currency, grossAmount: 100, discount: 10, tax: 5, createdAt: '2026-10-21T10:00:00Z', paidAt: '2026-10-21T11:00:00Z' });
   }
   const data = await f.fresh().getDashboardMetrics('today');
   assert.equal(data.summary.orders.completedOrders, 2); assert.equal(data.summary.orders.pendingOrders, 1);
@@ -57,4 +57,21 @@ test('analytics rejects client-asserted purchase events and awaits durable route
   assert.equal(await f.fresh().recordEvent('purchase', { currency: 'INR', value: 10000000 }), false);
   assert.equal(await f.fresh().recordEvent('ai_question', { math_category: 'Calculus' }), false);
   assert.equal((await f.fresh().getDashboardMetrics('today')).summary.revenue.totalRevenue, 0);
+});
+
+
+test('dashboard reads the actual paymentOrders and paymentEntitlements collections', async () => {
+  const f = fixture();
+  await f.store.collection('paymentOrders').doc('order-1').set({
+    status: 'paid', currency: 'INR', grossAmount: 999, discount: 99, tax: 0,
+    createdAt: '2026-10-21T09:00:00Z', paidAt: '2026-10-21T10:00:00Z',
+  });
+  await f.store.collection('paymentEntitlements').doc('pass-1').set({
+    type: 'annual_pass', status: 'active', startsAt: '2026-10-20T10:00:00Z',
+    expiresAt: '2027-10-20T10:00:00Z', createdAt: '2026-10-21T10:00:00Z',
+  });
+  const report = await f.fresh().getDashboardMetrics('30d');
+  assert.equal(report.summary.revenue.totalRevenue, 900);
+  assert.equal(report.summary.orders.completedOrders, 1);
+  assert.equal(report.summary.annualPassSubscriptions.activePasses, 1);
 });
