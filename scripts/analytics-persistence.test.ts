@@ -44,3 +44,17 @@ test('analytics uses paid ledger totals, separates currencies, and excludes refu
   assert.equal(data.summary.revenue.totalRevenue, 95); assert.deepEqual(data.summary.revenue.byCurrency, { INR: 95, USD: 95 });
   assert.equal(data.summary.orders.averageOrderValue, 95);
 });
+
+
+test('analytics fails closed without Firestore instead of presenting invented numbers', async () => {
+  const unavailable = new AggregateMetricsService(() => null);
+  await assert.rejects(unavailable.getDashboardMetrics('30d'), /Analytics storage is not configured/);
+  await assert.rejects(unavailable.recordEvent('page_view'), /Analytics storage is not configured/);
+});
+
+test('analytics rejects client-asserted purchase events and awaits durable route writes', async () => {
+  const f = fixture();
+  assert.equal(await f.fresh().recordEvent('purchase', { currency: 'INR', value: 10000000 }), false);
+  assert.equal(await f.fresh().recordEvent('ai_question', { math_category: 'Calculus' }), false);
+  assert.equal((await f.fresh().getDashboardMetrics('today')).summary.revenue.totalRevenue, 0);
+});
