@@ -353,6 +353,33 @@ export class DurablePaymentRepository {
           typeof coupon.userUsageMap !== 'object' || Array.isArray(coupon.userUsageMap)) {
         throw new Error('Paid coupon record is invalid; manual reconciliation required');
       }
+      // A paid discounted order must possess its own pre-gateway reservation.
+      // Retries or stale reservations are never silently counted as new sales.
+      if (order.couponReservationId !== orderId ||
+          !order.couponReservationExpiresAt ||
+          !Number.isFinite(Date.parse(order.couponReservationExpiresAt))) {
+        throw new Error('Paid discounted order lacks a valid pre-charge reservation; manual reconciliation required');
+      }
+      const hold = coupon.activeReservations?.[orderId];
+      if (!hold || hold.userId !== order.userId ||
+          hold.discount !== order.discount ||
+          hold.expiresAt !== order.couponReservationExpiresAt) {
+        throw new Error('Paid coupon hold does not match order; manual reconciliation required');
+      }
+      const reservationRef = await this.store.collection(COUPON_RESERVATION_COLLECTION).doc(orderId).get();
+      const reservation = reservationRef.data();
+      if (!reservationRef.exists || !reservationRef.updateTime ||
+          reservation?.status !== 'reserved' || reservation?.userId !== order.userId ||
+          reservation?.code !== code || reservation?.discount !== order.discount ||
+          reservation?.expiresAt !== hold.expiresAt) {
+        throw new Error('Paid coupon reservation is missing or changed; manual reconciliation required');
+      }
+      // The gateway can report an event after expiry; hold duration must be
+      // checked against verified charge time. The current orchestrator uses
+      // observed webhook time, so late delivery requires manual reconciliation.
+      if (Date.parse(hold.expiresAt) <= Date.parse(paidAt)) {
+        throw new Error('Coupon checkout hold expired before settlement; manual reconciliation required');
+      }
       const previousCount = coupon.userUsageMap[order.userId] ?? 0;
       if (!Number.isSafeInteger(previousCount) || previousCount < 0) {
         throw new Error('Paid coupon student usage is corrupt; manual reconciliation required');
@@ -367,14 +394,20 @@ export class DurablePaymentRepository {
       }
       const redemption = await this.store.collection(COUPON_REDEMPTION_COLLECTION).doc(validId(orderId)).get();
       if (redemption.exists) throw new Error('Coupon was previously redeemed by this order; manual reconciliation required');
+      const remainingHolds = { ...coupon.activeReservations };
+      delete remainingHolds[orderId];
       couponWrites.push(
         { collection: COUPON_COLLECTION, id: code, updateTime: couponRef.updateTime,
           data: { ...coupon, timesUsed: coupon.timesUsed + 1,
+            activeReservations: remainingHolds,
             userUsageMap: { ...coupon.userUsageMap, [order.userId]: previousCount + 1 },
             updatedAt: paidAt } },
         { collection: COUPON_REDEMPTION_COLLECTION, id: validId(orderId),
           data: { orderId, userId: order.userId, code, discount: order.discount,
             provider, providerPaymentId, redeemedAt: paidAt } },
+        { collection: COUPON_RESERVATION_COLLECTION, id: validId(orderId),
+          updateTime: reservationRef.updateTime,
+          data: { ...reservation, status: 'redeemed', providerPaymentId, redeemedAt: paidAt } },
       );
     } else if (order.discount > 0) {
       throw new Error('Paid order contains an unexplained discount; manual reconciliation required');
