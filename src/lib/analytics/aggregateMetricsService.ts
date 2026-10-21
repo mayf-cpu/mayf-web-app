@@ -59,7 +59,7 @@ export class AggregateMetricsService {
     const now = this.clock(); const today = dayKey(now); const month = today.slice(0, 7);
     const since = timeframe === 'all' ? '' : dayKey(now - (timeframe === 'today' ? 0 : timeframe === '7d' ? 6 : 29) * 86400000);
     const inRange = (day: string) => /^\d{4}-\d{2}-\d{2}$/.test(day) && day >= since && day <= today;
-    const [dailyDocs, orderDocs, passDocs, aiDocs] = await Promise.all(['analyticsDaily', 'orders', 'entitlements', 'aiTeacherSessions'].map(collection => db.list(collection)));
+    const [dailyDocs, orderDocs, passDocs, aiDocs] = await Promise.all(['analyticsDaily', 'paymentOrders', 'paymentEntitlements', 'aiTeacherSessions'].map(collection => db.list(collection)));
     const daily = dailyDocs.map(doc => doc.data as Bucket).filter(bucket => inRange(bucket.day));
     const sum = (key: 'views' | 'contentViews' | 'checkoutStarts' | 'downloads') => daily.reduce((n, row) => n + row[key], 0);
     const current = daily.find(row => row.day === today) || empty(today);
