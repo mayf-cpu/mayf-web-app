@@ -38,7 +38,7 @@
 
 ## Staging deployment registration
 - The staging workflow now allowlists `staging/consolidated-mayf-2026-10-21` and explicitly requires `confirm_isolated_staging = true`; it is **manual-only** and does not deploy on push.
-- GitHub workflow-dispatch requires the workflow file on the default branch. This workflow is not present on `main` yet; the release team must approve a minimal workflow-registration route or use an independently approved isolated staging mechanism. Do **not** merge the entire draft release merely to register the staging workflow.
+- The manual-only workflow is now registered on default `main` in configuration-only commit `77dfe56b`; the unreleased PR #77 application code is **not** merged. Dispatch ONLY with the staging candidate branch selected and explicit `confirm_isolated_staging=true`. Required isolated Cloudflare/Firebase secrets and real staging acceptance remain outstanding; registration does not perform a deploy.
 - No staging deploy or production deploy has been initiated by these changes. Validate separate staging Firebase, R2 bucket, Cloudflare credentials, hostname and test-mode gateway before any real staging execution.
 
 ## Refund sandbox acceptance and recovery

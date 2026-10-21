@@ -35,7 +35,7 @@ Do not close original PRs merely to reduce the PR count; first verify no unique 
 - Signed payment settlement now updates `coupons` usage counters, `paymentCouponRedemptions` receipt, `paymentOrders` paid status, entitlement, payment claims and webhook event in one revision-checked Firestore commit. Unit tests cover simultaneous customers and duplicate signed events.
 - Invalid coupon input is rejected before provider order creation; only a validated, discounted code is persisted on the order. Coupon state is reloaded from Firestore at checkout.
 - **Still blocked:** pre-gateway coupon reservations now hold a discount for 30 minutes and are released after checkout initialization failures; abandoned holds are reclaimed lazily. If verified gateway capture or its webhook arrives after the hold expires, manual reconciliation can still be required. `MAYF_ENABLE_COUPON_CHECKOUT` and the general checkout flag remain disabled pending live staging acceptance.
-- Staging workflow targets the consolidated branch with manual opt-in, but requires registration on the default GitHub branch or an approved equivalent staging-only executor. No environment has been deployed from these commits.
+- Staging deployment workflow is now registered on default main as a *configuration-only* change (`77dfe56b`), with staged branch allowlisting and manual explicit opt-in; no worker or frontend has been deployed.
 
 ## Authentication, privacy and security reconciliation (2026-10-21)
 
