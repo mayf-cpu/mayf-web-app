@@ -288,9 +288,10 @@ export class PaymentService {
       newOrder.couponReservationExpiresAt = claim.expiresAt;
       couponReserved = true;
     }
+    let providerResult: ProviderOrderResult;
     try {
-    // Call adapter to generate gateway order / checkout session
-    const providerResult = await adapter.createOrder(newOrder);
+      // Call adapter to generate gateway order / checkout session
+      providerResult = await adapter.createOrder(newOrder);
     newOrder.providerOrderId = providerResult.providerOrderId;
 
     // Never return checkout credentials before the order is durably recorded.
