@@ -982,6 +982,12 @@ app.post('/api/orders/create', requireAuth, handleCreateOrder);
  * Strictly validates user ownership to prevent payment spoofing!
  */
 async function handleVerifyPayment(req: AuthenticatedRequest, res: Response) {
+  // Never let the legacy browser callback grant a volatile entitlement while
+  // the authoritative checkout feature is disabled.
+  if (process.env.MAYF_ENABLE_CHECKOUT !== 'true') {
+    return res.status(503).json({ success: false, code: 'CHECKOUT_NOT_READY',
+      error: 'Payment verification is unavailable until checkout reconciliation is complete.' });
+  }
   // Browser-side verification still relies on volatile orders/entitlements.
   // Keep it disabled in production until it uses the same atomic settlement
   // pipeline as signed webhooks; otherwise it can report access prematurely.
@@ -1196,8 +1202,9 @@ app.get('/api/admin/payments/webhook-logs', requireAuth, requireAdmin, (_req: Re
  */
 app.post('/api/admin/payments/simulate-webhook', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   // This diagnostic mutates only the legacy in-memory payment service.
-  // Never allow a simulated event to appear as a real payment in production.
-  if (isProductionPaymentRuntime()) {
+  // Require an explicit local-only flag so preview/staging cannot accidentally
+  // grant access from a fabricated simulated gateway callback.
+  if (isProductionPaymentRuntime() || process.env.MAYF_ENABLE_PAYMENT_SIMULATION !== 'true') {
     return res.status(403).json({
       success: false,
       code: 'PAYMENT_SIMULATION_DISABLED',
