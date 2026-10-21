@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import { adminService } from '../../../services/adminService';
+import React, { useEffect, useState } from 'react';
 import {
   Globe,
   CheckCircle2,
@@ -20,9 +21,27 @@ export const AdminSeoSection: React.FC = () => {
   );
   const [saved, setSaved] = useState(false);
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    void (async () => {
+      try {
+        const data = await adminService.getSeoSettings();
+        if (!data.settings) throw new Error('Unable to load SEO settings.');
+        setCanonicalDomain(data.settings.canonicalDomain); setDefaultTitle(data.settings.defaultTitle); setDefaultDesc(data.settings.defaultDesc);
+      } catch (error: any) { setError(error.message); }
+      finally { setLoading(false); }
+    })();
+  }, []);
+  const handleSave = async () => {
+    setSaving(true); setError(''); setSaved(false);
+    try {
+      const data = await adminService.saveSeoSettings({ canonicalDomain, defaultTitle, defaultDesc });
+      if (!data.settings) throw new Error('SEO settings were not saved.');
+      setCanonicalDomain(data.settings.canonicalDomain); setSaved(true);
+    } catch (error: any) { setError(error.message); }
+    finally { setSaving(false); }
   };
 
   return (
@@ -37,12 +56,13 @@ export const AdminSeoSection: React.FC = () => {
           </p>
         </div>
 
-        <Button size="sm" variant="primary" onClick={handleSave} className="gap-1.5 shadow-xs">
+        <Button size="sm" variant="primary" onClick={handleSave} disabled={loading} isLoading={saving} className="gap-1.5 shadow-xs">
           <Save className="w-3.5 h-3.5" />
           <span>{saved ? 'Saved SEO!' : 'Save SEO Configuration'}</span>
         </Button>
       </div>
 
+      {error && <p role="alert" className="rounded bg-red-50 p-3 text-red-700">{error}</p>}
       {/* Admin Exclusion & Robots Notice */}
       <div className="p-4 rounded-xl bg-slate-900 text-white border border-slate-800 space-y-2">
         <div className="flex items-center gap-2 text-xs font-mono font-bold text-emerald-400">
@@ -64,30 +84,30 @@ export const AdminSeoSection: React.FC = () => {
           </h3>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700">Canonical Domain:</label>
+            <label htmlFor="seo-canonicalDomain" className="text-xs font-semibold text-slate-700">Canonical Domain:</label>
             <input
               type="text"
-              value={canonicalDomain}
+              id="seo-canonicalDomain" value={canonicalDomain}
               onChange={(e) => setCanonicalDomain(e.target.value)}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-900 focus:bg-white"
             />
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700">Default Page Title:</label>
+            <label htmlFor="seo-defaultTitle" className="text-xs font-semibold text-slate-700">Default Page Title:</label>
             <input
               type="text"
-              value={defaultTitle}
+              id="seo-defaultTitle" value={defaultTitle}
               onChange={(e) => setDefaultTitle(e.target.value)}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:bg-white"
             />
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700">Default Meta Description:</label>
+            <label htmlFor="seo-defaultDesc" className="text-xs font-semibold text-slate-700">Default Meta Description:</label>
             <textarea
               rows={3}
-              value={defaultDesc}
+              id="seo-defaultDesc" value={defaultDesc}
               onChange={(e) => setDefaultDesc(e.target.value)}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:bg-white"
             />
@@ -134,7 +154,7 @@ Allow: /courses
 Allow: /course/
 Allow: /annual-pass
 
-Sitemap: https://mayf.co.in/sitemap.xml`}
+Sitemap: ${canonicalDomain}/sitemap.xml`}
           </pre>
 
           <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
