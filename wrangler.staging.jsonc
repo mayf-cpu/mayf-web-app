@@ -1,5 +1,5 @@
 {
-  "name": "mayf-staging-acceptance",
+  "name": "staging-acceptance-mayf",
   "main": "worker.ts",
   "compatibility_date": "2026-10-19",
   "compatibility_flags": [
