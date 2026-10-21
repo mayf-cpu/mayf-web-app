@@ -28,6 +28,7 @@ import { DurableDownloadLimiter } from './src/lib/download/durableDownloadLimite
 import { DurableDownloadAudit } from './src/lib/download/durableDownloadAudit';
 import { FORMULA_DECK_ITEMS } from './src/data/formulaDeckData';
 import { paymentService } from './src/lib/payments/paymentService';
+import { paymentSettingsRepository } from './src/lib/payments/paymentSettingsRepository';
 import { isProductionPaymentRuntime } from './src/lib/payments/runtime';
 import { validateAnnualPassCart } from './src/lib/payments/checkoutPolicy';
 import { DurablePaymentRepository } from './src/lib/payments/durablePaymentRepository';
@@ -56,6 +57,7 @@ for (const [paths, initialize] of [
   [['/api/homepage/layout', '/api/admin/layout/homepage'], () => homepageLayoutService.initFromFirestore()],
   [['/api/adsense', '/api/admin/adsense'], () => adSenseService.initFromFirestore()],
   [['/api/broadcasts', '/api/admin/broadcasts'], () => broadcastService.initStore()],
+  [['/api/payments', '/api/admin/payments/settings'], () => paymentSettingsRepository.run(() => undefined)],
 ] as [string[], () => Promise<void>][]) {
   app.use(paths, async (_req, res, next) => {
     try { await initialize(); next(); }
@@ -1129,19 +1131,19 @@ app.get('/api/admin/payments/settings', requireAuth, requireAdmin, (_req: Reques
   });
 });
 
-app.post('/api/admin/payments/settings', requireAuth, requireAdmin, (req: Request, res: Response) => {
+app.post('/api/admin/payments/settings', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   try {
-    const updated = paymentService.updateSettings(req.body);
+    const updated = await paymentSettingsRepository.run(() => paymentService.updateSettings(req.body), true);
     return res.json({
       success: true,
       settings: updated,
-      message: 'Payment settings successfully updated. Secret keys securely stored server-side.',
+      message: 'Payment settings durably saved. Secret credentials are encrypted in Firestore.',
     });
   } catch (error: any) {
-    console.error('[MAYF Admin] Payment settings update error:', error);
-    return res.status(500).json({ success: false, error: error?.message || 'Failed to update payment settings' });
+    console.error('[MAYF Admin] Payment settings persistence error:', error);
+    return res.status(503).json({ success: false, error: 'Payment settings could not be durably saved. Please retry or contact support.' });
   }
-});
+}));
 
 /**
  * 7. Admin Orders Ledger & Audit
