@@ -88,7 +88,7 @@ export const AdminOrdersSection: React.FC = () => {
                   <td className="px-4 py-3.5 text-slate-700 font-mono text-[11px]">{ord.customerEmail}</td>
                   <td className="px-4 py-3.5 font-semibold text-slate-800">{ord.planName}</td>
                   <td className="px-4 py-3.5 font-heading font-extrabold text-slate-900">
-                    {ord.currency === 'INR' ? '₹' : ord.currency === 'USD' ? '
+                    {ord.currency === 'INR' ? '₹' : ord.currency === 'USD' ? '$' : ord.currency + ' '}{ord.amount.toLocaleString('en-IN')}
                   </td>
                   <td className="px-4 py-3.5">
                     <span className="inline-flex items-center gap-1 uppercase font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
@@ -97,31 +97,6 @@ export const AdminOrdersSection: React.FC = () => {
                   </td>
                   <td className="px-4 py-3.5">
                     <span className={ord.status === "paid" ? "inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-200" : "inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-100 text-slate-700 border border-slate-200"}>
-                      <CheckCircle2 className="w-3 h-3 text-emerald-700" />
-                      {ord.status.toUpperCase()}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5 text-right font-mono text-[11px] text-slate-500">
-                    {ord.createdAt.split('T')[0]}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-};
- : ord.currency + ' '}{ord.amount.toLocaleString('en-IN')}
-                  </td>
-                  <td className="px-4 py-3.5">
-                    <span className="inline-flex items-center gap-1 uppercase font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-                      {ord.gateway}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3.5">
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
                       <CheckCircle2 className="w-3 h-3 text-emerald-700" />
                       {ord.status.toUpperCase()}
                     </span>
