@@ -390,3 +390,58 @@ test('coupon validity window is rechecked immediately before reservation', async
   );
   assert.equal(docs.has('paymentCouponReservations/ord-late'), false);
 });
+
+
+test('expired hold on unresolved chargeable order is not reallocated', async () => {
+  const { repo, docs } = couponFixture('SINGLEPAY', 1);
+  const hold = await repo.reserveCoupon({
+    orderId: 'ord-1', userId: 'student-1', code: 'SINGLEPAY', discount: 10, now: reserveAt,
+  });
+  await repo.createOrder({ ...order, coupon: 'SINGLEPAY', discount: 10,
+    couponReservationId: 'ord-1', couponReservationExpiresAt: hold.expiresAt });
+  await assert.rejects(
+    repo.reserveCoupon({ orderId: 'ord-2', userId: 'student-2',
+      code: 'SINGLEPAY', discount: 10, now: new Date('2026-10-21T12:31:00Z') }),
+    /capacity exhausted/,
+  );
+  assert.equal(docs.get('coupons/SINGLEPAY')?.data.activeReservations['ord-1'].userId, 'student-1');
+  assert.equal(docs.has('paymentCouponReservations/ord-2'), false);
+});
+
+test('late authenticated payment settles with still-protected original coupon hold', async () => {
+  const { repo, docs } = couponFixture('LATEPAY', 1);
+  const hold = await repo.reserveCoupon({
+    orderId: 'ord-1', userId: 'student-1', code: 'LATEPAY', discount: 10, now: reserveAt,
+  });
+  await repo.createOrder({ ...order, coupon: 'LATEPAY', discount: 10,
+    couponReservationId: 'ord-1', couponReservationExpiresAt: hold.expiresAt });
+  const late = { ...payment, paidAt: '2026-10-21T13:15:00Z' };
+  assert.equal(await repo.settleVerifiedPayment(late), 'settled');
+  assert.equal(docs.get('paymentCouponReservations/ord-1')?.data.status, 'redeemed');
+  assert.equal(docs.get('coupons/LATEPAY')?.data.timesUsed, 1);
+  assert.equal(await repo.settleVerifiedPayment(late), 'duplicate');
+});
+
+test('terminal failed order frees an expired hold without counting a redemption', async () => {
+  const { repo, docs } = couponFixture('FAILEDPAY', 1);
+  const hold = await repo.reserveCoupon({
+    orderId: 'ord-1', userId: 'student-1', code: 'FAILEDPAY', discount: 10, now: reserveAt,
+  });
+  await repo.createOrder({ ...order, coupon: 'FAILEDPAY', discount: 10,
+    couponReservationId: 'ord-1', couponReservationExpiresAt: hold.expiresAt });
+  docs.get('paymentOrders/ord-1')!.data.status = 'failed';
+  await repo.reserveCoupon({ orderId: 'ord-2', userId: 'student-2', code: 'FAILEDPAY',
+    discount: 10, now: new Date('2026-10-21T12:31:00Z') });
+  assert.equal(docs.get('coupons/FAILEDPAY')?.data.timesUsed, 0);
+  assert.deepEqual(Object.keys(docs.get('coupons/FAILEDPAY')?.data.activeReservations), ['ord-2']);
+});
+
+test('date-only coupon expiry is recognized as end of the named UTC day', async () => {
+  const { repo, docs } = couponFixture('SAME_DAY', 1);
+  docs.get('coupons/SAME_DAY')!.data.endDate = '2026-10-21';
+  await repo.reserveCoupon({
+    orderId: 'ord-1', userId: 'student-1', code: 'SAME_DAY',
+    discount: 10, now: new Date('2026-10-21T22:00:00Z'),
+  });
+  assert.ok(docs.has('paymentCouponReservations/ord-1'));
+});
