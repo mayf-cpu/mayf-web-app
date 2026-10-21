@@ -6,6 +6,8 @@ on:
     branches:
       - fix/backend-runtime-firebase
       - qa/automated-regression-checks
+      - develop/mayf
+      - staging/consolidated-mayf-2026-10-21
   workflow_dispatch:
 
 permissions:
