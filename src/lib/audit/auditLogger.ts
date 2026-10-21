@@ -63,12 +63,12 @@ class AuditLogService {
   // No synthetic audit history. Persisted entries are loaded by the repository.
   private logs: AuditLogEntry[] = [];
 
-  public exportState(): AuditLogEntry[] {
+  public exportState(): Record<string, any>[] {
     return this.logs.map(entry => structuredClone(entry));
   }
 
-  public importState(entries: AuditLogEntry[]): void {
-    this.logs = entries.slice().sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  public importState(entries: Record<string, any>[]): void {
+    this.logs = (entries as AuditLogEntry[]).slice().sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   }
 
   public log(entry: Omit<AuditLogEntry, 'id' | 'timestamp'>): AuditLogEntry {
