@@ -14,7 +14,7 @@ This is an evidence log, not certification that the entire application works. Ea
 
 ## Repair implementation and local validation
 
-72 regression tests, TypeScript and the production Vite build pass for the 21 October repair batch. The preceding commit passed four workerd API checks; the new Worker runtime check remains unverified because automatic approval review blocked its execution. External-service tests use fixtures where applicable; they do not validate real payments or media delivery.
+76 regression tests, TypeScript and the production Vite build pass for the 21 October repair batch. The preceding commit passed four workerd API checks; the new Worker runtime check remains unverified because automatic approval review blocked its execution. External-service tests use fixtures where applicable; they do not validate real payments or media delivery.
 
 - Express runs in the Worker via the Node HTTP server adapter. Firestore storage uses authenticated HTTPS REST rather than unsupported native gRPC. Runtime service-account JSON is parsed safely and diagnostics expose only configuration presence.
 - Real Firebase tokens are cryptographically verified. Forged/development tokens fail closed in production. Actual Firebase Auth records feed student/admin lists; mutation errors propagate and unrelated custom claims are preserved. No real student account was disabled, deleted or charged during testing.
@@ -44,7 +44,7 @@ This is an evidence log, not certification that the entire application works. Ea
 - Gateway credentials use AES-GCM encryption before storage and masked API output. The key uses PAYMENT_SETTINGS_ENCRYPTION_KEY when set, otherwise the server service-account private key; retain that key during rotation or reconfigure gateway credentials. The settings collection remains server-only under the repository's default-deny client rules. Live deployed rules have not been independently audited in this session.
 - Renewals add days after the existing active expiry; duplicate callback/webhook delivery does not add days or redeem coupons again. Individual paid-resource lookup now checks the buyer's persisted paid order; refunded orders do not grant access.
 - Admin order ledger no longer substitutes sample orders or invented payment IDs when empty. Gateway and pass config persistence are covered locally, not yet live mutation-tested.
-- Seven new regression tests exercise restart recovery, atomic rollback, duplicate webhook/callback handling, settings encryption, renewal continuity and buyer/product access scope. 72 total tests, TypeScript and the production build pass. Provider adapters and real file delivery are still pending and no real payment has been charged.
+- Seven new regression tests exercise restart recovery, atomic rollback, duplicate webhook/callback handling, settings encryption, renewal continuity and buyer/product access scope. 76 total tests, TypeScript and the production build pass. Provider adapters and real file delivery are still pending and no real payment has been charged.
 
 ## Provider, file delivery and pricing continuation
 
@@ -53,7 +53,23 @@ This is an evidence log, not certification that the entire application works. Ea
 - Checkout no longer prefills sample personal details or automatically assumes a demo coupon. It shows the configured added tax and effective promotional price, blocks checkout until pricing loads and sales are enabled, and no longer submits an invented Turnstile token.
 - Download links now survive Worker restarts and use conditional single-use claims. Real CMS attachment bytes replace the synthetic text labelled as PDF. Approved hosts, no automatic redirects, byte limits, PDF signature checks and network binding have regression coverage. Upstream source failures do not consume a ticket. Owner-provided directly fetchable assets and real Turnstile configuration remain prerequisites for live acceptance. Configure Firestore TTL for expired downloadTickets during operational setup.
 - Live review exposed the Annual Pass section's fake save label. It now loads/saves actual persisted membership settings, with separate regular/promotional price and date controls. The family-price field is retained and saved as a proposal; family checkout/profile linking remains unavailable and is labelled accordingly. Invalid membership settings are rejected.
-- 72 automated tests, TypeScript and the production build pass. The payment persistence deployment at 58b8ec5 is reported successful by Cloudflare; this newest batch has not yet been live-verified.
+- 76 automated tests, TypeScript and the production build pass. The payment persistence deployment at 58b8ec5 is reported successful by Cloudflare; this newest batch has not yet been live-verified.
+
+## SEO, ledger export and configuration follow-through
+
+- The deployed membership form completed a real save of the current price settings and retained the values after a full reload. The deployed order screen shows zero actual orders rather than demonstration transactions. No user was charged.
+- Order CSV export is now connected to the actual ledger, uses the order currency, quotes CSV cells and guards spreadsheet formula prefixes. Request failures are surfaced instead of being treated as an empty successful ledger. Live export download still requires verification after deployment.
+- SEO configuration now has persistent authenticated writes with validation and public read-back. Homepage metadata and public canonical links use this configuration; page-specific titles remain specific. Preview meta tags prohibit indexing.
+- robots.txt and sitemap.xml are routed through the Worker. Sitemap generation reads current persisted CMS state and no longer restores hidden seed resources. Worker-preview robots prohibit indexing. Metadata edits and the new live routes still await deployment acceptance.
+- Production Turnstile verification now rejects a missing or known test secret instead of submitting a fallback test key. Downloads remain blocked until a real secret/site-key pair is configured. The Node API regression verifies this failure path.
+- 76 regression tests, TypeScript and the production build pass for the reporting/SEO batch. The earlier e34ea6b provider/delivery batch has a reported successful Cloudflare build and deployment.
+
+## AI response integrity and history
+
+- Missing/unavailable Gemini now returns a truthful 503 instead of a generic fabricated solved answer. Demo history is no longer exposed in production. Signed-in responses are persisted with canonical userId ownership, and history/rating endpoints require a verified owner. Anonymous sessions have no shared server history.
+- AI request quotas are persisted per identity hash and IST day with conditional conflict retries; separate isolates cannot spend the same last allowance. These count requests, including upstream failures. App Check enforcement now cryptographically verifies the token instead of checking header presence.
+- AI activity reads stored sessions and measured tokens/time/feedback. Fixed sample telemetry has been removed. No genuine Gemini answer was generated because the runtime key remains missing.
+- 76 regression tests, TypeScript and the production build pass. Tests cover configured failure paths, anonymous history/rating denial and quota restart/concurrency behavior; live Gemini/App Check acceptance still requires configuration.
 
 ## Still incomplete
 

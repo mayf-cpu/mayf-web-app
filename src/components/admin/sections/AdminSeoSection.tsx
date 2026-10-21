@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import { adminService } from '../../../services/adminService';
+import React, { useEffect, useState } from 'react';
 import {
   Globe,
   CheckCircle2,
@@ -20,9 +21,29 @@ export const AdminSeoSection: React.FC = () => {
   );
   const [saved, setSaved] = useState(false);
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    void (async () => {
+      try {
+        const response = await fetch('/api/admin/seo', { headers: await adminService.getAuthHeaders() });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'Unable to load SEO settings.');
+        setCanonicalDomain(data.settings.canonicalDomain); setDefaultTitle(data.settings.defaultTitle); setDefaultDesc(data.settings.defaultDesc);
+      } catch (error: any) { setError(error.message); }
+      finally { setLoading(false); }
+    })();
+  }, []);
+  const handleSave = async () => {
+    setSaving(true); setError(''); setSaved(false);
+    try {
+      const response = await fetch('/api/admin/seo', { method: 'PUT', headers: await adminService.getAuthHeaders(), body: JSON.stringify({ canonicalDomain, defaultTitle, defaultDesc }) });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'SEO settings were not saved.');
+      setCanonicalDomain(data.settings.canonicalDomain); setSaved(true);
+    } catch (error: any) { setError(error.message); }
+    finally { setSaving(false); }
   };
 
   return (
@@ -37,12 +58,13 @@ export const AdminSeoSection: React.FC = () => {
           </p>
         </div>
 
-        <Button size="sm" variant="primary" onClick={handleSave} className="gap-1.5 shadow-xs">
+        <Button size="sm" variant="primary" onClick={handleSave} disabled={loading} isLoading={saving} className="gap-1.5 shadow-xs">
           <Save className="w-3.5 h-3.5" />
           <span>{saved ? 'Saved SEO!' : 'Save SEO Configuration'}</span>
         </Button>
       </div>
 
+      {error && <p role="alert" className="rounded bg-red-50 p-3 text-red-700">{error}</p>}
       {/* Admin Exclusion & Robots Notice */}
       <div className="p-4 rounded-xl bg-slate-900 text-white border border-slate-800 space-y-2">
         <div className="flex items-center gap-2 text-xs font-mono font-bold text-emerald-400">
@@ -134,7 +156,7 @@ Allow: /courses
 Allow: /course/
 Allow: /annual-pass
 
-Sitemap: https://mayf.co.in/sitemap.xml`}
+Sitemap: ${canonicalDomain}/sitemap.xml`}
           </pre>
 
           <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">

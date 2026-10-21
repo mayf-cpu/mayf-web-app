@@ -88,8 +88,8 @@ export interface AiActivityRecord {
   topic: string;
   questionSnippet: string;
   model: string;
-  latencyMs: number;
-  tokensUsed: number;
+  latencyMs: number | null;
+  tokensUsed: number | null;
   resolved: boolean;
   rating?: number;
 }
@@ -534,25 +534,19 @@ class AdminService {
   }
 
   async getAiActivity(): Promise<AiActivityRecord[]> {
-    try {
-      const headers = await this.getAuthHeaders();
-      const res = await fetch('/api/admin/ai-activity', { headers });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    } catch {
-      return [];
-    }
+    const response = await fetch('/api/admin/ai-activity', { headers: await this.getAuthHeaders() });
+    if (!response.ok) throw new Error(`AI activity unavailable (${response.status}).`);
+    const data = await response.json();
+    if (!Array.isArray(data)) throw new Error('Invalid AI activity response.');
+    return data;
   }
 
   async getOrders(): Promise<OrderRecord[]> {
-    try {
-      const headers = await this.getAuthHeaders();
-      const res = await fetch('/api/admin/orders', { headers });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    } catch {
-      return [];
-    }
+    const response = await fetch('/api/admin/orders', { headers: await this.getAuthHeaders() });
+    if (!response.ok) throw new Error(`Order ledger unavailable (${response.status}).`);
+    const data = await response.json();
+    if (!Array.isArray(data)) throw new Error('Invalid order ledger response.');
+    return data;
   }
 
   async processRefund(

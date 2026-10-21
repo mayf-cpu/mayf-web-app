@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 
 export interface BreadcrumbItem {
   name: string;
@@ -26,16 +26,25 @@ export const SeoHead: React.FC<SeoMetadataProps> = ({
   breadcrumbs,
   structuredData,
 }) => {
+  const [globalSeo, setGlobalSeo] = useState<{ canonicalDomain: string; defaultTitle: string; defaultDesc: string } | null>(null);
+  useEffect(() => {
+    let active = true;
+    fetch('/api/seo-config').then(response => response.ok ? response.json() : null).then(data => { if (active && data?.success) setGlobalSeo(data.settings); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const origin = window.location.origin;
+    const origin = globalSeo?.canonicalDomain || window.location.origin;
+    const isHome = window.location.pathname === '/';
+    const effectiveTitle = isHome && globalSeo ? globalSeo.defaultTitle : title;
+    const effectiveDescription = isHome && globalSeo ? globalSeo.defaultDesc : description;
 
     // 1. Resolve full clean branded title (avoid duplicating brand name)
     const formattedTitle =
-      title.includes('Maths at Your Fingertips') || title.includes('MAYF')
-        ? title
-        : `${title} | Maths at Your Fingertips`;
+      effectiveTitle.includes('Maths at Your Fingertips') || effectiveTitle.includes('MAYF')
+        ? effectiveTitle
+        : `${effectiveTitle} | Maths at Your Fingertips`;
     document.title = formattedTitle;
 
     // 2. Canonical URL Resolution (Strict normalization, strip ephemeral query params)
@@ -58,10 +67,10 @@ export const SeoHead: React.FC<SeoMetadataProps> = ({
     };
 
     // 3. Meta Description
-    setMetaTag('name', 'description', description);
+    setMetaTag('name', 'description', effectiveDescription);
 
     // 4. Robots Directives (Strict indexing control)
-    if (noindex) {
+    if (noindex || window.location.hostname.endsWith('.workers.dev')) {
       setMetaTag('name', 'robots', 'noindex, nofollow');
       setMetaTag('name', 'googlebot', 'noindex, nofollow');
     } else {
@@ -80,7 +89,7 @@ export const SeoHead: React.FC<SeoMetadataProps> = ({
 
     // 6. OpenGraph Metadata
     setMetaTag('property', 'og:title', formattedTitle);
-    setMetaTag('property', 'og:description', description);
+    setMetaTag('property', 'og:description', effectiveDescription);
     setMetaTag('property', 'og:url', fullCanonical);
     setMetaTag('property', 'og:type', ogType);
     setMetaTag('property', 'og:image', ogImage);
@@ -90,7 +99,7 @@ export const SeoHead: React.FC<SeoMetadataProps> = ({
     // 7. Twitter / X Cards
     setMetaTag('name', 'twitter:card', 'summary_large_image');
     setMetaTag('name', 'twitter:title', formattedTitle);
-    setMetaTag('name', 'twitter:description', description);
+    setMetaTag('name', 'twitter:description', effectiveDescription);
     setMetaTag('name', 'twitter:image', ogImage);
     setMetaTag('name', 'twitter:site', '@MAYF_Math');
 
@@ -145,7 +154,7 @@ export const SeoHead: React.FC<SeoMetadataProps> = ({
       const ms = document.getElementById(mainScriptId);
       if (ms) ms.remove();
     };
-  }, [title, description, canonicalUrl, ogType, ogImage, noindex, breadcrumbs, structuredData]);
+  }, [globalSeo, title, description, canonicalUrl, ogType, ogImage, noindex, breadcrumbs, structuredData]);
 
   return null;
 };

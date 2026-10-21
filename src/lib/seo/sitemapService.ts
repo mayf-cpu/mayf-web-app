@@ -13,7 +13,6 @@ import { contentCmsManager } from '../cms/contentManager';
 import { categoryManager } from '../categories/categoryManager';
 import { FORMULA_DECK_ITEMS } from '../../data/formulaDeckData';
 import { STUDENT_COURSES } from '../../data/coursesData';
-import { INITIAL_CHAPTERS } from '../../data/curriculumData';
 
 export interface SitemapUrlEntry {
   loc: string;
@@ -80,14 +79,6 @@ class SitemapService {
       console.warn('[SitemapService] CMS content lookup note:', e);
     }
 
-    // From Initial Chapters Data (fallback / seed catalog)
-    INITIAL_CHAPTERS.forEach((chapter) => {
-      if (chapter.slug && !seenStudySlugs.has(chapter.slug)) {
-        seenStudySlugs.add(chapter.slug);
-        addEntry(`/study/${encodeURIComponent(chapter.slug)}`, 'weekly', 0.8);
-      }
-    });
-
     // 3. Public Formula Pages (Deduplicated by slug)
     const seenFormulaSlugs = new Set<string>();
     FORMULA_DECK_ITEMS.forEach((formula) => {
@@ -128,7 +119,7 @@ class SitemapService {
       xmlLines.push('  <url>');
       xmlLines.push(`    <loc>${this.escapeXml(entry.loc)}</loc>`);
       if (entry.lastmod) {
-        xmlLines.push(`    <lastmod>${entry.lastmod}</lastmod>`);
+        xmlLines.push(`    <lastmod>${this.escapeXml(entry.lastmod)}</lastmod>`);
       }
       if (entry.changefreq) {
         xmlLines.push(`    <changefreq>${entry.changefreq}</changefreq>`);

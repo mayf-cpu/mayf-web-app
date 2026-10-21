@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { FormulaItem } from '../../lib/firebase/types';
 
 interface FormulaSeoProps {
@@ -6,6 +6,12 @@ interface FormulaSeoProps {
 }
 
 export const FormulaSeo: React.FC<FormulaSeoProps> = ({ formula }) => {
+  const [canonicalDomain, setCanonicalDomain] = useState('');
+  useEffect(() => {
+    let active = true;
+    fetch('/api/seo-config').then(response => response.ok ? response.json() : null).then(data => { if (active && data?.success) setCanonicalDomain(data.settings.canonicalDomain); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -13,7 +19,8 @@ export const FormulaSeo: React.FC<FormulaSeoProps> = ({ formula }) => {
     const seoTitle = formula.seo?.title || baseTitle;
     const baseDescription = `Master ${formula.title} (${formula.plainTextFormula}). Detailed variable meanings, geometric diagrams, solved NCERT exemplars for ${formula.applicableClasses.join(', ')}.`;
     const seoDesc = formula.seo?.description || baseDescription;
-    const currentUrl = window.location.origin + window.location.pathname;
+    const origin = canonicalDomain || window.location.origin;
+    const currentUrl = origin + window.location.pathname;
 
     // Update document title
     document.title = seoTitle;
@@ -30,6 +37,7 @@ export const FormulaSeo: React.FC<FormulaSeoProps> = ({ formula }) => {
     };
 
     setMetaTag('name', 'description', seoDesc);
+    setMetaTag('name', 'robots', window.location.hostname.endsWith('.workers.dev') ? 'noindex, nofollow' : 'index, follow');
     setMetaTag('property', 'og:title', seoTitle);
     setMetaTag('property', 'og:description', seoDesc);
     setMetaTag('property', 'og:type', 'article');
@@ -139,7 +147,7 @@ export const FormulaSeo: React.FC<FormulaSeoProps> = ({ formula }) => {
         existingBc.remove();
       }
     };
-  }, [formula]);
+  }, [formula, canonicalDomain]);
 
   return null;
 };
