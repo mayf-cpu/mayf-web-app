@@ -30,6 +30,9 @@ export interface StoredOrder {
   grossAmount: number;
   discount: number;
   coupon?: string;
+  /** Identifies a durable, expiring pre-gateway reservation when a coupon is used. */
+  couponReservationId?: string;
+  couponReservationExpiresAt?: string;
   tax?: number; // GST or applicable regional sales tax
   currency: 'INR' | 'USD' | string;
   provider: PaymentProvider;
