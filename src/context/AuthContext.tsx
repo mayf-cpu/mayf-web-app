@@ -203,7 +203,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               updatedAt: now,
             };
 
-            await setDoc(userDocRef, newProfile);
+            await setDoc(userDocRef, JSON.parse(JSON.stringify(newProfile)));
             setUser(newProfile);
             if (typeof window !== 'undefined') {
               localStorage.setItem('mayf_user_profile', JSON.stringify(newProfile));
