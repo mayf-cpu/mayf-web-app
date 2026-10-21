@@ -23,6 +23,8 @@
   },
   "vars": {
     "APP_ENV": "staging",
-    "MAYF_ENABLE_CHECKOUT": "false"
+    "MAYF_ENABLE_CHECKOUT": "false",
+    "MAYF_ENABLE_COUPON_CHECKOUT": "false",
+    "MAYF_ENABLE_PAYMENT_SIMULATION": "false"
   }
 }
