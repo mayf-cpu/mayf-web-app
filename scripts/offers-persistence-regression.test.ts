@@ -33,3 +33,15 @@ test('production coupon seeds are disabled and offer writes share an audit commi
   assert.match(server,/\['\/api\/payments\/create-order'\], \(\) => catalogueRepository\.run/);
   assert.match(server,/if \(!getAdminFirestore\(\)\) return res\.status\(503\)/);
 });
+
+test('offers admin UI never uses fabricated credentials', () => {
+  const section = read('src/components/admin/sections/AdminCouponsSection.tsx');
+  assert.doesNotMatch(section, /dev-admin-token/);
+  const helper = read('src/lib/firebase/adminRequestHeaders.ts');
+  assert.match(helper, /auth\.authStateReady\(\)/);
+  assert.match(helper, /currentUser\.getIdToken\(\)|user\.getIdToken\(\)/);
+  for (const component of ['CouponsManagementTab', 'PromotionsManagementTab']) {
+    const source = read('src/components/admin/' + component + '.tsx');
+    assert.match(source, /await getAdminRequestHeaders\(\)/);
+  }
+});
