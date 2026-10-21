@@ -17,6 +17,8 @@ import { IngestionLock } from './ingestionLock';
 import { ContentItem, StudentClass, ContentType } from '../firebase/types';
 import { getAdminFirestore } from '../firebase/admin';
 import { importPublicationPolicy } from './importPublicationPolicy';
+import { verifyWebhookSecret } from './webhookAuth';
+export { verifyWebhookSecret } from './webhookAuth';
 
 // Initial fixture state for local development; Firestore is authoritative for live jobs.
 export let INGESTION_JOBS_STORE: IngestionJobRecord[] = [
@@ -237,17 +239,6 @@ export let INGESTION_JOBS_STORE: IngestionJobRecord[] = [
     updatedAt: '2026-04-16T12:00:00Z',
   },
 ];
-
-/**
- * Validates the Webhook Secret from Google Apps Script.
- */
-export function verifyWebhookSecret(authHeader: string | undefined): boolean {
-  const configuredSecret = process.env.INGESTION_WEBHOOK_SECRET || 'mayf_ingest_secret_change_in_production_2026';
-  if (!authHeader) return false;
-  
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-  return token === configuredSecret;
-}
 
 /**
  * Ingests a single Content Registry row from Google Sheet.

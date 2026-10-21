@@ -27,10 +27,12 @@ import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { IngestionJobRecord, ImportJobStatus, ContentRegistryRow } from '../lib/ingestion/types';
 import { SeoHead } from '../components/common/SeoHead';
+import { adminService } from '../services/adminService';
 
 export const AdminImportSyncPage: React.FC = () => {
   const [jobs, setJobs] = useState<IngestionJobRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ImportJobStatus | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
@@ -45,12 +47,13 @@ export const AdminImportSyncPage: React.FC = () => {
 
   const fetchJobs = async () => {
     try {
-      const res = await fetch('/api/admin/ingest/jobs');
+      const res = await fetch('/api/admin/ingest/jobs', { headers: await adminService.getAuthHeaders() });
       const data = await res.json();
-      if (data.jobs) {
-        setJobs(data.jobs);
-      }
+      if (!res.ok || !Array.isArray(data.jobs)) throw new Error(data.error || 'Unable to load ingestion jobs');
+      setJobs(data.jobs);
+      setLoadError(null);
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Unable to load ingestion jobs');
       console.error('Failed to fetch ingestion jobs:', err);
     } finally {
       setLoading(false);
@@ -70,14 +73,13 @@ export const AdminImportSyncPage: React.FC = () => {
   const handleSyncNow = async () => {
     setIsSyncing(true);
     try {
-      const res = await fetch('/api/admin/ingest/sync', { method: 'POST' });
+      const res = await fetch('/api/admin/ingest/sync', { method: 'POST', headers: await adminService.getAuthHeaders() });
       const data = await res.json();
-      if (data.success) {
-        showNotification(data.message || 'Synchronized with Content Registry successfully!');
-        await fetchJobs();
-      }
+      if (!res.ok || !data.success) throw new Error(data.error || 'Registry sync failed');
+      showNotification(data.message || 'Synchronized with Content Registry successfully!');
+      await fetchJobs();
     } catch (err) {
-      showNotification('Sync failed. Please check server logs.');
+      showNotification(err instanceof Error ? 'Sync failed: ' + err.message : 'Sync failed. Please check server logs.');
     } finally {
       setIsSyncing(false);
     }
@@ -89,11 +91,11 @@ export const AdminImportSyncPage: React.FC = () => {
     try {
       const res = await fetch('/api/admin/ingest/retry', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await adminService.getAuthHeaders(),
         body: JSON.stringify({ jobId }),
       });
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         showNotification(`Job successfully retried. New status: ${data.job?.status}`);
         await fetchJobs();
         if (selectedErrorJob && selectedErrorJob.id === jobId) {
@@ -114,11 +116,12 @@ export const AdminImportSyncPage: React.FC = () => {
     try {
       const res = await fetch('/api/admin/ingest/simulate-approval', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await adminService.getAuthHeaders(),
         body: JSON.stringify({ content_id: contentId }),
       });
       const data = await res.json();
-      showNotification(data.message);
+      if (!res.ok || !data.success) throw new Error(data.error || data.message || 'Import failed');
+      showNotification(data.message || 'Import requested');
       await fetchJobs();
     } catch (err: any) {
       showNotification(`Failed: ${err.message}`);
@@ -145,13 +148,14 @@ export const AdminImportSyncPage: React.FC = () => {
     failed: jobs.filter((j) => j.status === 'failed').length,
   };
 
-  const copyAppsScriptCode = () => {
+  const copyAppsScriptCode = async () => {
     const code = `/**
  * MAYF Google Apps Script Webhook Snippet
  * Paste into Extensions > Apps Script in your Content Registry Sheet.
  */
-function onEdit(e) {
-  if (!e || !e.range) return;
+// Use an installable onEdit trigger: simple triggers cannot call UrlFetchApp.
+function onEditTrigger(e) {
+  if (!e || !e.range || e.range.getRow() < 2) return;
   const sheet = e.range.getSheet();
   if (sheet.getName() !== 'Content Registry') return;
   if (e.range.getColumn() === 22 && e.value === 'Approved') { // Column V
@@ -170,17 +174,36 @@ function onEdit(e) {
       status: 'Approved',
       visibility: rowValues[22] || 'Visible'
     }];
-    UrlFetchApp.fetch('https://mayf.co.in/api/ingestion/webhook', {
+    const properties = PropertiesService.getScriptProperties();
+    const url = properties.getProperty('MAYF_WEBHOOK_URL');
+    const secret = properties.getProperty('MAYF_INGESTION_WEBHOOK_SECRET');
+    if (!url || !url.startsWith('https://') || !url.endsWith('/api/ingestion/webhook') ||
+        !secret || secret.length < 32 || secret.includes('change_in_production')) {
+      throw new Error('Configure a staging/production HTTPS webhook URL and a unique 32+ character secret in Script Properties');
+    }
+    const response = UrlFetchApp.fetch(url, {
       method: 'post',
       contentType: 'application/json',
-      headers: { Authorization: 'Bearer mayf_ingest_secret_change_in_production_2026' },
-      payload: JSON.stringify({ action: 'import_approved', items: payload })
+      headers: { Authorization: 'Bearer ' + secret },
+      payload: JSON.stringify({ action: 'import_approved', items: payload }),
+      muteHttpExceptions: true
     });
+    if (response.getResponseCode() !== 200) throw new Error('Import webhook HTTP ' + response.getResponseCode());
   }
+}
+function setupInstallableTrigger() {
+  ScriptApp.getProjectTriggers()
+    .filter(trigger => trigger.getHandlerFunction() === 'onEditTrigger')
+    .forEach(trigger => ScriptApp.deleteTrigger(trigger));
+  ScriptApp.newTrigger('onEditTrigger').forSpreadsheet(SpreadsheetApp.getActive()).onEdit().create();
 }`;
-    navigator.clipboard.writeText(code);
-    setCopiedCode(true);
-    setTimeout(() => setCopiedCode(false), 2000);
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2000);
+    } catch {
+      showNotification('Clipboard access failed. Copy the script using your browser.');
+    }
   };
 
   return (
@@ -193,6 +216,7 @@ function onEdit(e) {
 
       <div className="space-y-6 max-w-7xl mx-auto">
         
+        {loadError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">Unable to load import jobs: {loadError} <button className="underline" onClick={() => void fetchJobs()}>Retry</button></div>}
         {/* Toast Feedback */}
         {feedbackNotice && (
           <div className="fixed top-5 right-5 z-50 bg-[#0F172A] text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-3 border border-[#334155] animate-in fade-in slide-in-from-top-2 text-xs font-medium">
@@ -275,8 +299,8 @@ function onEdit(e) {
               <HardDrive className="w-4 h-4" />
             </div>
             <div>
-              <span className="font-heading font-bold text-[#0F172A] block">Production Storage Isolation Guaranteed</span>
-              <span>Paid study files are downloaded from Google Drive and served exclusively from Google Cloud Storage via verified Firebase session claims.</span>
+              <span className="font-heading font-bold text-[#0F172A] block">Private Storage: Check Configuration</span>
+              <span>PDF files are imported from Google Drive into private R2 storage; real import and access controls must be verified in the active environment.</span>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0 font-mono text-[11px] bg-white px-2.5 py-1 rounded border border-[#CBD5E1]">
@@ -664,16 +688,14 @@ function onEdit(e) {
                   <h4 className="font-heading font-bold text-sm text-[#0F172A] mb-1">
                     Step 2: Copy the Automated Trigger Script
                   </h4>
-                  <p className="mb-2">This script automatically catches the <strong>Approved</strong> edit state and posts metadata to the server.</p>
+                  <p className="mb-2">Use a unique webhook secret stored in Apps Script Project Settings (never in code). Configure the matching server secret, then use the installable trigger to post approved rows.</p>
                   <div className="relative">
                     <pre className="bg-[#0F172A] text-[#E2E8F0] p-4 rounded-xl font-mono text-[11px] overflow-x-auto max-h-44">
-                      {`// Full implementation available at /google-apps-script/Code.gs
-const CONFIG = {
-  WEBHOOK_URL: 'https://mayf.co.in/api/ingestion/webhook',
-  WEBHOOK_SECRET: 'mayf_ingest_secret_change_in_production_2026',
-  SHEET_NAME: 'Content Registry',
-  STATUS_COLUMN_INDEX: 22,
-};`}
+                      {`// Apps Script > Project Settings > Script Properties
+// MAYF_WEBHOOK_URL = https://YOUR-HOST/api/ingestion/webhook
+// MAYF_INGESTION_WEBHOOK_SECRET = unique random secret (32+ chars)
+// Server environment secret: INGESTION_WEBHOOK_SECRET
+// Copy Trigger Snippet uses an installable edit trigger.`}
                     </pre>
                     <button
                       onClick={copyAppsScriptCode}
