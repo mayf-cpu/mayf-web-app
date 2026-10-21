@@ -77,7 +77,7 @@ export class DurablePaymentRepository {
   async getOpenReconciliationCases(): Promise<Record<string, any>[]> {
     const cases = await this.store.list(PAYMENT_RECONCILIATION_COLLECTION);
     return cases.filter(item => item.data.status === 'open')
-      .map(item => ({ id: item.id, ...item.data }))
+      .map(item => ({ id: item.id, ...item.data } as Record<string, any>))
       .sort((a, b) => String(b.firstObservedAt).localeCompare(String(a.firstObservedAt)))
       .slice(0, 100);
   }
