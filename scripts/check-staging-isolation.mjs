@@ -12,4 +12,6 @@ assert.equal(staging.r2_buckets[0].binding,'MAYF_PDF_BUCKET');
 assert.equal(staging.r2_buckets[0].bucket_name,'mayf-staging-materials');
 assert.notEqual(staging.r2_buckets[0].bucket_name,production.r2_buckets?.[0]?.bucket_name);
 assert.equal(staging.routes,undefined,'Staging must not attach production routes');
-assert.equal(staging.routes,undefined);
+assert.equal(staging.vars?.APP_ENV,'staging');
+assert.equal(staging.vars?.MAYF_ENABLE_CHECKOUT,'false');
+assert.equal(staging.triggers,undefined,'Staging must not run scheduled triggers');

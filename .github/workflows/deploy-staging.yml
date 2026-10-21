@@ -24,6 +24,8 @@ jobs:
       - run: npm run build
       - name: Verify isolated staging config
         run: node scripts/check-staging-isolation.mjs
+      - name: Compile isolated staging Worker without deployment
+        run: npx wrangler deploy --config wrangler.staging.jsonc --dry-run --outdir .worker-staging-test
       - name: Deploy ONLY isolated staging Worker
         run: npx wrangler deploy --config wrangler.staging.jsonc
         env:
