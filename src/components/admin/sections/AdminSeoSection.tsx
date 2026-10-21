@@ -86,30 +86,30 @@ export const AdminSeoSection: React.FC = () => {
           </h3>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700">Canonical Domain:</label>
+            <label htmlFor="seo-canonicalDomain" className="text-xs font-semibold text-slate-700">Canonical Domain:</label>
             <input
               type="text"
-              value={canonicalDomain}
+              id="seo-canonicalDomain" value={canonicalDomain}
               onChange={(e) => setCanonicalDomain(e.target.value)}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-900 focus:bg-white"
             />
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700">Default Page Title:</label>
+            <label htmlFor="seo-defaultTitle" className="text-xs font-semibold text-slate-700">Default Page Title:</label>
             <input
               type="text"
-              value={defaultTitle}
+              id="seo-defaultTitle" value={defaultTitle}
               onChange={(e) => setDefaultTitle(e.target.value)}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:bg-white"
             />
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700">Default Meta Description:</label>
+            <label htmlFor="seo-defaultDesc" className="text-xs font-semibold text-slate-700">Default Meta Description:</label>
             <textarea
               rows={3}
-              value={defaultDesc}
+              id="seo-defaultDesc" value={defaultDesc}
               onChange={(e) => setDefaultDesc(e.target.value)}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:bg-white"
             />

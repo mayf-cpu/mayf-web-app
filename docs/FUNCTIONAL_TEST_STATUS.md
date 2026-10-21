@@ -90,7 +90,7 @@ This is an evidence log, not certification that the entire application works. Ea
 | AI Teacher | Genuine responses, stored owner-only history, ratings, durable quotas and enforced App Check verification are implemented. Configure Gemini runtime secret/model and verify actual answers, provider errors and access limits. |
 | Turnstile / App Check | Configure intended protections and test real verification and rejection paths. |
 | Drive import | Real API transfer, durable CMS/job persistence, source configuration and repeat-import fixture checks are implemented. Configure an authorized curriculum registry, required API access and service-account sharing, then verify real source files and write-back. Folder traversal, full multi-image grouping and automatic schedule wiring remain open. |
-| Analytics, activity and audit | Remove demonstration telemetry and memory-only reporting; persist real events and accurate aggregates. |
+| Analytics, activity and audit | Analytics now uses durable daily event counters and verified paid orders, without demonstration figures. Concurrency, restarts, IST periods and client purchase spoofing have fixture coverage. Live dashboard acceptance, user activity and audit durability still need completion. |
 | Configuration | Exercise field edits, reload/public read-back, failures and concurrent saves for layout, ads, broadcasts, SEO and other settings. Branding save and configuration reads alone are insufficient. |
 | User administration | Live directory and guarded mutation workflows require further testing. Do not permanently delete real users for QA. |
 | Frontend coverage | Finish all course/media formats, bookmark/copy/share flows, account recovery/logout, mobile/accessibility, navigation, legal content, SEO and support links. |
@@ -106,3 +106,11 @@ Runtime secrets and build variables are separate, and production and preview sec
 - Gemini, Turnstile, payment test-provider/webhook and Drive values must be configured as applicable. Use test resources for integration verification.
 
 Keep this PR in draft until the open durability and demonstration-path findings are corrected and the configured preview passes the remaining acceptance checks.
+
+## Durable analytics continuation
+
+- Replaced the fabricated baseline and filesystem-only analytics with daily Firestore counters and conditional retry writes. Today/7d/30d/all use IST calendar dates. Public purchase, AI and download events cannot fabricate money or authoritative usage. Server file delivery records files served; AI figures use saved successful sessions.
+- Dashboard financials come from paid orders after discount plus tax, exclude refunded/pending orders, and keep currencies separate. Current pass counts use real unexpired entitlements. Overview metrics and social sharing now read the same saved source.
+- Removed invented unique-user/session/renewal figures and false O(1)/zero-scan claims. Unmeasured fields export as null, UI explains measurement scope, failed reads show errors, and JSON export remains available. Reset no longer recreates fictional data or deletes history. Public activity is rate-limited and daily content dictionaries are bounded. Full dashboard queries currently enumerate stored rollups/orders/passes/AI sessions; indexed or precomputed financial rollups will be needed as volume grows.
+- Three new tests verify zero initial data, rejected client financial events, concurrent writes, restart recovery, IST midnight selection and ledger currency/status handling. 85 tests, TypeScript and the production build pass. The Worker dry-run check remains unverified following the earlier automatic approval rejection.
+- Authenticated live SEO edit/save/full-reload read-back passed on the preview. The temporary QA title was restored to the original title. SEO form fields now have accessible labels.

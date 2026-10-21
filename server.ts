@@ -714,6 +714,7 @@ app.get('/api/downloads/file/:token', asyncRoute(async (req: Request, res: Respo
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     logDownloadAudit({ contentId: resource.id, uid: ticket.uid, accessType: ticket.accessType, status: 'successful', action: 'file_served', req });
+    await aggregateMetricsService.recordEvent('content_download', { content_id: resource.id }, true).catch(() => {});
     return res.send(bytes);
   } catch (error: any) {
     return res.status(503).json({ error: error.message || 'File delivery is temporarily unavailable.' });
@@ -1488,11 +1489,13 @@ async function refreshAdminUsers(_req: Request, _res: Response, next: NextFuncti
 app.get('/api/admin/metrics', requireAuth, requireAdmin, refreshAdminUsers, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const activeCoupons = await couponRepository.run(() => couponService.getAllCoupons().filter(coupon => coupon.enabled).length);
   const users = adminUserManager.searchStudents({ includeDisabled: true });
+  let analytics: Awaited<ReturnType<typeof aggregateMetricsService.getDashboardMetrics>> | null = null;
+  try { analytics = await aggregateMetricsService.getDashboardMetrics('all'); } catch { /* Partial configuration remains visible below. */ }
   return res.json({
     totalStudents: users.filter(user => user.role === 'student').length,
-    activeAnnualPasses: users.filter(user => user.hasAnnualPass).length,
-    totalRevenue: null,
-    aiDoubtsSolved: null,
+    activeAnnualPasses: analytics?.summary.annualPassSubscriptions.activePasses ?? null,
+    totalRevenue: analytics?.summary.revenue.totalRevenue ?? null,
+    aiDoubtsSolved: analytics?.summary.aiUsage.totalQuestions ?? null,
     aiTeacherConfigured: Boolean(geminiApiKey),
     firebaseConfigured: getFirebaseAdminConfig().isReady, totalFormulas: FORMULA_DECK_ITEMS.length, totalChapters: contentCmsManager.exportState().length,
     activeCoupons,
@@ -2894,45 +2897,31 @@ app.delete('/api/admin/broadcasts/:id', requireAuth, requireAdmin, asyncRoute(as
 /**
  * 57. Analytics Event Ingestion (Public, O(1) Atomic Counter Aggregation, Zero Student PII)
  */
-app.post('/api/analytics/track', (req: Request, res: Response) => {
+app.post('/api/analytics/track', asyncRoute(async (req: Request, res: Response) => {
+  const ip = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || 'unknown');
+  if (checkDownloadRateLimit(`analytics-${ip}`, 120, 60000)) return res.status(429).json({ success: false, error: 'Too many analytics events.' });
+  const { eventType, params } = req.body || {};
+  if (typeof eventType !== 'string' || params && (typeof params !== 'object' || Array.isArray(params))) return res.status(400).json({ success: false, error: 'Invalid analytics event.' });
   try {
-    const { eventType, params } = req.body || {};
-    if (!eventType || typeof eventType !== 'string') {
-      return res.status(400).json({ success: false, error: 'eventType is required' });
-    }
-    aggregateMetricsService.recordEvent(eventType as any, params || {});
-    return res.status(200).json({ success: true });
-  } catch (err: any) {
-    return res.status(200).json({ success: false, note: 'non-blocking tracking' });
+    const recorded = await aggregateMetricsService.recordEvent(eventType as any, params || {});
+    return res.json({ success: true, recorded });
+  } catch {
+    return res.status(503).json({ success: false, error: 'Analytics storage is unavailable.' });
   }
-});
+}));
 
-/**
- * 58. Admin Analytics Dashboard Metrics (Pre-Aggregated O(1) Query, Zero Event Log Scanning)
- */
-app.get('/api/admin/analytics/dashboard', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/admin/analytics/dashboard', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
   try {
-    const timeframe = (req.query.timeframe as any) || '30d';
-    const data = aggregateMetricsService.getDashboardMetrics(timeframe);
-    return res.json({
-      success: true,
-      data,
-    });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err?.message || 'Failed to fetch analytics' });
+    const data = await aggregateMetricsService.getDashboardMetrics((req.query.timeframe as any) || '30d');
+    return res.json({ success: true, data });
+  } catch {
+    return res.status(503).json({ success: false, error: 'Analytics could not be loaded. Please retry.' });
   }
-});
+}));
 
-/**
- * 59. Admin Analytics Reset Baseline
- */
-app.post('/api/admin/analytics/reset', requireAuth, requireAdmin, (_req: AuthenticatedRequest, res: Response) => {
-  try {
-    const data = aggregateMetricsService.resetToBaseline();
-    return res.json({ success: true, message: 'Analytics reset to baseline successfully', data });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err?.message || 'Failed to reset analytics' });
-  }
+app.post('/api/admin/analytics/reset', requireAuth, requireAdmin, (_req, res) => {
+  return res.status(501).json({ success: false, error: 'Historical analytics are retained. Reset is unavailable.' });
 });
 
 app.get('/api/admin/ai-activity', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {

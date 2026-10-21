@@ -45,7 +45,7 @@ export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({ on
   const handleRefresh = async () => {
     setRefreshing(true);
     await loadData();
-    setTimeout(() => setRefreshing(false), 500);
+    setRefreshing(false);
   };
 
   return (
@@ -122,10 +122,10 @@ export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({ on
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-heading font-extrabold text-slate-900">
-              {metrics ? metrics.activeAnnualPasses.toLocaleString() : '...'}
+              {metrics?.activeAnnualPasses == null ? 'Unavailable' : metrics.activeAnnualPasses.toLocaleString()}
             </span>
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">Single Child & Family Passes</p>
+          <p className="text-[11px] text-slate-500 mt-1">Current unexpired memberships</p>
         </div>
 
         {/* Card 3: AI Doubt Queries */}
@@ -150,7 +150,7 @@ export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({ on
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <span className="text-xs font-heading font-bold text-slate-500 uppercase tracking-wider">
-              Gross Revenue
+              Paid INR Revenue
             </span>
             <div className="p-2 rounded-lg bg-amber-50 text-amber-600">
               <TrendingUp className="w-4 h-4" />
@@ -164,7 +164,7 @@ export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({ on
               Razorpay & Stripe
             </span>
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">Payment reporting requires a connected ledger</p>
+          <p className="text-[11px] text-slate-500 mt-1">Verified paid orders, after discounts plus tax</p>
         </div>
       </div>
 

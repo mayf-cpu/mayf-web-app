@@ -14,7 +14,7 @@ import { DashboardAnalyticsData } from '../lib/analytics/analyticsTypes';
 
 export interface AdminMetrics {
   totalStudents: number;
-  activeAnnualPasses: number;
+  activeAnnualPasses: number | null;
   totalRevenue: number | null;
   aiDoubtsSolved: number | null;
   aiTeacherConfigured?: boolean;
