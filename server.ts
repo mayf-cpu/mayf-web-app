@@ -1081,9 +1081,37 @@ app.post('/api/payments/verify-and-grant', requireAuth, handleVerifyPayment);
  * durably; we must never silently grant access using volatile Worker memory.
  */
 async function handleDurablePaymentWebhook(provider: PaymentProvider, req: Request, res: Response) {
+  let verifiedReceipt: Awaited<ReturnType<typeof paymentService.verifyWebhookReceipt>> | undefined;
+  const recordReview = async (reasonCode: 'SETTLEMENT_FAILED' | 'REFUND_FAILED' | 'ORDER_NOT_FOUND') => {
+    if (!verifiedReceipt?.isValid || !verifiedReceipt.eventId) return;
+    const db = getAdminFirestore();
+    if (!db) return;
+    try {
+      await new DurablePaymentRepository(db).recordVerifiedWebhookReconciliation({
+        provider, eventId: verifiedReceipt.eventId,
+        providerOrderId: verifiedReceipt.providerOrderId,
+        providerPaymentId: verifiedReceipt.providerPaymentId,
+        reasonCode, observedAt: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      console.error('[MAYF Payments] Could not persist reconciliation review:', error?.message || 'unknown');
+    }
+  };
+  const closeReview = async () => {
+    if (!verifiedReceipt?.isValid || !verifiedReceipt.eventId) return;
+    const db = getAdminFirestore();
+    if (!db) return;
+    try {
+      await new DurablePaymentRepository(db).resolveVerifiedWebhookReconciliation(
+        provider, verifiedReceipt.eventId, new Date().toISOString());
+    } catch (error: any) {
+      console.error('[MAYF Payments] Could not close reconciled webhook review:', error?.message || 'unknown');
+    }
+  };
   try {
     const rawBody = (req as any).rawBody || JSON.stringify(req.body);
     const verified = await paymentService.verifyWebhookReceipt(provider, req.headers, rawBody);
+    verifiedReceipt = verified;
     if (!verified.isValid) {
       return res.status(400).json({ status: 'invalid_signature', error: verified.error || 'Invalid gateway signature' });
     }
@@ -1094,8 +1122,10 @@ async function handleDurablePaymentWebhook(provider: PaymentProvider, req: Reque
         new DurablePaymentRepository(db), verified, rawBody,
       );
       if (result === 'unknown_order') {
+        await recordReview('ORDER_NOT_FOUND');
         return res.status(503).json({ status: 'retry_required', error: 'Refund payment not yet reconciled' });
       }
+      await closeReview();
       return res.status(200).json({ status: 'ok', idempotency: result });
     }
     if (verified.status !== 'paid') {
@@ -1109,16 +1139,27 @@ async function handleDurablePaymentWebhook(provider: PaymentProvider, req: Reque
       new DurablePaymentRepository(db), verified, entitlementService.getSettings().durationDays,
     );
     if (result === 'unknown_order') {
+      await recordReview('ORDER_NOT_FOUND');
       return res.status(503).json({ status: 'retry_required', error: 'Payment order not yet persisted' });
     }
+    await closeReview();
     return res.status(200).json({
       status: 'ok', idempotency: result === 'duplicate' ? 'duplicate_ignored' : 'processed',
     });
   } catch (error: any) {
     console.error('[MAYF Payments] Durable webhook processing error:', error?.message || 'unknown');
+    await recordReview(verifiedReceipt?.eventType === 'refund.processed' ? 'REFUND_FAILED' : 'SETTLEMENT_FAILED');
     return res.status(503).json({ status: 'retry_required', error: 'Payment reconciliation required' });
   }
 }
+
+app.get('/api/admin/payments/reconciliation', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  const db = getAdminFirestore();
+  if (!db) return res.status(503).json({ success: false, error: 'Payment review storage unavailable.' });
+  const cases = await new DurablePaymentRepository(db).getOpenReconciliationCases();
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({ success: true, cases });
+}));
 
 app.post('/api/payments/webhook/razorpay', asyncRoute(async (req: Request, res: Response) =>
   handleDurablePaymentWebhook('razorpay', req, res)));
