@@ -35,11 +35,19 @@ export function getFirebaseAdminConfig(): FirebaseAdminConfig {
 
   const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY || account.private_key;
 
+  // Staging can never fall back to, or impersonate, the production project.
+  // Require the real service-account JSON project to agree with any override:
+  // a declared staging project ID alone does not isolate its credentials.
+  const safeStagingCredentials = process.env.APP_ENV !== 'staging' ||
+    (Boolean(account.project_id && account.project_id !== 'maths-at-your-fingertips') &&
+      account.project_id === projectId &&
+      !clientEmail.endsWith('@maths-at-your-fingertips.iam.gserviceaccount.com'));
+
   return {
     projectId,
     clientEmail,
     hasPrivateKey: Boolean(privateKey && privateKey.length > 20),
-    isReady: Boolean(privateKey && privateKey.length > 20 && projectId && clientEmail),
+    isReady: Boolean(privateKey && privateKey.length > 20 && projectId && clientEmail && safeStagingCredentials),
   };
 }
 
@@ -78,6 +86,7 @@ function formatPrivateKey(rawKey?: string): string | undefined {
  * Initializes and retrieves the singleton Firebase Admin App instance.
  */
 export function getFirebaseAdminApp(): App | null {
+  if (process.env.APP_ENV === 'staging' && !getFirebaseAdminConfig().isReady) return null;
   if (adminAppInstance) {
     return adminAppInstance;
   }

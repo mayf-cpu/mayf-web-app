@@ -39,3 +39,7 @@ Create these GitHub environment variables in `mayf-staging`, all for the **same 
 The manual staging workflow supplies the variables as `VITE_FIREBASE_*` and forces `VITE_APP_ENV=staging` for both the isolated preflight and the Vite build. It rejects placeholders, production Firebase IDs, mismatched project IDs and missing values **before generating staging assets**. The Firebase web API key and app ID are public config, not service-account private keys.
 
 This only verifies **frontend build-time** isolation. Independently verify the deployed Worker secret `FIREBASE_SERVICE_ACCOUNT_JSON` (its `project_id`), active Firestore rules, test accounts, and OAuth before staging tests. The GitHub project-ID variable cannot prove a Cloudflare Worker secret is correct.
+
+## Staging runtime Firebase fail-closed guard
+
+At runtime, when `APP_ENV=staging`, the Firebase Admin configuration will refuse the production Firebase project and require a parseable service-account JSON containing its actual isolated `project_id`. A separately set `FIREBASE_ADMIN_PROJECT_ID` must equal the account's project. Missing or production credentials prevent Admin Auth/Firestore initialization rather than silently falling back to `maths-at-your-fingertips`. This does **not** prove that the staging account matches the web client built with the GitHub variable; compare both exact IDs during live acceptance.
