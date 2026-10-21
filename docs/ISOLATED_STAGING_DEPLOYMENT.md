@@ -45,3 +45,7 @@ This only verifies **frontend build-time** isolation. Independently verify the d
 ## Staging runtime Firebase fail-closed guard
 
 At runtime, when `APP_ENV=staging`, the Firebase Admin configuration will refuse the production Firebase project and require a parseable service-account JSON containing its actual isolated `project_id`. A separately set `FIREBASE_ADMIN_PROJECT_ID` must equal the account's project. Missing or production credentials prevent Admin Auth/Firestore initialization rather than silently falling back to `maths-at-your-fingertips`. This does **not** prove that the staging account matches the web client built with the GitHub variable; compare both exact IDs during live acceptance.
+
+## Authenticated staging read-only API matrix
+
+After Cloudflare preflight passes and the isolated Worker is deployed, run `node scripts/staging-http-smoke.mjs https://staging-acceptance-mayf.YOUR-ACCOUNT.workers.dev`. Securely supply `MAYF_STAGING_ADMIN_TOKEN` to cover the 13 authenticated read-only admin endpoints (CMS, SEO, import, analytics, settings, ledger and student list) in addition to anonymous access restrictions, checkout-disabled configuration and Firestore/R2 connectivity. The script refuses production domains and does not make any POST/PUT/DELETE calls. Then execute real staging-only write tests separately using disposable accounts and content. The branch/Worker URL must be confirmed from Wrangler deployment output.

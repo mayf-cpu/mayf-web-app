@@ -32,3 +32,7 @@ This performs live GET checks that the Worker environment is actually `staging` 
 - Versioned PDF keys reduce accidental overwrite risk, but full conditional write semantics, orphan cleanup, and concurrent-service staging tests are still needed.
 - Payment initial renewal migration, refunds with multiple successive renewals, and full sandbox E2E need additional verification.
 - Firestore audit listing currently loads all audit records; pagination and retention are still outstanding.
+
+## Expanded read-only non-Stripe acceptance
+
+The staging HTTP smoke suite first verifies `/api/health` identifies the Worker as `staging`, then reads `/api/annual-pass/config` to prove checkout remains disabled. Anonymous protected CMS, analytics, SEO and gateway endpoints must return HTTP 401/403. If `MAYF_STAGING_ADMIN_TOKEN` is supplied securely, it also reads admin import configuration/jobs, SEO, content/categories, site settings, homepage layout, AdSense, measured analytics, Annual Pass pricing, masked payments, orders and students. Any non-200/failure blocks staging acceptance. **All of these are GET requests**; they do not test mutations, live browser behavior, true Firebase project parity, real Drive or Razorpay flows. Use a dedicated staging administrator identity token only.

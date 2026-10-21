@@ -38,10 +38,16 @@ if (health.status !== 200 || health.body.status !== 'ok' ||
     health.body.environment !== 'staging') {
   throw Error('Staging health endpoint failed or Worker APP_ENV is not staging');
 }
-console.log('PASS: backend health responds as MAYF JSON');
+console.log('PASS: backend health responds as MAYF JSON in isolated staging mode');
+const pass = await check('/api/annual-pass/config');
+if (pass.status !== 200 || pass.body.success !== true || pass.body.checkoutEnabled !== false) {
+  throw Error('Staging public Annual Pass configuration must have checkoutEnabled=false');
+}
+console.log('PASS: public checkout remains disabled in staging');
 for (const path of ['/api/admin/verify-access','/api/admin/storage-readiness',
- '/api/admin/ingest/jobs','/api/admin/ingest/legacy-migration-audit',
- '/api/admin/staging-connectivity']) {
+ '/api/admin/ingest/jobs','/api/admin/ingest/config','/api/admin/ingest/legacy-migration-audit',
+ '/api/admin/staging-connectivity','/api/admin/seo','/api/admin/content',
+ '/api/admin/payments/settings','/api/admin/analytics/dashboard?timeframe=30d']) {
   const response = await check(path);
   if (response.status !== 401 && response.status !== 403) {
     throw Error(path + ' must deny anonymous requests; got HTTP ' + response.status);
@@ -77,7 +83,32 @@ if (adminToken) {
     throw Error('Staging Firestore/R2 read-only connectivity check failed');
   }
   console.log('PASS: Firestore and R2 read-only API connectivity');
-  console.log('Configuration presence verified; Drive OAuth, uploads and payments remain untested.');
+  // These authenticated GET checks exercise real endpoint routing and Firestore
+  // reads without creating a student, changing a setting or initiating payment.
+  // A 200 alone does not establish UI/browser or provider behavior.
+  const readOnlyAdminEndpoints = [
+    '/api/admin/ingest/config',
+    '/api/admin/ingest/jobs',
+    '/api/admin/seo',
+    '/api/admin/content',
+    '/api/admin/categories',
+    '/api/admin/site-settings',
+    '/api/admin/layout/homepage',
+    '/api/admin/adsense/config',
+    '/api/admin/analytics/dashboard?timeframe=30d',
+    '/api/admin/annual-pass/settings',
+    '/api/admin/payments/settings',
+    '/api/admin/orders',
+    '/api/admin/students',
+  ];
+  for (const path of readOnlyAdminEndpoints) {
+    const response = await check(path, adminToken);
+    if (response.status !== 200 || response.body?.success === false) {
+      throw Error('Authenticated staging admin read failed: ' + path + ' (HTTP ' + response.status + ')');
+    }
+    console.log('PASS: authenticated read-only admin API ' + path);
+  }
+  console.log('Provider settlement, Drive OAuth/import, browser workflows and payments remain untested.');
 } else {
   console.log('SKIP: authenticated readiness (set MAYF_STAGING_ADMIN_TOKEN securely to check)');
 }
