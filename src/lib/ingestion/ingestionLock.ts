@@ -14,7 +14,7 @@ export class IngestionLock {
     const ref = this.store.collection(COLLECTION).doc(id);
     const current = await ref.get();
     const previous = current.exists ? current.data() : undefined;
-    if (current.exists && (!Number.isFinite(previous?.expiresAt) || previous.expiresAt > now)) {
+    if (current.exists && (!previous || !Number.isFinite(previous.expiresAt) || previous.expiresAt > now)) {
       throw new Error('This content is already being imported. Try again after the current import finishes.');
     }
     if (current.exists && !current.updateTime) throw new Error('Import lock revision unavailable');
