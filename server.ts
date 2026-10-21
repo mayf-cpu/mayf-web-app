@@ -3589,39 +3589,6 @@ CRITICAL PEDAGOGICAL RULES:
       totalTokens?: number;
     } = { model: getAiTeacherModel(), totalTokens: 350 };
 
-    const pedagogicalFallback = (msg: string, grade: string, subjectTopic: string, hasImg: boolean) => {
-      const displayProb = (msg || '').trim() || (hasImg ? 'The problem shown in your uploaded diagram/photograph' : 'The given mathematical problem');
-      return `Hello there! I am Professor Sigma, your Mathematics Teacher. Let's solve this problem step-by-step with complete clarity!
-
-### Understanding the Question
-We are working on **${subjectTopic}** for **${grade}**.
-We need to analyze and solve: "${displayProb.slice(0, 160)}".
-
-### Given Information
-* Class Level: **${grade}** (CBSE & ICSE standards)
-* Chapter Topic: **${subjectTopic}**
-* Known Values: All given parameters and conditions from the problem statement.
-
-### Concept Used
-Standard algebraic properties and identities:
-$$(a + b)^2 = a^2 + 2ab + b^2, \\quad a^2 - b^2 = (a-b)(a+b), \\quad \\text{LHS} = \\text{RHS}$$
-
-### Step-by-Step Solution
-1. **Identify the unknown quantity** and label variables clearly according to standard mathematical notation.
-2. **Translate problem conditions** into a systematic equation or geometric relation.
-3. **Perform algebraic transformations** step-by-step without skipping intermediate calculations.
-4. **Simplify fractions, roots, and units** into their canonical mathematical form.
-
-### Final Answer
-The step-by-step solution has been methodically derived in accordance with the **${grade}** syllabus.
-
-### Verification / Check
-Substitute the calculated answer back into the original problem statement to verify that the solution satisfies all constraints.
-
-### Alternative Method
-You can also verify this using graphical visualization, factorisation, or tabular substitution where applicable.`;
-    };
-
     const userPrompt = message?.trim()
       ? `Student (${classLevel}, ${topic}) asks: "${message}"\nPlease provide your helpful step-by-step solution:`
       : `Student (${classLevel}, ${topic}) has uploaded the attached mathematics image/photo. Please solve the problem shown:`;
@@ -3684,8 +3651,7 @@ You can also verify this using graphical visualization, factorisation, or tabula
     }
 
     if (!successfullyGenerated) {
-      replyText = pedagogicalFallback(message, classLevel, topic, Boolean(validImagePart));
-      selectedModel = 'professor-sigma-pedagogical-engine';
+      return res.status(503).json({ success: false, error: 'AI Teacher is temporarily unavailable. No answer was generated.' });
     }
 
     const doubtId = `doubt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
@@ -3702,9 +3668,11 @@ You can also verify this using graphical visualization, factorisation, or tabula
       tokenMetadata,
     };
 
-    AI_DOUBTS_HISTORY.unshift(doubtRecord);
-    if (AI_DOUBTS_HISTORY.length > 500) {
-      AI_DOUBTS_HISTORY.pop();
+    // Anonymous questions are not attributed to any student's history.
+    if (verifiedUid) {
+      const db = getAdminFirestore();
+      if (!db) throw new Error('AI history storage is unavailable.');
+      await db.collection('aiTeacherSessions').doc(doubtId).set({ ...doubtRecord, userId: verifiedUid });
     }
 
     return res.json({
@@ -3716,39 +3684,8 @@ You can also verify this using graphical visualization, factorisation, or tabula
       timestamp: doubtRecord.timestamp,
     });
   } catch (error: any) {
-    console.warn('[MAYF Server] Handled AI Teacher generation notice:', error?.message || error);
-    const fallbackText = `Hello there! I am Professor Sigma, your Mathematics Teacher.
-
-### Understanding the Question
-Let's examine the mathematical problem carefully for **${req.body?.studentClass || 'Class 10'}** on **${req.body?.chapterTopic || 'General Mathematics'}**.
-
-### Given Information
-* Class: ${req.body?.studentClass || 'Class 10'}
-* Problem: "${(req.body?.message || 'Attached mathematical problem').slice(0, 100)}"
-
-### Concept Used
-Fundamental algebraic identities and syllabus theorem rules:
-$$(a + b)^2 = a^2 + 2ab + b^2, \\quad a^2 - b^2 = (a-b)(a+b)$$
-
-### Step-by-Step Solution
-1. Identify all given coefficients and isolate the targeted variable.
-2. Apply standard simplification rules and verify units.
-3. Check the solution against board syllabus standards.
-
-### Final Answer
-The step-by-step solution has been derived for your syllabus.
-
-### Verification / Check
-Substitute the answer back into the original equation to ensure consistency.`;
-
-    return res.json({
-      success: true,
-      doubtId: `doubt-${Date.now()}-fallback`,
-      reply: fallbackText,
-      model: 'professor-sigma-pedagogical-engine',
-      quotaRemaining: 25,
-      timestamp: new Date().toISOString(),
-    });
+    console.warn('[MAYF AI Teacher] Request failed:', error?.message || error);
+    return res.status(503).json({ success: false, error: 'AI Teacher request could not be completed. Please retry.' });
   }
 }));
 
