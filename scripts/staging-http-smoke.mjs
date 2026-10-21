@@ -35,7 +35,8 @@ if (health.status !== 200 || health.body.status !== 'ok' ||
 }
 console.log('PASS: backend health responds as MAYF JSON');
 for (const path of ['/api/admin/verify-access','/api/admin/storage-readiness',
- '/api/admin/ingest/jobs','/api/admin/ingest/legacy-migration-audit']) {
+ '/api/admin/ingest/jobs','/api/admin/ingest/legacy-migration-audit',
+ '/api/admin/staging-connectivity']) {
   const response = await check(path);
   if (response.status !== 401 && response.status !== 403) {
     throw Error(path + ' must deny anonymous requests; got HTTP ' + response.status);
@@ -64,7 +65,14 @@ if (adminToken) {
     }
     console.log('PASS: staging prerequisite ' + name);
   }
-  console.log('Configuration presence verified; external connectivity remains untested.');
+  const probe = await check('/api/admin/staging-connectivity', adminToken);
+  if (probe.status !== 200 || probe.body.success !== true ||
+      probe.body.connectivity?.firestore !== 'reachable' ||
+      probe.body.connectivity?.r2 !== 'reachable') {
+    throw Error('Staging Firestore/R2 read-only connectivity check failed');
+  }
+  console.log('PASS: Firestore and R2 read-only API connectivity');
+  console.log('Configuration presence verified; Drive OAuth, uploads and payments remain untested.');
 } else {
   console.log('SKIP: authenticated readiness (set MAYF_STAGING_ADMIN_TOKEN securely to check)');
 }
