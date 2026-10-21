@@ -16,10 +16,11 @@ if (url.protocol !== 'https:' || url.username || url.password || url.search || u
   console.error('Expected an HTTPS Cloudflare preview Worker root URL (not production).');
   process.exit(2);
 }
-const check = async (path) => {
+const check = async (path, token) => {
   const response = await fetch(new URL(path,url), {
     redirect: 'manual',
-    headers: { Accept: 'application/json', 'Cache-Control': 'no-store' },
+    headers: { Accept: 'application/json', 'Cache-Control': 'no-store',
+      ...(token ? { Authorization: 'Bearer ' + token } : {}) },
     signal: AbortSignal.timeout(15000),
   });
   const type = response.headers.get('content-type') || '';
@@ -42,3 +43,28 @@ for (const path of ['/api/admin/verify-access','/api/admin/storage-readiness',
   console.log('PASS: anonymous access denied to ' + path);
 }
 console.log('Read-only staging HTTP smoke checks passed.');
+
+const adminToken = process.env.MAYF_STAGING_ADMIN_TOKEN;
+if (adminToken) {
+  const access = await check('/api/admin/verify-access', adminToken);
+  if (access.status !== 200 || access.body.authorized !== true) {
+    throw Error('Authenticated staging Admin access verification failed');
+  }
+  console.log('PASS: authenticated Admin access verified');
+  const diagnostics = await check('/api/admin/storage-readiness', adminToken);
+  if (diagnostics.status !== 200 || diagnostics.body.success !== true) {
+    throw Error('Staging storage readiness diagnostics failed');
+  }
+  const checks = diagnostics.body.readiness;
+  const required = ['firestoreConfigured','privateR2BucketBound',
+    'privateR2UploadSupported','googleServiceAccountPresent','verifiedPdfImportAvailable'];
+  for (const name of required) {
+    if (checks?.[name] !== true) {
+      throw Error('Staging prerequisite unavailable: ' + name);
+    }
+    console.log('PASS: staging prerequisite ' + name);
+  }
+  console.log('Configuration presence verified; external connectivity remains untested.');
+} else {
+  console.log('SKIP: authenticated readiness (set MAYF_STAGING_ADMIN_TOKEN securely to check)');
+}
