@@ -1851,7 +1851,7 @@ app.get('/api/admin/audit-logs', requireAuth, requireAdmin, asyncRoute(async (re
 /**
  * 15. Export Audit Logs as CSV
  */
-app.get('/api/admin/audit-logs/export', requireAuth, requireAdmin, (req: Request, res: Response) => {
+app.get('/api/admin/audit-logs/export', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   const { category } = req.query as Record<string, string>;
   const csv = await catalogueRepository.run(() => auditLogService.exportCsv(category));
   res.setHeader('Content-Type', 'text/csv');
