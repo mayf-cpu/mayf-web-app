@@ -2000,18 +2000,22 @@ app.post('/api/admin/admins/claim', requireAuth, requireAdmin, asyncRoute(async 
   const target = await auth.getUserByEmail(String(email).trim());
   await adminSetCustomUserClaims(target.uid, { role: role || 'admin', admin: true, superAdmin: role === 'superAdmin' });
   const isSuper = role === 'superAdmin';
-  auditLogService.log({
-    action: 'ADMIN_CREATED',
-    category: 'admin',
-    actorUid: req.userAuth?.uid || 'admin',
-    actorEmail: req.userAuth?.email || 'admin@mayf.co.in',
-    actorRole: 'superAdmin',
-    targetId: target.uid,
-    targetEmail: email,
-    targetType: 'administrator_role',
-    details: { email, role, admin: true, superAdmin: isSuper },
-    status: 'success',
-  });
+  // Record the external Firebase Auth role change durably before replying.
+  // A Firestore failure is reported rather than falsely claiming completion.
+  await catalogueRepository.run(() => {
+    auditLogService.log({
+      action: 'ADMIN_CREATED',
+      category: 'admin',
+      actorUid: req.userAuth?.uid || 'admin',
+      actorEmail: req.userAuth?.email || 'admin@mayf.co.in',
+      actorRole: 'superAdmin',
+      targetId: target.uid,
+      targetEmail: email,
+      targetType: 'administrator_role',
+      details: { email, role, admin: true, superAdmin: isSuper },
+      status: 'success',
+    });
+  }, true);
 
   return res.json({
     success: true,
@@ -2029,27 +2033,22 @@ app.post('/api/admin/admins/claim', requireAuth, requireAdmin, asyncRoute(async 
  * 14. Audit Logs Retrieval
  * Returns audit entries filtered by category (admin, subscription, content, refund, security, user)
  */
-app.get('/api/admin/audit-logs', requireAuth, requireAdmin, (req: Request, res: Response) => {
+app.get('/api/admin/audit-logs', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   const { category, action, actorEmail, limit } = req.query as Record<string, string>;
-  const logs = auditLogService.getLogs({
-    category,
-    action,
-    actorEmail,
-    limit: limit ? parseInt(limit, 10) : 100,
-  });
+  const logs = await catalogueRepository.run(() => auditLogService.getLogs({
+    category, action, actorEmail, limit: limit ? parseInt(limit, 10) : 100,
+  }));
   return res.json(logs);
-});
+}));
 
-/**
- * 15. Export Audit Logs as CSV
- */
-app.get('/api/admin/audit-logs/export', requireAuth, requireAdmin, (req: Request, res: Response) => {
+/** Export real durable audit entries as CSV. */
+app.get('/api/admin/audit-logs/export', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   const { category } = req.query as Record<string, string>;
-  const csv = auditLogService.exportCsv(category);
+  const csv = await catalogueRepository.run(() => auditLogService.exportCsv(category));
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename="mayf-audit-logs-${new Date().toISOString().split('T')[0]}.csv"`);
   return res.send(csv);
-});
+}));
 
 /**
  * 16. Security Configuration: Get Settings
