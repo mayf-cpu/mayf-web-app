@@ -14,7 +14,7 @@ This is an evidence log, not certification that the entire application works. Ea
 
 ## Repair implementation and local validation
 
-76 regression tests, TypeScript and the production Vite build pass for the 21 October repair batch. The preceding commit passed four workerd API checks; the new Worker runtime check remains unverified because automatic approval review blocked its execution. External-service tests use fixtures where applicable; they do not validate real payments or media delivery.
+82 regression tests, TypeScript and the production Vite build pass for the 21 October repair batch. The preceding commit passed four workerd API checks; the new Worker runtime check remains unverified because automatic approval review blocked its execution. External-service tests use fixtures where applicable; they do not validate real payments or media delivery.
 
 - Express runs in the Worker via the Node HTTP server adapter. Firestore storage uses authenticated HTTPS REST rather than unsupported native gRPC. Runtime service-account JSON is parsed safely and diagnostics expose only configuration presence.
 - Real Firebase tokens are cryptographically verified. Forged/development tokens fail closed in production. Actual Firebase Auth records feed student/admin lists; mutation errors propagate and unrelated custom claims are preserved. No real student account was disabled, deleted or charged during testing.
@@ -44,7 +44,7 @@ This is an evidence log, not certification that the entire application works. Ea
 - Gateway credentials use AES-GCM encryption before storage and masked API output. The key uses PAYMENT_SETTINGS_ENCRYPTION_KEY when set, otherwise the server service-account private key; retain that key during rotation or reconfigure gateway credentials. The settings collection remains server-only under the repository's default-deny client rules. Live deployed rules have not been independently audited in this session.
 - Renewals add days after the existing active expiry; duplicate callback/webhook delivery does not add days or redeem coupons again. Individual paid-resource lookup now checks the buyer's persisted paid order; refunded orders do not grant access.
 - Admin order ledger no longer substitutes sample orders or invented payment IDs when empty. Gateway and pass config persistence are covered locally, not yet live mutation-tested.
-- Seven new regression tests exercise restart recovery, atomic rollback, duplicate webhook/callback handling, settings encryption, renewal continuity and buyer/product access scope. 76 total tests, TypeScript and the production build pass. Provider adapters and real file delivery are still pending and no real payment has been charged.
+- Seven new regression tests exercise restart recovery, atomic rollback, duplicate webhook/callback handling, settings encryption, renewal continuity and buyer/product access scope. 82 total tests, TypeScript and the production build pass. Provider adapters and real file delivery are still pending and no real payment has been charged.
 
 ## Provider, file delivery and pricing continuation
 
@@ -53,7 +53,7 @@ This is an evidence log, not certification that the entire application works. Ea
 - Checkout no longer prefills sample personal details or automatically assumes a demo coupon. It shows the configured added tax and effective promotional price, blocks checkout until pricing loads and sales are enabled, and no longer submits an invented Turnstile token.
 - Download links now survive Worker restarts and use conditional single-use claims. Real CMS attachment bytes replace the synthetic text labelled as PDF. Approved hosts, no automatic redirects, byte limits, PDF signature checks and network binding have regression coverage. Upstream source failures do not consume a ticket. Owner-provided directly fetchable assets and real Turnstile configuration remain prerequisites for live acceptance. Configure Firestore TTL for expired downloadTickets during operational setup.
 - Live review exposed the Annual Pass section's fake save label. It now loads/saves actual persisted membership settings, with separate regular/promotional price and date controls. The family-price field is retained and saved as a proposal; family checkout/profile linking remains unavailable and is labelled accordingly. Invalid membership settings are rejected.
-- 76 automated tests, TypeScript and the production build pass. The payment persistence deployment at 58b8ec5 is reported successful by Cloudflare; this newest batch has not yet been live-verified.
+- 82 automated tests, TypeScript and the production build pass. The payment persistence deployment at 58b8ec5 is reported successful by Cloudflare; this newest batch has not yet been live-verified.
 
 ## SEO, ledger export and configuration follow-through
 
@@ -62,25 +62,34 @@ This is an evidence log, not certification that the entire application works. Ea
 - SEO configuration now has persistent authenticated writes with validation and public read-back. Homepage metadata and public canonical links use this configuration; page-specific titles remain specific. Preview meta tags prohibit indexing.
 - robots.txt and sitemap.xml are routed through the Worker. Sitemap generation reads current persisted CMS state and no longer restores hidden seed resources. Worker-preview robots prohibit indexing. Metadata edits and the new live routes still await deployment acceptance.
 - Production Turnstile verification now rejects a missing or known test secret instead of submitting a fallback test key. Downloads remain blocked until a real secret/site-key pair is configured. The Node API regression verifies this failure path.
-- 76 regression tests, TypeScript and the production build pass for the reporting/SEO batch. The earlier e34ea6b provider/delivery batch has a reported successful Cloudflare build and deployment.
+- 82 regression tests, TypeScript and the production build pass for the reporting/SEO batch. The earlier e34ea6b provider/delivery batch has a reported successful Cloudflare build and deployment.
 
 ## AI response integrity and history
 
 - Missing/unavailable Gemini now returns a truthful 503 instead of a generic fabricated solved answer. Demo history is no longer exposed in production. Signed-in responses are persisted with canonical userId ownership, and history/rating endpoints require a verified owner. Anonymous sessions have no shared server history.
 - AI request quotas are persisted per identity hash and IST day with conditional conflict retries; separate isolates cannot spend the same last allowance. These count requests, including upstream failures. App Check enforcement now cryptographically verifies the token instead of checking header presence.
 - AI activity reads stored sessions and measured tokens/time/feedback. Fixed sample telemetry has been removed. No genuine Gemini answer was generated because the runtime key remains missing.
-- 76 regression tests, TypeScript and the production build pass. Tests cover configured failure paths, anonymous history/rating denial and quota restart/concurrency behavior; live Gemini/App Check acceptance still requires configuration.
+- 82 regression tests, TypeScript and the production build pass. Tests cover configured failure paths, anonymous history/rating denial and quota restart/concurrency behavior; live Gemini/App Check acceptance still requires configuration.
+
+## Drive/Sheets importer continuation
+
+- The importer now obtains scoped service-account OAuth tokens, reads real Drive metadata/content, exports supported native Google files as PDF, enforces format/size checks and uploads actual bytes into the configured bucket. It verifies the returned stored object name/size instead of inventing a URL. Missing permission/API/bucket failures are explicit.
+- Registry processing atomically saves CMS content and its import job through the shared catalogue revision. Stable content IDs update the same record on repeat import. Only Approved/Imported rows may import, and Hidden resources stay private. Retrying never invents a replacement Drive ID or automatically approves a rejected row.
+- The main Import section loads/saves an actual spreadsheet connection, reads real jobs and syncs up to five Approved rows per run. Successful/failed results are written back to the registry metadata using RAW values. Apps Script webhook requests require an explicitly configured secret; the old known default is never accepted.
+- Private imported Storage assets can be fetched server-side for authenticated downloads. Imported image thumbnails use a visible-resource image relay with signature/size checks, without exposing the underlying storage URL.
+- Six new fixture tests cover genuine bytes/upload verification, Drive permission rejection, registry parsing/write-back, CMS idempotency/visibility and webhook configuration. 82 tests, TypeScript and the production build pass. These do not prove live Drive/Sheets/Storage permission or a real import; an authorized curriculum registry source still needs to be configured.
+- Connected Drive discovery found an existing social publishing queue rather than a curriculum registry with the required columns. It was left unchanged; no guide creation or publishing automation was resumed.
 
 ## Still incomplete
 
 | Area | Remaining work / acceptance check |
 | --- | --- |
-| Payments and annual pass | Conditional atomic persistence for orders, webhook deduplication, coupon redemption and entitlements is now implemented and passes restart/rollback fixture tests; authenticated live payment/pass acceptance is pending. Canonical catalogue/pass pricing is implemented locally; genuine test-key support and Stripe redirect/return flows are implemented; verify them with configured provider test accounts. Configure test keys; verify callbacks, retries, refunds and entitlement delivery without charging real users. Production simulations are blocked. |
+| Payments and annual pass | Conditional atomic persistence for orders, webhook deduplication, coupon redemption and entitlements is now implemented and passes restart/rollback fixture tests; authenticated live payment/pass acceptance is pending. Canonical catalogue/pass pricing is implemented locally; genuine test-key support and Stripe redirect/return flows are implemented; verify them with configured provider test accounts. Configure test keys; verify callbacks, retries and entitlement delivery without charging real users. The old fake refund endpoint now rejects requests explicitly; provider refunds and refund-webhook reconciliation remain to be implemented. Production simulations are blocked. |
 | Coupons and promotions | Firestore persistence, failed-write rollback and restart recovery are implemented and tested locally. Authenticated preview create/edit/reload checks passed for a disabled QA coupon; create/reload and public exclusion passed for a disabled QA promotion. Redemption, order completion and entitlement grant now share an atomic commit. Reserving limited offers across unpaid checkouts remains pending. |
 | Media and downloads | Download authorization now resolves visible published CMS attachments and stores network-bound one-use tickets in Firestore. Delivery fetches genuine bytes from approved hosts, rejects redirects/oversized files and checks the PDF header. Fixture tests pass. Owner media, real Turnstile verification and live end-to-end downloads are still required; example assets are not validated curriculum. |
-| AI Teacher | Configure Gemini runtime secret/model; verify real answers, quotas, failures and access limits. |
+| AI Teacher | Genuine responses, stored owner-only history, ratings, durable quotas and enforced App Check verification are implemented. Configure Gemini runtime secret/model and verify actual answers, provider errors and access limits. |
 | Turnstile / App Check | Configure intended protections and test real verification and rejection paths. |
-| Drive import | Replace example IDs/adapter with an actual authorized registry, storage import and repeat-import checks. |
+| Drive import | Real API transfer, durable CMS/job persistence, source configuration and repeat-import fixture checks are implemented. Configure an authorized curriculum registry, required API access and service-account sharing, then verify real source files and write-back. Folder traversal, full multi-image grouping and automatic schedule wiring remain open. |
 | Analytics, activity and audit | Remove demonstration telemetry and memory-only reporting; persist real events and accurate aggregates. |
 | Configuration | Exercise field edits, reload/public read-back, failures and concurrent saves for layout, ads, broadcasts, SEO and other settings. Branding save and configuration reads alone are insufficient. |
 | User administration | Live directory and guarded mutation workflows require further testing. Do not permanently delete real users for QA. |

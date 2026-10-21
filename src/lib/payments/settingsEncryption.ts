@@ -6,7 +6,7 @@ function encryptionKey(): Buffer {
   let account: any = {};
   try { account = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_SERVICE_ACCOUNT_KEY || '{}'); } catch { /* validated elsewhere */ }
   const material = process.env.PAYMENT_SETTINGS_ENCRYPTION_KEY || process.env.FIREBASE_ADMIN_PRIVATE_KEY || account.private_key;
-  if (!material && process.env.NODE_ENV === 'production') throw new Error('Payment secret encryption is not configured.');
+  if (!material && (process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'production')) throw new Error('Payment secret encryption is not configured.');
   return crypto.createHash('sha256').update('mayf:payment-settings:v1\0').update(material || 'local-development-only').digest();
 }
 /** Credentials are encrypted before persistence and never included in public settings. */

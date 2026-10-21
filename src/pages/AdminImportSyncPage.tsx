@@ -1,3 +1,4 @@
+import { adminService } from '../services/adminService';
 import React, { useState, useEffect } from 'react';
 import {
   RefreshCw,
@@ -45,8 +46,9 @@ export const AdminImportSyncPage: React.FC = () => {
 
   const fetchJobs = async () => {
     try {
-      const res = await fetch('/api/admin/ingest/jobs');
+      const res = await fetch('/api/admin/ingest/jobs', { headers: await adminService.getAuthHeaders() });
       const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Unable to load import jobs.');
       if (data.jobs) {
         setJobs(data.jobs);
       }
@@ -70,12 +72,12 @@ export const AdminImportSyncPage: React.FC = () => {
   const handleSyncNow = async () => {
     setIsSyncing(true);
     try {
-      const res = await fetch('/api/admin/ingest/sync', { method: 'POST' });
+      const res = await fetch('/api/admin/ingest/sync', { method: 'POST', headers: await adminService.getAuthHeaders() });
       const data = await res.json();
       if (data.success) {
         showNotification(data.message || 'Synchronized with Content Registry successfully!');
         await fetchJobs();
-      }
+      } else { showNotification(data.error || data.message || 'Some registry rows failed to import.'); }
     } catch (err) {
       showNotification('Sync failed. Please check server logs.');
     } finally {
@@ -89,7 +91,7 @@ export const AdminImportSyncPage: React.FC = () => {
     try {
       const res = await fetch('/api/admin/ingest/retry', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await adminService.getAuthHeaders(),
         body: JSON.stringify({ jobId }),
       });
       const data = await res.json();
@@ -114,7 +116,7 @@ export const AdminImportSyncPage: React.FC = () => {
     try {
       const res = await fetch('/api/admin/ingest/simulate-approval', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await adminService.getAuthHeaders(),
         body: JSON.stringify({ content_id: contentId }),
       });
       const data = await res.json();

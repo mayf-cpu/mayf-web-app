@@ -39,6 +39,7 @@ import { homepageLayoutService } from './src/lib/layout/homepageLayoutService';
 import { siteSettingsService } from './src/lib/settings/siteSettingsService';
 import { adSenseService } from './src/lib/adsense/adsenseService';
 import { broadcastService } from './src/lib/broadcasts/broadcastService';
+import { registrySource } from './src/lib/ingestion/registrySource';
 import { seoSettings } from './src/lib/seo/seoSettings';
 import { sitemapService } from './src/lib/seo/sitemapService';
 import { aggregateMetricsService } from './src/lib/analytics/aggregateMetricsService';
@@ -1890,28 +1891,8 @@ app.post('/api/admin/security/config', requireAuth, requireSuperAdmin, (req: Aut
  * 18. Order Refund Endpoint
  * Logs audit entry: refund-related changes
  */
-app.post('/api/admin/orders/:orderId/refund', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
-  const { orderId } = req.params;
-  const { reason, amount } = req.body;
-
-  auditLogService.log({
-    action: 'REFUND_PROCESSED',
-    category: 'refund',
-    actorUid: req.userAuth?.uid || 'admin',
-    actorEmail: req.userAuth?.email || 'admin@mayf.co.in',
-    actorRole: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
-    targetId: orderId,
-    targetType: 'payment_order',
-    details: { orderId, amount, reason: reason || 'Customer refund request' },
-    status: 'success',
-  });
-
-  return res.json({
-    success: true,
-    orderId,
-    status: 'refunded',
-    message: `Order ${orderId} has been refunded and audit log recorded.`,
-  });
+app.post('/api/admin/orders/:orderId/refund', requireAuth, requireAdmin, (_req: AuthenticatedRequest, res: Response) => {
+  return res.status(501).json({ success: false, error: 'Payment-provider refunds are not connected yet. No refund was issued.' });
 });
 
 // -------------------------------------------------------------
@@ -1931,6 +1912,16 @@ app.get('/api/catalogue', catalogueRoute(false, (req, res) => {
   const result = filterCatalogue(contentCmsManager.exportState() as any, filters as any, { offset } as any, pageSize);
   res.setHeader?.('Cache-Control', 'no-store');
   return res.json({ ...result, items: result.items.map(item => publicContent(item)) });
+}));
+app.get('/api/catalogue/thumbnail/:id', asyncRoute(async (req, res) => {
+  const item = await catalogueRepository.run(() => contentCmsManager.exportState().find(item => item.id === req.params.id && item.visible && item.status === 'published' && !item.isDeleted));
+  if (!item?.thumbnail) return res.status(404).json({ error: 'Thumbnail not found.' });
+  const bytes = await fetchDownloadAsset({ name: 'thumbnail', url: item.thumbnail, mimeType: 'image/unknown' });
+  if (bytes.length > 5 * 1024 * 1024) return res.status(413).json({ error: 'Thumbnail exceeds the 5 MB limit.' });
+  const mimeType = bytes.subarray(0, 8).toString('hex') === '89504e470d0a1a0a' ? 'image/png' : bytes.subarray(0, 3).toString('hex') === 'ffd8ff' ? 'image/jpeg' : bytes.subarray(0, 4).toString() === 'RIFF' && bytes.subarray(8, 12).toString() === 'WEBP' ? 'image/webp' : null;
+  if (!mimeType) return res.status(415).json({ error: 'Stored thumbnail is not a supported image.' });
+  res.type(mimeType).setHeader('Cache-Control', 'public, max-age=60');
+  return res.send(bytes);
 }));
 app.get('/api/catalogue/by-slug/:slug', asyncRoute(async (req, res) => {
   const verified = req.headers.authorization ? await verifyStudentSessionToken(req.headers.authorization) : null;
@@ -3431,10 +3422,10 @@ app.post('/api/ingestion/webhook', asyncRoute(async (req: Request, res: Response
 
     const { items, action = 'import_approved' } = req.body;
 
-    if (!items || !Array.isArray(items) || items.length === 0) {
+    if (!items || !Array.isArray(items) || items.length === 0 || items.length > 5) {
       return res.status(400).json({
         success: false,
-        error: 'Bad Request: "items" array containing Content Registry rows is required.',
+        error: 'Provide one to five Content Registry rows per request.',
       });
     }
 
@@ -3454,7 +3445,20 @@ app.post('/api/ingestion/webhook', asyncRoute(async (req: Request, res: Response
 // Admin Ingestion Jobs API
 // Gated strictly with requireAuth, requireAdmin
 // -------------------------------------------------------------
-app.get('/api/admin/ingest/jobs', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+app.get('/api/admin/ingest/config', requireAuth, requireAdmin, asyncRoute(async (_req, res) => {
+  res.json({ success: true, config: await registrySource.read(), serviceAccountEmail: getFirebaseAdminConfig().clientEmail });
+}));
+app.put('/api/admin/ingest/config', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  try { res.json({ success: true, config: await registrySource.save(req.body) }); }
+  catch (error: any) { res.status(400).json({ success: false, error: error.message }); }
+}));
+app.post('/api/admin/ingest/import', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  if (!Array.isArray(req.body.items) || req.body.items.length < 1 || req.body.items.length > 5) return res.status(400).json({ success: false, error: 'Import one to five registry rows per request.' });
+  const result = await processBatchIngestion(req.body.items, 'admin_manual_sync');
+  res.status(result.success ? 200 : 400).json(result);
+}));
+
+app.get('/api/admin/ingest/jobs', requireAuth, requireAdmin, catalogueRoute(false, (_req: Request, res: Response) => {
   const jobs = INGESTION_JOBS_STORE;
   const summary = {
     all: jobs.length,
@@ -3470,7 +3474,7 @@ app.get('/api/admin/ingest/jobs', requireAuth, requireAdmin, (_req: Request, res
     summary,
     jobs,
   });
-});
+}));
 
 app.post('/api/admin/ingest/retry', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   try {
@@ -3495,8 +3499,9 @@ app.post('/api/admin/ingest/sync', requireAuth, requireAdmin, asyncRoute(async (
   try {
     const syncOutcome = await syncRegistryNow();
     return res.json({
-      success: true,
+      success: syncOutcome.failedCount === 0,
       totalProcessed: syncOutcome.totalProcessed,
+      failedCount: syncOutcome.failedCount,
       message: `Synchronized ${syncOutcome.totalProcessed} pending/approved rows from Content Registry.`,
     });
   } catch (error: any) {
@@ -3508,7 +3513,7 @@ app.post('/api/admin/ingest/sync', requireAuth, requireAdmin, asyncRoute(async (
 app.post('/api/admin/ingest/simulate-approval', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   try {
     const { content_id } = req.body;
-    const target = INGESTION_JOBS_STORE.find((j) => j.content_id === content_id);
+    const target = await catalogueRepository.run(() => structuredClone(INGESTION_JOBS_STORE.find((j) => j.content_id === content_id)));
     if (!target) {
       return res.status(404).json({ success: false, error: `Row with content_id "${content_id}" not found.` });
     }
