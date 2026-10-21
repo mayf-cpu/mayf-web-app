@@ -7,8 +7,10 @@ import { catalogueRepository, catalogueRoute } from './src/lib/cms/catalogueRepo
 import { isAllowedRequestOrigin } from './src/lib/security/requestOrigin';
 import publicFirebaseConfig from './src/config/firebasePublicConfig.json';
 import express, { Request, Response, NextFunction } from 'express';
+import { AiQuota } from './src/lib/ai/aiQuota';
+import { getAppCheck } from 'firebase-admin/app-check';
 import { GoogleGenAI } from '@google/genai';
-import { getAdminAuth, getAdminFirestore, adminSetCustomUserClaims, getFirebaseAdminConfig, getFirebaseAdminDiagnostics, verifyStudentSessionToken } from './src/lib/firebase/admin';
+import { getFirebaseAdminApp, getAdminAuth, getAdminFirestore, adminSetCustomUserClaims, getFirebaseAdminConfig, getFirebaseAdminDiagnostics, verifyStudentSessionToken } from './src/lib/firebase/admin';
 import {
   INGESTION_JOBS_STORE,
   refreshIngestionJobs,
@@ -3315,69 +3317,8 @@ interface AiDoubtRecord {
   userRating?: 'helpful' | 'unhelpful';
 }
 
-const AI_DOUBTS_HISTORY: AiDoubtRecord[] = [
-  {
-    id: 'doubt-seed-1',
-    uid: 'mayf-student-1001',
-    question: 'Why do we reject negative roots in speed and distance word problems?',
-    questionType: 'text',
-    studentClass: 'Class 10',
-    chapterTopic: 'Quadratic Equations',
-    reply: `### Understanding the Question\nThe question asks why negative values obtained as solutions to a quadratic equation are discarded when solving physical motion problems.\n\n### Given Information\nIn speed-distance-time problems, the unknown variable $x$ represents speed ($s$) or time ($t$).\n\n### Concept Used\nPhysical speed $s = \\frac{d}{t}$ and geometric distance are scalar physical quantities defined strictly over non-negative reals ($s > 0$).\n\n### Step-by-Step Solution\n1. When setting up $ax^2 + bx + c = 0$, both roots are mathematically valid solutions to the algebraic equation.\n2. In a real-world physical scenario, speed cannot be negative: $x > 0$.\n3. Therefore, the negative root is rejected as extraneous in the physical domain.\n\n### Final Answer\nSpeed is a non-negative scalar quantity ($s > 0$), so negative mathematical roots have no physical meaning.\n\n### Verification / Check\nSubstitute positive speed back into $t = \\frac{d}{s}$ to verify positive duration.`,
-    timestamp: '2026-10-06T10:14:00.000Z',
-    responseStatus: 'success',
-    tokenMetadata: { model: 'gemini-3.8-flash', totalTokens: 240 },
-    userRating: 'helpful',
-  },
-  {
-    id: 'doubt-seed-2',
-    uid: 'mayf-student-1001',
-    question: 'How to prove 1 + tan²θ = sec²θ algebraically without geometry?',
-    questionType: 'text',
-    studentClass: 'Class 10',
-    chapterTopic: 'Trigonometry',
-    reply: `### Understanding the Question\nProve the fundamental Pythagorean trigonometric identity $1 + \\tan^2 \\theta = \\sec^2 \\theta$ algebraically from the primary identity.\n\n### Given Information\nPrimary trigonometric identity: $$\\sin^2 \\theta + \\cos^2 \\theta = 1$$\n\n### Concept Used\nReciprocal and quotient identities: $$\\tan \\theta = \\frac{\\sin \\theta}{\\cos \\theta}, \\quad \\sec \\theta = \\frac{1}{\\cos \\theta}$$\n\n### Step-by-Step Solution\n1. Divide both sides of $\\sin^2 \\theta + \\cos^2 \\theta = 1$ by $\\cos^2 \\theta$ (where $\\cos \\theta \\neq 0$):\n$$\\frac{\\sin^2 \\theta}{\\cos^2 \\theta} + \\frac{\\cos^2 \\theta}{\\cos^2 \\theta} = \\frac{1}{\\cos^2 \\theta}$$\n2. Simplify each term:\n$$\\left(\\frac{\\sin \\theta}{\\cos \\theta}\\right)^2 + 1 = \\left(\\frac{1}{\\cos \\theta}\\right)^2$$\n3. Substitute $\\tan \\theta$ and $\\sec \\theta$:\n$$\\tan^2 \\theta + 1 = \\sec^2 \\theta$$\n4. Rearrange terms:\n$$1 + \\tan^2 \\theta = \\sec^2 \\theta$$\n\n### Final Answer\n$$1 + \\tan^2 \\theta = \\sec^2 \\theta$$\n\n### Verification / Check\nFor $\\theta = 45^\\circ$:\n$$1 + \\tan^2 45^\\circ = 1 + 1^2 = 2$$\n$$\\sec^2 45^\\circ = (\\sqrt{2})^2 = 2$$\nLHS = RHS.`,
-    timestamp: '2026-10-05T14:30:00.000Z',
-    responseStatus: 'success',
-    tokenMetadata: { model: 'gemini-3.8-flash', totalTokens: 310 },
-    userRating: 'helpful',
-  },
-];
-
-interface UserAiDailyUsage {
-  count: number;
-  dateStr: string;
-  recentTimestamps: number[];
-}
-const aiUsageMap = new Map<string, UserAiDailyUsage>();
-
-function checkAiQuota(key: string, dailyLimit: number): { allowed: boolean; remaining: number } {
-  const today = new Date().toISOString().split('T')[0];
-  const usage = aiUsageMap.get(key) || { count: 0, dateStr: today, recentTimestamps: [] };
-
-  if (usage.dateStr !== today) {
-    usage.count = 0;
-    usage.dateStr = today;
-    usage.recentTimestamps = [];
-  }
-
-  // Sliding window rate limit: max 15 requests in 3 minutes
-  const now = Date.now();
-  usage.recentTimestamps = usage.recentTimestamps.filter((ts) => now - ts < 180 * 1000);
-  if (usage.recentTimestamps.length >= 15) {
-    return { allowed: false, remaining: 0 };
-  }
-
-  if (usage.count >= dailyLimit) {
-    return { allowed: false, remaining: 0 };
-  }
-
-  usage.count++;
-  usage.recentTimestamps.push(now);
-  aiUsageMap.set(key, usage);
-
-  return { allowed: true, remaining: dailyLimit - usage.count };
-}
+// AI request quotas live in Firestore across Worker instances. No fabricated history or volatile quota maps.
+const aiQuota = new AiQuota(getAdminFirestore);
 
 // -------------------------------------------------------------
 // Formula Deck Public API
