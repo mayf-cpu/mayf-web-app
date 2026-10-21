@@ -29,6 +29,7 @@ import {
 import { RazorpayAdapter } from './adapters/razorpayAdapter';
 import { StripeAdapter } from './adapters/stripeAdapter';
 import { couponService } from '../coupons/couponService';
+import { sealGatewaySettings, openGatewaySettings } from './settingsEncryption';
 
 export class PaymentService {
   private razorpayAdapter: RazorpayAdapter;
@@ -62,6 +63,30 @@ export class PaymentService {
 
     if (!isProductionPaymentRuntime()) this.seedInitialOrders();
   }
+
+  /** Persist only encrypted credentials in the private Firestore runtime settings collection. */
+  readonly settingsState = {
+    exportState: () => [{ id: 'gateway', ...sealGatewaySettings(this.settings) }],
+    importState: (items: Record<string, any>[]) => {
+      const entry = items.find(item => item.id === 'gateway');
+      if (entry) {
+        const { id, ...data } = entry;
+        this.settings = openGatewaySettings(data);
+      }
+      this.razorpayAdapter.configure({
+        keyId: this.settings.razorpayKeyId,
+        secretKey: this.settings.razorpayKeySecret,
+        webhookSecret: this.settings.razorpayWebhookSecret,
+        testMode: this.settings.testMode,
+      });
+      this.stripeAdapter.configure({
+        keyId: this.settings.stripePublishableKey,
+        secretKey: this.settings.stripeSecretKey,
+        webhookSecret: this.settings.stripeWebhookSecret,
+        testMode: this.settings.testMode,
+      });
+    },
+  };
 
   /** Configure persistent storage before checkout. Never treat a missing store as success. */
   configureDurableOrders(repository: Pick<DurablePaymentRepository, 'createOrder'>): void {
