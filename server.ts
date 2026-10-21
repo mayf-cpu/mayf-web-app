@@ -3121,6 +3121,11 @@ app.post('/api/analytics/track', asyncRoute(async (req: Request, res: Response) 
     return res.status(400).json({ success: false, error: 'Invalid analytics event.' });
   }
   try {
+    const ip = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || 'unknown');
+    // Use existing Firestore-backed limiter to bound anonymous counter traffic.
+    if (await checkDownloadRateLimit(`analytics-${ip}`, 120, 60000)) {
+      return res.status(429).json({ success: false, error: 'Too many analytics events.' });
+    }
     const recorded = await aggregateMetricsService.recordEvent(eventType as any, params || {});
     return res.json({ success: true, recorded });
   } catch {
