@@ -475,3 +475,36 @@ test('verified coupon refund revokes access but retains scarce redemption capaci
     discount: 10, now: new Date('2026-10-22T01:00:00Z'),
   }), /capacity exhausted/);
 });
+
+
+test('signed-webhook reconciliation cases are durable, idempotent and resolvable', async () => {
+  const { repo, docs } = fixture();
+  const alert = {
+    provider: 'razorpay' as const, eventId: 'evt-late', providerOrderId: 'gateway-1',
+    providerPaymentId: 'pay-1', reasonCode: 'SETTLEMENT_FAILED' as const,
+    observedAt: '2026-10-21T14:00:00Z',
+  };
+  assert.equal(await repo.recordVerifiedWebhookReconciliation(alert), 'recorded');
+  const record = docs.get('paymentReconciliationCases/razorpay:evt-late');
+  assert.equal(record?.data.status, 'open');
+  assert.equal(record?.data.reasonCode, 'SETTLEMENT_FAILED');
+  assert.equal(await repo.recordVerifiedWebhookReconciliation(alert), 'duplicate');
+  assert.equal(docs.get('paymentReconciliationCases/razorpay:evt-late')?.data.firstObservedAt,
+    '2026-10-21T14:00:00Z');
+  await repo.resolveVerifiedWebhookReconciliation('razorpay', 'evt-late', '2026-10-21T15:00:00Z');
+  assert.equal(docs.get('paymentReconciliationCases/razorpay:evt-late')?.data.status, 'resolved');
+  await repo.resolveVerifiedWebhookReconciliation('razorpay', 'evt-late', '2026-10-21T15:00:00Z');
+});
+
+test('review cases reject invalid event IDs and unsupported review reason codes', async () => {
+  const { repo, docs } = fixture();
+  await assert.rejects(repo.recordVerifiedWebhookReconciliation({
+    provider: 'razorpay', eventId: 'invalid/id', reasonCode: 'REFUND_FAILED',
+    observedAt: '2026-10-21T14:00:00Z',
+  }), /Invalid payment record identifier/);
+  await assert.rejects(repo.recordVerifiedWebhookReconciliation({
+    provider: 'razorpay', eventId: 'evt-invalid',
+    reasonCode: 'UNSIGNED' as 'SETTLEMENT_FAILED', observedAt: '2026-10-21T14:00:00Z',
+  }), /Invalid reconciliation case/);
+  assert.equal([...docs.keys()].filter(key => key.startsWith('paymentReconciliationCases/')).length, 0);
+});
