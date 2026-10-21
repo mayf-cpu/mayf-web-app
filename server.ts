@@ -58,6 +58,7 @@ for (const [paths, initialize] of [
   [['/api/adsense', '/api/admin/adsense'], () => adSenseService.initFromFirestore()],
   [['/api/broadcasts', '/api/admin/broadcasts'], () => broadcastService.initStore()],
   [['/api/payments', '/api/admin/payments/settings'], () => paymentSettingsRepository.run(() => undefined)],
+  [['/api/payments/create-order'], () => catalogueRepository.run(() => undefined)],
 ] as [string[], () => Promise<void>][]) {
   app.use(paths, async (_req, res, next) => {
     try { await initialize(); next(); }
@@ -1403,7 +1404,13 @@ app.get('/api/admin/annual-pass/history', requireAuth, requireAdmin, (req: Reque
  * Never trusts client discounts. Evaluates start/end dates, min cart, max discount,
  * usage limits, per-user limits, and product scope (all / annual pass / selected).
  */
-app.post('/api/coupons/validate', asyncRoute(async (req: Request, res: Response) => {
+// Coupon and promotion mutation success is valid only after a real durable write.
+const requirePersistentOffers = (_req: Request, res: Response, next: NextFunction) => {
+  if (!getAdminFirestore()) return res.status(503).json({ success: false, error: 'Offer storage is unavailable; nothing was saved.' });
+  next();
+};
+
+app.post('/api/coupons/validate', catalogueRoute(false, async (req: Request, res: Response) => {
   try {
     const { code, cartGrossAmount, cartAmount, amount, currency = 'INR', items = [], userId } = req.body;
 
@@ -1445,7 +1452,7 @@ app.post('/api/coupons/validate', asyncRoute(async (req: Request, res: Response)
 /**
  * Public: Get Published Promotional Blocks for Homepage or Catalogue
  */
-app.get('/api/promotions', (req: Request, res: Response) => {
+app.get('/api/promotions', catalogueRoute(false, (req: Request, res: Response) => {
   try {
     const placement = req.query.placement as 'homepage' | 'catalogue' | undefined;
     const promotions = couponService.getPublicPromotions(placement);
@@ -1456,12 +1463,12 @@ app.get('/api/promotions', (req: Request, res: Response) => {
   } catch (error: any) {
     return res.status(500).json({ success: false, error: 'Failed to retrieve promotions' });
   }
-});
+}));
 
 /**
  * Admin: List All Configured Coupons
  */
-app.get('/api/admin/coupons', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+app.get('/api/admin/coupons', requireAuth, requireAdmin, catalogueRoute(false, (_req: Request, res: Response) => {
   try {
     const coupons = couponService.getAllCoupons();
     return res.json({
@@ -1471,12 +1478,12 @@ app.get('/api/admin/coupons', requireAuth, requireAdmin, (_req: Request, res: Re
   } catch (error: any) {
     return res.status(500).json({ success: false, error: 'Failed to list coupons' });
   }
-});
+}));
 
 /**
  * Admin: Create or Update Coupon
  */
-app.post('/api/admin/coupons', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/coupons', requireAuth, requireAdmin, requirePersistentOffers, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const saved = couponService.saveCoupon(req.body);
     return res.json({
@@ -1487,12 +1494,12 @@ app.post('/api/admin/coupons', requireAuth, requireAdmin, (req: AuthenticatedReq
   } catch (err: any) {
     return res.status(400).json({ success: false, error: err?.message || 'Failed to save coupon' });
   }
-});
+}));
 
 /**
  * Admin: Delete Coupon
  */
-app.delete('/api/admin/coupons/:code', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/admin/coupons/:code', requireAuth, requireAdmin, requirePersistentOffers, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const code = req.params.code;
     const deleted = couponService.deleteCoupon(code);
@@ -1517,12 +1524,12 @@ app.delete('/api/admin/coupons/:code', requireAuth, requireAdmin, (req: Authenti
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message || 'Failed to delete coupon' });
   }
-});
+}));
 
 /**
  * Admin: List All Promotional Blocks
  */
-app.get('/api/admin/promotions', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+app.get('/api/admin/promotions', requireAuth, requireAdmin, catalogueRoute(false, (_req: Request, res: Response) => {
   try {
     const promotions = couponService.getAllPromotions();
     return res.json({
@@ -1532,12 +1539,12 @@ app.get('/api/admin/promotions', requireAuth, requireAdmin, (_req: Request, res:
   } catch (error: any) {
     return res.status(500).json({ success: false, error: 'Failed to list promotional blocks' });
   }
-});
+}));
 
 /**
  * Admin: Create or Update Promotional Block
  */
-app.post('/api/admin/promotions', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/promotions', requireAuth, requireAdmin, requirePersistentOffers, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const saved = couponService.savePromotion(req.body);
     return res.json({
@@ -1548,12 +1555,12 @@ app.post('/api/admin/promotions', requireAuth, requireAdmin, (req: Authenticated
   } catch (err: any) {
     return res.status(400).json({ success: false, error: err?.message || 'Failed to save promotional block' });
   }
-});
+}));
 
 /**
  * Admin: Delete Promotional Block
  */
-app.delete('/api/admin/promotions/:id', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/admin/promotions/:id', requireAuth, requireAdmin, requirePersistentOffers, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const id = req.params.id;
     const deleted = couponService.deletePromotion(id);
@@ -1578,7 +1585,7 @@ app.delete('/api/admin/promotions/:id', requireAuth, requireAdmin, (req: Authent
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message || 'Failed to delete promotional block' });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Admin Privileged Custom Claims Setter
