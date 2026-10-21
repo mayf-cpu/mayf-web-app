@@ -209,7 +209,10 @@ export class PaymentService {
     // Calculate coupon discount securely on server (never trust client-calculated discounts)
     let discount = 0;
     let validatedCoupon = coupon ? coupon.trim().toUpperCase() : undefined;
-    if (this.settings.allowCouponDiscounts && validatedCoupon) {
+    if (validatedCoupon) {
+      if (!this.settings.allowCouponDiscounts) {
+        throw new Error('Coupon not applicable: coupon discounts are currently disabled.');
+      }
       const val = couponService.validateCoupon({
         code: validatedCoupon,
         userId,
@@ -217,13 +220,13 @@ export class PaymentService {
         currency,
         items,
       });
-      if (val.valid) {
-        discount = val.discountAmount;
-        validatedCoupon = val.code;
-      } else {
-        // If client provided an invalid/expired coupon, do not apply discount
-        validatedCoupon = undefined;
+      // Never create a full-price gateway order after a customer attempted
+      // to apply an invalid, expired or exhausted coupon.
+      if (!val.valid || !val.code || !(val.discountAmount > 0)) {
+        throw new Error('Coupon not applicable: ' + (val.error || 'No discount is available for this order.'));
       }
+      discount = val.discountAmount;
+      validatedCoupon = val.code;
     }
     // Cap discount to gross amount
     discount = Math.min(discount, grossAmount);
@@ -261,7 +264,7 @@ export class PaymentService {
       ],
       grossAmount,
       discount,
-      coupon: coupon ? coupon.trim().toUpperCase() : undefined,
+      coupon: validatedCoupon,
       tax,
       currency: currency.toUpperCase(),
       provider: providerType,
