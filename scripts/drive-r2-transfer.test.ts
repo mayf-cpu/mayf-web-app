@@ -36,16 +36,13 @@ test('Drive import verifies authenticated downloaded bytes before declaring an R
   try {
     const result = await copyDriveFileToProductionStorage('drive-id-123', undefined, 'topic', 'pdf', 'paid', 'cnt-pdf-topic');
     assert.equal(result.fileSizeBytes, valid.byteLength);
-    assert.equal(result.productionFileUrl, 'r2://mayf-study-materials/pdf/cnt-pdf-topic.pdf');
-    assert.deepEqual(objects.get('pdf/cnt-pdf-topic.pdf'), valid);
-    assert.equal(calls.length, 2);
-    assert.ok(calls[1].includes('drive/v3/files/drive-id-123'));
-    await assert.rejects(
-      copyDriveFileToProductionStorage('drive-id-123', undefined, 'topic', 'pdf', 'paid', 'cnt-pdf-topic'),
-      /replacement requires an explicit versioned publishing workflow/,
-    );
-    assert.equal(calls.length, 2, 're-import must not even fetch Drive bytes');
-    assert.deepEqual(objects.get('pdf/cnt-pdf-topic.pdf'), valid, 'existing published bytes stay unchanged');
+    const digest = crypto.createHash('sha256').update(valid).digest('hex');
+    const key = 'pdf/cnt-pdf-topic/' + digest + '.pdf';
+    assert.equal(result.productionFileUrl, 'r2://mayf-study-materials/' + key);
+    assert.deepEqual(objects.get(key), valid);
+    const repeated = await copyDriveFileToProductionStorage('drive-id-123', undefined, 'topic', 'pdf', 'paid', 'cnt-pdf-topic');
+    assert.equal(repeated.productionFileUrl, result.productionFileUrl);
+    assert.equal(objects.size, 1, 'same PDF must not create new revision');
   } finally {
     globalThis.fetch = oldFetch;
     if(oldCredentials === undefined) delete process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
