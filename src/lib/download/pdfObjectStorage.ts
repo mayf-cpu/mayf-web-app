@@ -1,3 +1,4 @@
+import { hasPdfMarkers } from './pdfIntegrity';
 /**
  * Optional private R2 PDF storage. Files are never addressed by user input:
  * a registry contentId resolves to pdf/<contentId>.pdf.
@@ -35,6 +36,6 @@ export async function readVerifiedPdf(contentId: string): Promise<Uint8Array | n
   const bytes = new Uint8Array(await new Response(data.body).arrayBuffer());
   if (bytes.length !== data.size || bytes.length < 8) return null;
   // Reject text, HTML error pages and non-PDF objects even if metadata says PDF.
-  if (String.fromCharCode(...bytes.subarray(0, 5)) !== '%PDF-') return null;
+  if (!hasPdfMarkers(bytes)) return null;
   return bytes;
 }
