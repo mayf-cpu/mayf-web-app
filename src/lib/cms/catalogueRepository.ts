@@ -4,6 +4,7 @@ import type { FirestoreDocumentStore } from '../firebase/documentStore';
 import { contentCmsManager } from './contentManager';
 import { categoryManager } from '../categories/categoryManager';
 import { auditLogService } from '../audit/auditLogger';
+import { couponService } from '../coupons/couponService';
 
 type State = { exportState(): Record<string, any>[]; importState(items: Record<string, any>[]): void };
 /** Each operation reads durable data. Conditional atomic writes reject concurrent edits. */
@@ -52,6 +53,8 @@ export class CatalogueRepository {
 export const catalogueRepository = new CatalogueRepository([
   { collection: 'contentItems', state: contentCmsManager },
   { collection: 'categories', state: categoryManager },
+  { collection: 'coupons', state: couponService.couponState },
+  { collection: 'promotions', state: couponService.promotionState },
   { collection: 'adminAuditLogs', state: auditLogService },
 ], getAdminFirestore);
 
