@@ -38,9 +38,11 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
   }
 
   configure(config: PaymentAdapterConfig): void {
-    if (config.keyId) this.keyId = config.keyId;
-    if (config.secretKey) this.keySecret = config.secretKey;
-    if (config.webhookSecret) this.webhookSecret = config.webhookSecret;
+    // The service supplies a complete authoritative settings snapshot.
+    // Missing credentials must clear previously configured adapter state.
+    this.keyId = config.keyId || '';
+    this.keySecret = config.secretKey || '';
+    this.webhookSecret = config.webhookSecret || '';
     if (config.testMode !== undefined) this.testMode = config.testMode;
   }
 

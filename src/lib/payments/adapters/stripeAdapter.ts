@@ -38,9 +38,9 @@ export class StripeAdapter implements PaymentProviderAdapter {
   }
 
   configure(config: PaymentAdapterConfig): void {
-    if (config.keyId) this.publishableKey = config.keyId;
-    if (config.secretKey) this.secretKey = config.secretKey;
-    if (config.webhookSecret) this.webhookSecret = config.webhookSecret;
+    this.publishableKey = config.keyId || '';
+    this.secretKey = config.secretKey || '';
+    this.webhookSecret = config.webhookSecret || '';
     if (config.testMode !== undefined) this.testMode = config.testMode;
   }
 
