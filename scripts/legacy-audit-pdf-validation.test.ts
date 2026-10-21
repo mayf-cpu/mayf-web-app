@@ -6,7 +6,7 @@ import type { FirestoreDocumentStore } from '../src/lib/firebase/documentStore';
 
 test('audit never marks malformed PDF ready even if R2 HEAD succeeds',async()=>{
  const id='dl-10-cheatsheet';
- const doc={id,slug:'class-10-board-complete-formula-cheatsheet',status:'published',visible:true,
+ const doc={id,slug:'class-10-board-complete-formula-cheatsheet',contentType:'pdf',status:'published',visible:true,
    isDeleted:false,downloadAllowed:true,accessType:'free',
    files:[{url:'r2://mayf-study-materials/pdf/'+id+'.pdf'}]};
  const db={collection:()=>({doc:(key:string)=>({get:async()=>key===id?

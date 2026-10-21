@@ -21,12 +21,16 @@ export async function auditLegacyPdfMigration(db: AuditStore) {
     const pdfValid = Boolean(verifiedBytes);
     const status = !doc.exists ? 'cms_missing' :
       record?.isDeleted ? 'cms_deleted' :
+      record?.contentType !== 'pdf' ? 'cms_not_pdf' :
+      record?.id !== legacy.id ? 'cms_id_mismatch' :
       record?.status !== 'published' || record?.visible !== true ? 'cms_not_published' :
       record?.downloadAllowed !== true ? 'downloads_disabled' :
       record?.accessType !== legacy.accessType ? 'access_mismatch' :
+      record?.slug !== legacy.slug ? 'slug_mismatch' :
       !r2 ? 'cms_r2_reference_missing' :
       !found ? 'r2_file_missing' :
-      !pdfValid ? 'r2_pdf_invalid' : 'ready';
+      !pdfValid ? 'r2_pdf_invalid' :
+      r2.sizeBytes && Number(r2.sizeBytes) !== verifiedBytes?.length ? 'size_mismatch' : 'ready';
     rows.push({ id: legacy.id, title: legacy.title, accessType: legacy.accessType,
       cmsExists: Boolean(doc.exists), r2FileVerifiedByHead: found, pdfBytesValidated: pdfValid, status });
   }
