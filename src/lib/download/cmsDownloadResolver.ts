@@ -1,5 +1,6 @@
 import type { FirestoreDocumentStore } from '../firebase/documentStore';
 import type { DownloadableItem } from './downloadRegistry';
+import { allowedPdfKey } from './pdfObjectStorage';
 import { getDownloadableItem } from './downloadRegistry';
 
 /** Resolve published CMS PDFs with a private R2 object, not an external URL. */
@@ -16,13 +17,19 @@ export async function resolveDownloadableItem(
     item = matches.find(row => row.data?.slug === idOrSlug)?.data;
   }
   if (item) {
+    const expectedPrefix = 'r2://mayf-study-materials/';
+    const activeFile = Array.isArray(item.files) ? item.files.find((file: any) => {
+      if (typeof file?.url !== 'string' || !file.url.startsWith(expectedPrefix)) return false;
+      try { allowedPdfKey(item.id, file.url.slice(expectedPrefix.length)); return true; }
+      catch { return false; }
+    }) : null;
     if (item.isDeleted || item.visible !== true || item.downloadAllowed !== true ||
         item.status !== 'published' || item.contentType !== 'pdf' ||
         (item.accessType !== 'paid' && item.accessType !== 'free') ||
-        !Array.isArray(item.files) || !item.files.some((f: any) =>
-          typeof f?.url === 'string' && f.url === 'r2://mayf-study-materials/pdf/' + item.id + '.pdf')) return null;
+        !activeFile) return null;
     return {
       id: item.id,
+      objectKey: activeFile.url.slice(expectedPrefix.length),
       slug: item.slug,
       title: item.title,
       accessType: item.accessType,
@@ -31,7 +38,7 @@ export async function resolveDownloadableItem(
       category: item.categoryId || '',
       fileName: (item.slug || item.id).replace(/[^a-zA-Z0-9_-]/g, '_') + '.pdf',
       mimeType: 'application/pdf',
-      fileSizeBytes: Number(item.files.find((f: any) => f.url === 'r2://mayf-study-materials/pdf/' + item.id + '.pdf')?.sizeBytes || 0),
+      fileSizeBytes: Number(activeFile.sizeBytes || 0),
       description: item.shortDescription || '',
     };
   }
