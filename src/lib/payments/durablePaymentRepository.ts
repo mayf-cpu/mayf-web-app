@@ -403,12 +403,10 @@ export class DurablePaymentRepository {
           reservation?.expiresAt !== hold.expiresAt) {
         throw new Error('Paid coupon reservation is missing or changed; manual reconciliation required');
       }
-      // The gateway can report an event after expiry; hold duration must be
-      // checked against verified charge time. The current orchestrator uses
-      // observed webhook time, so late delivery requires manual reconciliation.
-      if (Date.parse(hold.expiresAt) <= Date.parse(paidAt)) {
-        throw new Error('Coupon checkout hold expired before settlement; manual reconciliation required');
-      }
+      // A delayed, verified gateway event is allowed even after the timer:
+      // unresolved provider orders keep their original capacity reserved.
+      // A reclaimed/released hold has already failed the membership and
+      // reservation-status checks above, so capacity cannot be double-spent.
       const previousCount = coupon.userUsageMap[order.userId] ?? 0;
       if (!Number.isSafeInteger(previousCount) || previousCount < 0) {
         throw new Error('Paid coupon student usage is corrupt; manual reconciliation required');
