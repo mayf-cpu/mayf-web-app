@@ -12,6 +12,8 @@ const EVENT_COLLECTION = 'paymentWebhookEvents';
 const PAYMENT_CLAIM_COLLECTION = 'paymentProviderClaims';
 const ENTITLEMENT_COLLECTION = 'paymentEntitlements';
 const RENEWAL_CURSOR_COLLECTION = 'paymentRenewalCursors';
+const COUPON_COLLECTION = 'coupons';
+const COUPON_REDEMPTION_COLLECTION = 'paymentCouponRedemptions';
 
 function validId(value: string): string {
   if (!value || value.includes('/') || value.length > 400) throw new Error('Invalid payment record identifier');
@@ -237,6 +239,56 @@ export class DurablePaymentRepository {
     const entitlementRef = await this.store.collection(ENTITLEMENT_COLLECTION).doc(entitlementId).get();
     if (entitlementRef.exists) throw new Error('Entitlement ID already exists');
 
+    // The accepted order is the authority for its coupon and discount. Count
+    // redemption in the SAME atomic commit as the paid order and entitlement.
+    // Firestore's updateTime precondition on the coupon document serializes
+    // global and per-student limits across concurrent workers and CMS edits.
+    const couponWrites: {
+      collection: string; id: string; data?: Record<string, any>; updateTime?: string;
+    }[] = [];
+    if (order.coupon) {
+      const code = order.coupon.trim().toUpperCase();
+      if (!/^[A-Z0-9_-]{1,64}$/.test(code) || !Number.isFinite(order.discount) ||
+          order.discount <= 0 || order.discount > order.grossAmount) {
+        throw new Error('Discounted order has an invalid coupon or amount; manual reconciliation required');
+      }
+      const couponRef = await this.store.collection(COUPON_COLLECTION).doc(code).get();
+      if (!couponRef.exists || !couponRef.updateTime) {
+        throw new Error('Paid coupon was removed or has no revision; manual reconciliation required');
+      }
+      const coupon = couponRef.data();
+      if (!coupon || coupon.code !== code || !Number.isSafeInteger(coupon.timesUsed) ||
+          coupon.timesUsed < 0 || !coupon.userUsageMap ||
+          typeof coupon.userUsageMap !== 'object' || Array.isArray(coupon.userUsageMap)) {
+        throw new Error('Paid coupon record is invalid; manual reconciliation required');
+      }
+      const previousCount = coupon.userUsageMap[order.userId] ?? 0;
+      if (!Number.isSafeInteger(previousCount) || previousCount < 0) {
+        throw new Error('Paid coupon student usage is corrupt; manual reconciliation required');
+      }
+      const globalLimit = coupon.usageLimit;
+      const studentLimit = coupon.perUserLimit;
+      if ((globalLimit != null && (!Number.isSafeInteger(globalLimit) || globalLimit <= coupon.timesUsed)) ||
+          (studentLimit != null && (!Number.isSafeInteger(studentLimit) || studentLimit <= previousCount))) {
+        // The gateway may already have collected funds. Never acknowledge
+        // or grant the pass until a human reconciles this paid conflict.
+        throw new Error('Coupon redemption limit changed after checkout; manual payment reconciliation required');
+      }
+      const redemption = await this.store.collection(COUPON_REDEMPTION_COLLECTION).doc(validId(orderId)).get();
+      if (redemption.exists) throw new Error('Coupon was previously redeemed by this order; manual reconciliation required');
+      couponWrites.push(
+        { collection: COUPON_COLLECTION, id: code, updateTime: couponRef.updateTime,
+          data: { ...coupon, timesUsed: coupon.timesUsed + 1,
+            userUsageMap: { ...coupon.userUsageMap, [order.userId]: previousCount + 1 },
+            updatedAt: paidAt } },
+        { collection: COUPON_REDEMPTION_COLLECTION, id: validId(orderId),
+          data: { orderId, userId: order.userId, code, discount: order.discount,
+            provider, providerPaymentId, redeemedAt: paidAt } },
+      );
+    } else if (order.discount > 0) {
+      throw new Error('Paid order contains an unexplained discount; manual reconciliation required');
+    }
+
     await this.store.commit([
       { collection: ORDER_COLLECTION, id: validId(orderId),
         data: { ...order, status: 'paid', paidAt, providerPaymentId }, updateTime: orderRef.updateTime },
@@ -250,6 +302,7 @@ export class DurablePaymentRepository {
           previousExpiresAt: new Date(baseMs).toISOString(), updatedAt: paidAt } },
       { collection: PAYMENT_CLAIM_COLLECTION, id: paymentClaimId,
         data: { provider, providerPaymentId, orderId, createdAt: paidAt } },
+      ...couponWrites,
     ]);
     return 'settled';
   }
