@@ -24,7 +24,7 @@
 - [ ] Validate real orders and renewals using isolated Firebase, R2/Drive staging scope, test-only Razorpay/Stripe accounts, signed gateway webhooks and one known staging account. No real funds or production accounts.
 - [ ] Assert amount/currency/provider checks, duplicate webhook idempotency, cross-account ownership, invalid signatures, retry on unavailable storage, and refunds that match the full payment.
 - [ ] Confirm admin order list, student order list, audit trail, analytics, active/expired/revoked Annual Pass, tax/currency, coupon discounts, export and failed-storage UX against persisted Firestore records.
-- [ ] Review all production/staging secrets, webhook URLs, domain/hostname guards and rollback steps; have separate signoff before any production change.
+- [ ] Review all production/staging secrets, webhook URLs, domain/hostname guards and rollback steps; complete the user-authorized production deployment only after the remaining technical gates pass.
 
 ## Safety controls and rollback
 1. Leave `MAYF_ENABLE_CHECKOUT` **and `MAYF_ENABLE_COUPON_CHECKOUT`** unset or false (even in preview) while reconciliation is incomplete.
@@ -32,7 +32,7 @@
 3. Never report a refund completed without verified provider settlement. Never write synthetic admin orders.
 4. On failed staging acceptance, restore the previous staging commit/Worker version; do not merge PR #77 to `main`.
 5. Record the exact staging SHA, automated CI run URL and real sandbox acceptance evidence when available.
-6. Only after acceptance may a separately approved deployment promote a reviewed candidate to production.
+6. Only after acceptance may deployment promote the reviewed candidate to production, as requested by the user.
 
 **Automated CI passing is not evidence that real Firestore, payment gateway, webhooks, Drive and R2 were exercised.**
 
@@ -48,3 +48,10 @@
 - A concurrent later purchase after initiation can make rollback ambiguous. Such a signed refund must stay in the existing reconciliation queue for manual adjustment; automated reconciliation never removes a later purchased term.
 - Required isolated sandbox evidence: valid full refund; duplicate/concurrent admin submissions; API timeout after acceptance; webhook before API response; invalid signature; mismatched amount/currency; failed Firestore precondition; renewal between initiation and webhook; final pass revocation and ledger/audit agreement after restart.
 - Keep `MAYF_ENABLE_ADMIN_REFUNDS` false until this evidence exists. This implementation has mocked-provider and emulator coverage, not live refund acceptance.
+
+## Razorpay sandbox and deployed checkout confirmation
+- Real Razorpay test credentials now create an actual provider order, including in a deployed production runtime used for isolated staging. Live credentials are rejected when `APP_ENV=staging` for both order creation and refund initiation. Configured key mode must match the key prefix. Local mock IDs exist only for the exact built-in development credential pair, outside deployed/staging runtimes; real API errors never fall back to simulation.
+- Authoritative provider order responses must match the requested INR amount, receipt and new/unpaid state. Provider errors and unknown outcomes do not acknowledge a purchase. Official API: https://razorpay.com/docs/api/orders/create/.
+- Deployed checkout no longer invokes the deliberately disabled legacy signature-settlement endpoint after the browser callback. It reads authenticated `/api/student/orders/:orderId/confirmation`, which confirms only the exact owner's paid order and matching active payment entitlement. This route cannot write or settle anything.
+- Confirmation polling is bounded, cancellable on account change/unmount, and shows a pending message with a read-only retry. A pending confirmation disables new checkout submission on that page. Only matching settled results show purchase confirmation. A full reload still relies on purchase history; complete live resume/reload acceptance before enablement.
+- Stripe's real sandbox/hosted checkout flow and paid-resource purchases remain release blockers. This change does not certify them or enable any checkout/refund flag.

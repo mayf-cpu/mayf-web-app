@@ -61,7 +61,8 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
   assertRefundConfigured(): void {
     if (!/^rzp_(test|live)_[A-Za-z0-9]+$/.test(this.keyId) || !this.keySecret ||
         /sandbox|demo/i.test(this.keySecret + this.keyId) || !this.hasWebhookSecret() ||
-        (this.testMode ? !this.keyId.startsWith('rzp_test_') : !this.keyId.startsWith('rzp_live_'))) {
+        (this.testMode ? !this.keyId.startsWith('rzp_test_') : !this.keyId.startsWith('rzp_live_')) ||
+        (process.env.APP_ENV === 'staging' && !this.keyId.startsWith('rzp_test_'))) {
       throw new Error('Real gateway credentials, matching mode and a refund webhook secret are required');
     }
   }
@@ -95,54 +96,38 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
    * Razorpay amounts are strictly represented in smallest currency unit (Paise: INR 1 = 100 paise)
    */
   async createOrder(order: StoredOrder): Promise<ProviderOrderResult> {
-    const finalPayable = Math.max(0, (order.grossAmount - order.discount) + (order.tax || 0));
+    const finalPayable = order.grossAmount - order.discount + (order.tax || 0);
     const amountInPaise = Math.round(finalPayable * 100);
-
-    // When real credentials are configured in production, call Razorpay API:
-    // https://api.razorpay.com/v1/orders
-    const isLiveKey = this.keyId.startsWith('rzp_live_') && this.keySecret && !this.keySecret.includes('sandbox');
-    let providerOrderId = '';
-
-    if (isLiveKey) {
-      try {
-        const basicAuth = Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64');
-        const resp = await fetch('https://api.razorpay.com/v1/orders', {
-          method: 'POST',
-          headers: {
-            Authorization: `Basic ${basicAuth}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            amount: amountInPaise,
-            currency: 'INR',
-            receipt: order.orderId,
-            notes: {
-              userId: order.userId,
-              orderId: order.orderId,
-              coupon: order.coupon || '',
-            },
-          }),
-        });
-
-        if (resp.ok) {
-          const data = await resp.json();
-          providerOrderId = data.id;
-        } else {
-          const errText = await resp.text();
-          console.warn('[Razorpay] Live API call responded with non-200:', errText);
-        }
-      } catch (err) {
-        console.warn('[Razorpay] Network error reaching Razorpay live API, falling back to deterministic order ID:', err);
+    if (order.currency !== 'INR' || !Number.isSafeInteger(amountInPaise) || amountInPaise < 100 ||
+        !order.orderId || order.orderId.length > 40) throw new Error('Invalid Razorpay order amount, currency or receipt');
+    const localSimulation = !isProductionPaymentRuntime() && process.env.APP_ENV !== 'staging' && this.testMode &&
+      this.keyId === 'rzp_test_mayf2026demo' && this.keySecret === 'rzp_sec_sandbox_k98a7sd6f';
+    let providerOrderId: string;
+    if (localSimulation) {
+      providerOrderId = `order_mayf_${Date.now().toString(36)}_${crypto.randomBytes(6).toString('hex')}`;
+    } else {
+      if (!/^rzp_(test|live)_[A-Za-z0-9]+$/.test(this.keyId) || !this.keySecret ||
+          /sandbox|demo/i.test(this.keyId + this.keySecret) ||
+          (this.testMode ? !this.keyId.startsWith('rzp_test_') : !this.keyId.startsWith('rzp_live_')) ||
+          (process.env.APP_ENV === 'staging' && !this.keyId.startsWith('rzp_test_'))) {
+        throw new Error('Real Razorpay credentials with matching mode are required; staging requires test keys');
       }
-    }
-
-    if (!providerOrderId && isProductionPaymentRuntime()) {
-      throw new Error('Payment gateway could not create an order. Check its configuration and try again.');
-    }
-    if (!providerOrderId) {
-      // Deterministic & unique Razorpay Order ID format: order_XXXXXXXXXXXXXXXX
-      const randomEntropy = crypto.randomBytes(6).toString('hex').toLowerCase();
-      providerOrderId = `order_mayf_${Date.now().toString(36)}_${randomEntropy}`;
+      // Real test keys call the same API as live keys; a provider failure never becomes a fake order.
+      const response = await fetch('https://api.razorpay.com/v1/orders', {
+        method: 'POST', signal: AbortSignal.timeout(15000),
+        headers: { Authorization: `Basic ${Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64')}`,
+          'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: amountInPaise, currency: 'INR', receipt: order.orderId,
+          notes: { userId: order.userId, orderId: order.orderId, coupon: order.coupon || '' } }),
+      });
+      if (!response.ok) throw new Error('Razorpay order creation failed; reconcile any uncertain provider outcome before retrying');
+      const result = await response.json() as any;
+      if (!/^order_[A-Za-z0-9]+$/.test(result.id || '') || result.entity !== 'order' ||
+          result.amount !== amountInPaise || result.currency !== 'INR' || result.receipt !== order.orderId ||
+          result.status !== 'created' || result.amount_paid !== 0 || result.amount_due !== amountInPaise) {
+        throw new Error('Razorpay returned an order that does not match the requested purchase');
+      }
+      providerOrderId = result.id;
     }
 
     return {

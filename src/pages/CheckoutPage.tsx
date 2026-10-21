@@ -1,3 +1,4 @@
+import { waitForPaymentConfirmation } from '../lib/payments/paymentConfirmation';
 /**
  * Authoritative Student Checkout Page
  * Maths at Your Fingertips (mayf.co.in)
@@ -72,6 +73,15 @@ export const CheckoutPage: React.FC = () => {
     message?: string;
     error?: string;
   } | null>(null);
+
+  const confirmationController = useRef<AbortController | null>(null);
+  const currentAccount = useRef(firebaseUser?.uid); currentAccount.current = firebaseUser?.uid;
+  const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
+  useEffect(() => {
+    setAwaitingConfirmation(false); setIsProcessing(false); setPendingOrderData(null); setVerificationSuccess(null);
+    return () => { confirmationController.current?.abort(); confirmationController.current = null; if (redirectTimer.current) clearTimeout(redirectTimer.current); };
+  }, [firebaseUser?.uid]);
 
   // Process & Verification State
   const [isProcessing, setIsProcessing] = useState(false);
@@ -249,6 +259,7 @@ export const CheckoutPage: React.FC = () => {
    */
   const handleInitiateOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (awaitingConfirmation || verificationSuccess) { setErrorMsg('Check this order in your purchase history before paying again.'); return; }
     setIsProcessing(true);
     setErrorMsg('');
     setVerificationSuccess(null);
@@ -367,27 +378,43 @@ export const CheckoutPage: React.FC = () => {
   }) => {
     setIsProcessing(true);
     setShowSandboxModal(false);
+    setErrorMsg('');
 
+    confirmationController.current?.abort();
+    const controller = new AbortController(); confirmationController.current = controller;
     try {
       const token = firebaseUser
         ? await firebaseUser.getIdToken()
         : user?.uid
         ? `dev-student-${user.uid}`
         : 'dev-student-mayf-student-1001';
-      const verifyRes = await fetch('/api/payments/verify-signature', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(verifyPayload),
-      });
-
-      const verifyData = await verifyRes.json();
-      if (!verifyData.success) {
-        throw new Error(verifyData.error || 'Server cryptographic payment verification failed');
-      }
-
+      if (import.meta.env.PROD && (!firebaseUser || currentAccount.current !== firebaseUser.uid)) return;
+      if (controller.signal.aborted) return;
+      const timeout = setTimeout(() => controller.abort(), 45000);
+      let verifyData: any;
+      try {
+        if (import.meta.env.PROD) {
+          setAwaitingConfirmation(true);
+          const confirmed = await waitForPaymentConfirmation(verifyPayload.orderId, async () => {
+            const response = await fetch(`/api/student/orders/${encodeURIComponent(verifyPayload.orderId)}/confirmation`, {
+              headers: { Authorization: `Bearer ${await firebaseUser!.getIdToken()}` }, signal: controller.signal,
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success || !data.order) throw new Error(data.error || 'Payment confirmation is unavailable. Do not pay again; check your purchase history.');
+            return data.order;
+          }, controller.signal);
+          verifyData = { success: true, order: confirmed };
+        } else {
+          const response = await fetch('/api/payments/verify-signature', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify(verifyPayload), signal: controller.signal,
+          });
+          verifyData = await response.json();
+          if (!response.ok || !verifyData.success) throw new Error(verifyData.error || 'Payment confirmation failed');
+        }
+      } finally { clearTimeout(timeout); }
+      if (confirmationController.current !== controller || controller.signal.aborted || (import.meta.env.PROD && currentAccount.current !== firebaseUser?.uid)) return;
+      setAwaitingConfirmation(false);
       // Authoritative verification succeeded! Entitlement confirmed by server.
       setVerificationSuccess(verifyData);
 
@@ -422,13 +449,13 @@ export const CheckoutPage: React.FC = () => {
       });
 
       // Transition to purchases after brief review
-      setTimeout(() => {
-        navigate('/dashboard/purchases');
+      redirectTimer.current = setTimeout(() => {
+        if (!import.meta.env.PROD || currentAccount.current === firebaseUser?.uid) navigate('/dashboard/purchases');
       }, 2500);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Cryptographic verification failed on server.');
+      if (confirmationController.current === controller && (!import.meta.env.PROD || currentAccount.current === firebaseUser?.uid)) setErrorMsg(err.message === 'Payment confirmation cancelled' ? 'Payment confirmation timed out. Do not pay again; check your purchase history.' : (err.message || 'Payment confirmation unavailable. Do not pay again; check your purchase history.'));
     } finally {
-      setIsProcessing(false);
+      if (confirmationController.current === controller) setIsProcessing(false);
     }
   };
 
@@ -476,6 +503,13 @@ export const CheckoutPage: React.FC = () => {
         </div>
 
         {/* Success Banner */}
+        {awaitingConfirmation && isProcessing && <p role="status" className="text-sm text-slate-600">Waiting for payment confirmation. Please do not pay again.</p>}
+        {awaitingConfirmation && !isProcessing && pendingOrderData && (
+          <Button type="button" variant="outline" onClick={() => executeServerVerification({
+            orderId: pendingOrderData.order.orderId, provider: pendingOrderData.checkoutData.provider,
+            providerOrderId: pendingOrderData.checkoutData.providerOrderId, providerPaymentId: '',
+          })}>Check payment confirmation again</Button>
+        )}
         {verificationSuccess && (
           <div className="p-5 rounded-xl bg-[#ECFDF5] border border-[#6EE7B7] flex items-start gap-4">
             <CheckCircle2 className="w-6 h-6 text-[#10B981] shrink-0 mt-0.5" />
@@ -484,7 +518,7 @@ export const CheckoutPage: React.FC = () => {
                 Payment Authoritatively Reconciled & Annual Pass Granted!
               </h3>
               <p className="text-xs text-[#047857]">
-                Order <span className="font-mono font-bold">{verificationSuccess.order?.orderId}</span> verified via server-side HMAC signature. Redirecting to your Student Dashboard...
+                Order <span className="font-mono font-bold">{verificationSuccess.order?.orderId}</span> confirmed. Redirecting to your Student Dashboard...
               </p>
             </div>
           </div>
@@ -733,7 +767,7 @@ export const CheckoutPage: React.FC = () => {
                 <div className="pt-3 border-t border-[#E2E8F0] flex justify-between text-sm font-bold text-[#0F172A]">
                   <span>Total Payable</span>
                   <span className="font-mono tabular-nums text-lg text-[#00687A]">
-                    {isINR ? `₹${netAmount}.00` : `$${netAmount}.00`}
+                    {new Intl.NumberFormat('en-IN', { style: 'currency', currency: isINR ? 'INR' : 'USD' }).format(netAmount)}
                   </span>
                 </div>
               </div>
@@ -742,9 +776,9 @@ export const CheckoutPage: React.FC = () => {
               <div className="mt-6 p-3 rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] text-[11px] text-[#1E3A8A] space-y-1">
                 <div className="font-bold flex items-center gap-1.5">
                   <ShieldCheck className="w-3.5 h-3.5 text-[#1D4ED8]" />
-                  <span>7-Day Academic Satisfaction Guarantee</span>
+                  <span>Refund requests</span>
                 </div>
-                <div>No lock-in contracts. Instant refund if unsatisfied.</div>
+                <div>Refund requests are reviewed under our <a href="/refund-policy" className="underline">refund policy</a>. Provider processing times apply.</div>
               </div>
             </div>
 
@@ -756,7 +790,7 @@ export const CheckoutPage: React.FC = () => {
                 fullWidth
                 size="lg"
                 isLoading={isProcessing}
-                disabled={!pricingLoaded || !passAvailable}
+                disabled={awaitingConfirmation || Boolean(verificationSuccess) || !pricingLoaded || !passAvailable}
                 className="font-bold text-sm shadow-md"
               >
                 <span>
@@ -860,7 +894,7 @@ export const CheckoutPage: React.FC = () => {
               </div>
 
               <p className="text-[11px] text-[#64748B] leading-relaxed">
-                Submitting executes the full cryptographic flow: payment tokens return to the server for authoritative HMAC signature verification. <strong>Entitlement will be granted only upon server verification.</strong>
+                Your access will be activated after the payment provider confirms your payment. <strong>If confirmation takes time, check your purchase history before paying again.</strong>
               </p>
 
               <div className="flex gap-2 pt-2">

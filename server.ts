@@ -37,6 +37,7 @@ import { isProductionPaymentRuntime } from './src/lib/payments/runtime';
 import { validateAnnualPassCart } from './src/lib/payments/checkoutPolicy';
 import { DurablePaymentRepository } from './src/lib/payments/durablePaymentRepository';
 import { initiateFullRefund } from './src/lib/payments/refundInitiation';
+import { readOwnedPaymentConfirmation } from './src/lib/payments/paymentConfirmation';
 import { processVerifiedRazorpayFullRefund } from './src/lib/payments/durableRefundProcessor';
 import { settleVerifiedAnnualPassWebhook } from './src/lib/payments/durableWebhookProcessor';
 import { entitlementService } from './src/lib/payments/entitlementService';
@@ -1173,6 +1174,14 @@ app.post('/api/payments/webhook/stripe', asyncRoute(async (req: Request, res: Re
 /**
  * 5. Student Orders Endpoint
  */
+app.get('/api/student/orders/:orderId/confirmation', requireAuth, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, private');
+  const db = getAdminFirestore();
+  if (!db) return res.status(503).json({ success: false, error: 'Payment confirmation storage unavailable.' });
+  const order = await readOwnedPaymentConfirmation(db, req.userAuth!.uid, String(req.params.orderId));
+  if (!order) return res.status(404).json({ success: false, error: 'Order not found.' });
+  return res.json({ success: true, order });
+}));
 app.get('/api/student/orders', requireAuth, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.userAuth!.uid;
   const db = getAdminFirestore();

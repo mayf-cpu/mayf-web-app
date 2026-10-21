@@ -11,6 +11,8 @@ try {
   for (const [route, status] of [
     ['/api/health', 200], ['/api/admin/verify-access', 401],
     ['/api/admin/content', 401], ['/api/formulas', 200],
+    ['/api/student/orders/ord-private/confirmation', 401],
+    ['/api/admin/payments/refunds', 401],
     ['/api/downloads/file/definitely-not-a-real-token', 404],
     ['/api/not-a-real-route', 404],
   ]) {
