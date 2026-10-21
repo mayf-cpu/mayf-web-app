@@ -12,12 +12,32 @@ import {
 import { adminService, OrderRecord } from '../../../services/adminService';
 import { Button } from '../../ui/Button';
 
+const safeCsvCell = (input: string | number | undefined): string => {
+  const value = String(input ?? '');
+  const safe = /^[\s]*[=+\-@]/.test(value) ? "'" + value : value;
+  return '"' + safe.replace(/"/g, '""') + '"';
+};
 export const AdminOrdersSection: React.FC = () => {
   const [orders, setOrders] = useState<OrderRecord[]>([]);
-
+  const [error, setError] = useState('');
   useEffect(() => {
-    adminService.getOrders().then(setOrders);
+    adminService.getOrders().then((items) => { setOrders(items); setError(''); })
+      .catch((err: any) => setError(err?.message || 'Payment ledger could not be loaded.'));
   }, []);
+  const exportLedger = () => {
+    if (!orders.length || error) return;
+    const columns = ['Order Number', 'Customer Email', 'Plan', 'Amount', 'Currency', 'Gateway', 'Status', 'Created At', 'Payment ID'];
+    const rows = orders.map(order => [order.orderNumber, order.customerEmail, order.planName, order.amount, order.currency, order.gateway, order.status, order.createdAt, order.paymentId].map(safeCsvCell).join(','));
+    const csv = [columns.map(safeCsvCell).join(','), ...rows].join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'mayf_orders_' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="space-y-6">
@@ -27,20 +47,21 @@ export const AdminOrdersSection: React.FC = () => {
             Commercial Orders & Invoicing Ledger
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Cryptographically verified webhook payments processed via Razorpay and Stripe.
+            Actual payment orders from the Firestore ledger. Pending and refunded orders are displayed separately.
           </p>
         </div>
 
-        <Button size="sm" variant="outline" className="gap-1.5 shadow-2xs">
+        <Button size="sm" variant="outline" onClick={exportLedger} disabled={!orders.length || Boolean(error)} className="gap-1.5 shadow-2xs">
           <Download className="w-3.5 h-3.5" />
           <span>Export Financial Ledger</span>
         </Button>
       </div>
 
+      {error && <p role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">{error}</p>}
       <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
         <div className="px-5 py-3 border-b border-slate-200 bg-slate-50/70 flex items-center justify-between text-xs font-semibold text-slate-600">
-          <span>{orders.length} Verified Transactions</span>
-          <span className="font-mono text-[11px] text-emerald-700">HMAC-SHA256 Webhook Validated</span>
+          <span>{orders.length} Recorded Orders</span>
+          <span className="font-mono text-[11px] text-emerald-700">Durable Firestore Ledger</span>
         </div>
 
         <div className="overflow-x-auto">
@@ -57,6 +78,7 @@ export const AdminOrdersSection: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+              {!error && orders.length === 0 && <tr><td colSpan={7} className="px-5 py-8 text-center text-slate-500">No recorded orders yet.</td></tr>}
               {orders.map((ord) => (
                 <tr key={ord.id} className="hover:bg-blue-50/20 transition-colors">
                   <td className="px-5 py-3.5">
@@ -66,7 +88,32 @@ export const AdminOrdersSection: React.FC = () => {
                   <td className="px-4 py-3.5 text-slate-700 font-mono text-[11px]">{ord.customerEmail}</td>
                   <td className="px-4 py-3.5 font-semibold text-slate-800">{ord.planName}</td>
                   <td className="px-4 py-3.5 font-heading font-extrabold text-slate-900">
-                    ₹{ord.amount.toLocaleString()}
+                    {ord.currency === 'INR' ? '₹' : ord.currency === 'USD' ? '
+                  </td>
+                  <td className="px-4 py-3.5">
+                    <span className="inline-flex items-center gap-1 uppercase font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+                      {ord.gateway}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3.5">
+                    <span className={ord.status === "paid" ? "inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-200" : "inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-100 text-slate-700 border border-slate-200"}>
+                      <CheckCircle2 className="w-3 h-3 text-emerald-700" />
+                      {ord.status.toUpperCase()}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3.5 text-right font-mono text-[11px] text-slate-500">
+                    {ord.createdAt.split('T')[0]}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+ : ord.currency + ' '}{ord.amount.toLocaleString('en-IN')}
                   </td>
                   <td className="px-4 py-3.5">
                     <span className="inline-flex items-center gap-1 uppercase font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
