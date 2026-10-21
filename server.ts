@@ -1331,7 +1331,7 @@ app.post('/api/coupons/validate', couponRoute(false, async (req: Request, res: R
     const authHeader = req.headers.authorization;
     if (authHeader?.startsWith('Bearer ')) {
       const verified = await verifyStudentSessionToken(authHeader.slice(7));
-      if (!verified) return res.status(401).json({ success: false, error: 'Sign in again to validate this coupon.' });
+      if (!verified.valid || !verified.uid) return res.status(401).json({ success: false, error: 'Sign in again to validate this coupon.' });
       effectiveUserId = verified.uid;
     }
     const cart = await catalogueRepository.run(() => resolveCheckoutCart(items, currency, entitlementService.getSettings(), id => contentCmsManager.getItem(id)));

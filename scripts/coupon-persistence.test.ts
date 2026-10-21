@@ -80,3 +80,9 @@ test('production starts without invented coupons or published promotions', () =>
   try { const service = new CouponService(); assert.deepEqual(service.getAllCoupons(), []); assert.deepEqual(service.getAllPromotions(), []); }
   finally { if (before === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = before; }
 });
+
+ test('promotion edits can clear an associated coupon instead of retaining it', () => {
+  const service = new CouponService();
+  const promo = service.savePromotion({ id: 'qa-clear', couponCode: 'OLD' });
+  assert.equal(service.savePromotion({ id: promo.id, couponCode: '' }).couponCode, '');
+});

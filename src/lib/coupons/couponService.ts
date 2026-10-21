@@ -461,7 +461,7 @@ export class CouponService {
       title: data.title || existing?.title || 'Special Mathematics Promotion',
       subtitle: data.subtitle ?? existing?.subtitle ?? '',
       badgeText: data.badgeText ?? existing?.badgeText ?? 'LIMITED TIME OFFER',
-      couponCode: data.couponCode ? data.couponCode.trim().toUpperCase() : existing?.couponCode,
+      couponCode: data.couponCode !== undefined ? data.couponCode.trim().toUpperCase() : existing?.couponCode,
       targetPlacements: data.targetPlacements || existing?.targetPlacements || ['homepage'],
       ctaText: data.ctaText || existing?.ctaText || 'Get Offer Now',
       ctaLink: data.ctaLink || existing?.ctaLink || '/checkout',

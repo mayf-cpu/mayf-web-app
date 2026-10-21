@@ -131,7 +131,7 @@ export const PromotionsManagementTab: React.FC = () => {
         title: title.trim(),
         subtitle: subtitle.trim(),
         badgeText: badgeText.trim(),
-        couponCode: couponCode ? couponCode.trim().toUpperCase() : undefined,
+        couponCode: couponCode.trim().toUpperCase(),
         targetPlacements: placements,
         ctaText: ctaText.trim(),
         ctaLink: ctaLink.trim(),
@@ -703,7 +703,7 @@ export const PromotionsManagementTab: React.FC = () => {
                   disabled={saving}
                   className="text-xs font-bold cursor-pointer"
                 >
-                  {saving ? 'Saving...' : isEditing ? 'Update Block' : 'Publish Block'}
+                  {saving ? 'Saving...' : isEditing ? 'Update Block' : enabled ? 'Publish Block' : 'Save Draft'}
                 </Button>
               </div>
             </form>
