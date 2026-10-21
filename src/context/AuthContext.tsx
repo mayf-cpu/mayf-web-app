@@ -1,3 +1,4 @@
+import { readBookmarks, writeBookmarks } from '../lib/bookmarks/bookmarkStorage';
 import { setActivityUser } from '../lib/activity/activityService';
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
@@ -108,19 +109,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
   const [loading, setLoading] = useState<boolean>(true);
 
-  const [savedItemIds, setSavedItemIds] = useState<string[]>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('mayf_saved_items');
-      if (saved) {
-        try {
-          return JSON.parse(saved);
-        } catch {
-          return ['quad-formula', 'pythagoras-theorem'];
-        }
-      }
-    }
-    return ['quad-formula', 'pythagoras-theorem'];
-  });
+  const bookmarkOwner = user?.uid || null;
+  const readSaved = (uid: string | null) => typeof window !== 'undefined' ? readBookmarks(localStorage, uid) : [];
+  const [bookmarks, setBookmarks] = useState<{ owner: string | null; ids: string[] }>(() => ({ owner: bookmarkOwner, ids: readSaved(bookmarkOwner) }));
+  const savedItemIds = bookmarks.owner === bookmarkOwner ? bookmarks.ids : [];
+  useEffect(() => {
+    setBookmarks({ owner: bookmarkOwner, ids: readSaved(bookmarkOwner) });
+  }, [bookmarkOwner]);
 
   // Listen to Firebase Auth state
   useEffect(() => {
@@ -244,10 +239,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('mayf_saved_items', JSON.stringify(savedItemIds));
+    if (typeof window !== 'undefined' && bookmarks.owner === bookmarkOwner) {
+      try { writeBookmarks(localStorage, bookmarks.ids, bookmarkOwner); } catch { /* Local storage can be disabled by the browser. */ }
     }
-  }, [savedItemIds]);
+  }, [bookmarks, bookmarkOwner]);
 
   const signInWithGoogle = async () => {
     setLoading(true);
@@ -392,9 +387,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const toggleSavedItem = (itemId: string) => {
-    setSavedItemIds((prev) =>
-      prev.includes(itemId) ? prev.filter((id) => id !== itemId) : [...prev, itemId]
-    );
+    setBookmarks(previous => {
+      const ids = previous.owner === bookmarkOwner ? previous.ids : readSaved(bookmarkOwner);
+      return { owner: bookmarkOwner, ids: ids.includes(itemId) ? ids.filter(id => id !== itemId) : [...ids, itemId] };
+    });
   };
 
   return (

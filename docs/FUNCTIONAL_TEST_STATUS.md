@@ -135,6 +135,12 @@ Keep this PR in draft until the open durability and demonstration-path findings 
 
 - Removed invented starter activity and recently viewed records. Old act-sample local entries are filtered out. New accounts start with an empty history.
 - In-memory activity and recently viewed caches reset on account changes/sign-out. Subscribers are scoped to a user; a previous account's delayed Firestore result cannot replace current activity. Dashboard requests also check the currently displayed account before applying a response.
-- Firestore activity writes strip undefined optional fields, which previously caused SDK rejection. Client activity is still reported usage, not authoritative proof of purchases or entitlement. Live cross-account/offline acceptance, retention/index configuration, and connection of administrator profile history to the durable ledger remain pending. The legacy shared local bookmark cache also requires account scoping.
+- Firestore activity writes strip undefined optional fields, which previously caused SDK rejection. Client activity is still reported usage, not authoritative proof of purchases or entitlement. Live cross-account/offline acceptance, retention/index configuration, and connection of administrator profile history to the durable ledger remain pending. The subsequent bookmark-isolation batch addresses the legacy shared browser cache.
 - Two regression tests cover account switching/sign-out isolation, owner filtering and a delayed previous-account result. 90 automated tests, TypeScript and production build pass.
 - Cloudflare reports successful deployment of 3e546f9. Live visual inspection confirms the complete sharing menu is visible above its trigger, with all channels and copy control no longer clipped. No external social post was sent.
+
+## Bookmark account isolation
+
+- Favorites now use separate guest/account browser keys, validate loaded IDs and start empty. A rendered account never sees another account's previous favorite state while effects catch up. Switching accounts loads only that account's local list.
+- The ambiguous old shared mayf_saved_items key is retained but not automatically assigned to any account; this prevents silently exposing one account's favorites to another. Cross-device/cloud bookmark synchronization remains pending; these lists are explicitly browser-local.
+- Two tests cover guest/account separation, legacy-cache exclusion, key collision prevention, malformed data and duplicate/non-string IDs. 92 automated tests, TypeScript and production build pass. Authenticated cross-account UI verification remains pending sign-in.
