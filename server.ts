@@ -3428,10 +3428,19 @@ app.post('/api/ai-teacher/ask', asyncRoute(async (req: Request, res: Response) =
       return res.status(400).json({ error: 'A question message or math image is required' });
     }
 
-    // Optional Firebase App Check verification header
+    if (!aiClient || !geminiApiKey) {
+      return res.status(503).json({ success: false, error: 'AI Teacher is not configured yet.' });
+    }
+
+    // When enabled, verify the App Check signature, not merely header presence.
     const appCheckToken = req.headers['x-firebase-appcheck'];
-    if (process.env.REQUIRE_APP_CHECK === 'true' && !appCheckToken) {
-      return res.status(401).json({ error: 'App Check verification token is required' });
+    if (process.env.REQUIRE_APP_CHECK === 'true') {
+      const app = getFirebaseAdminApp();
+      if (!app || typeof appCheckToken !== 'string') {
+        return res.status(401).json({ success: false, error: 'A valid App Check token is required.' });
+      }
+      try { await getAppCheck(app).verifyToken(appCheckToken); }
+      catch { return res.status(401).json({ success: false, error: 'App Check verification failed.' }); }
     }
 
     // Identify user identity if logged in
@@ -3443,7 +3452,9 @@ app.post('/api/ai-teacher/ask', asyncRoute(async (req: Request, res: Response) =
       const tokenVerification = await verifyStudentSessionToken(authHeader);
       if (tokenVerification.valid && tokenVerification.uid) {
         verifiedUid = tokenVerification.uid;
-        userLimit = 100; // Authenticated free tier
+        // Paid access is read from the durable entitlement store rather than trusting client claims.
+        const pass = await getAuthoritativePassStatus(verifiedUid);
+        userLimit = pass.active || tokenVerification.admin || tokenVerification.superAdmin || tokenVerification.pro ? 1000 : 100;
       }
     }
 
@@ -3454,7 +3465,10 @@ app.post('/api/ai-teacher/ask', asyncRoute(async (req: Request, res: Response) =
 
     // Rate Limiting & Daily Quota Guard
     const quotaKey = verifiedUid ? `user-${verifiedUid}` : `ip-${rawIp}`;
-    const quotaCheck = checkAiQuota(quotaKey, userLimit);
+    if (await checkDownloadRateLimit(`ai-${quotaKey}`, 15, 180000)) {
+      return res.status(429).json({ success: false, error: 'Too many AI requests. Please wait a few minutes.' });
+    }
+    const quotaCheck = await aiQuota.consume(quotaKey, userLimit);
     if (!quotaCheck.allowed) {
       return res.status(429).json({
         error: 'Question limit reached for this session. Please wait a few minutes or upgrade to the Annual Pass for unlimited access.',
