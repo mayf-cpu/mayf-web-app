@@ -5,6 +5,14 @@
 Run `npm ci && npm run lint && npm test && npm run build && npm run test:worker`.
 The `staging-release-gates.test.ts` guards the critical code wiring. Passing these checks does **not** establish that external services or browser workflows work.
 
+## Read-only preview smoke check
+
+After deploying the **integrated draft stack to an isolated preview Worker**, run:
+
+`node scripts/staging-http-smoke.mjs https://YOUR-PREVIEW.workers.dev`
+
+This performs live GET checks for backend health and anonymous denial on Admin verification, storage readiness, import jobs and legacy migration audit. It refuses production URLs and does not send secrets or write data. Do **not** treat the check as evidence of Firebase/R2/Drive connectivity, admin sign-in success, student downloads, or payments. Run full authenticated browser and sandbox acceptance separately.
+
 ## External staging prerequisites (must be checked manually)
 
 - Use a dedicated staging Worker/environment. Do not enable production checkout.
@@ -21,6 +29,6 @@ The `staging-release-gates.test.ts` guards the critical code wiring. Passing the
 
 - PRs are stacked and not deployed; isolated successful CI runs are not a substitute for an integrated staging test.
 - Private R2 provisioning, real PDF uploads and OAuth permissions have not been confirmed.
-- R2 object existence checks are not an atomic no-overwrite guarantee; versioned publishing and conditional writes are still needed before allowing concurrent replacements.
+- Versioned PDF keys reduce accidental overwrite risk, but full conditional write semantics, orphan cleanup, and concurrent-service staging tests are still needed.
 - Payment initial renewal migration, refunds with multiple successive renewals, and full sandbox E2E need additional verification.
 - Firestore audit listing currently loads all audit records; pagination and retention are still outstanding.
