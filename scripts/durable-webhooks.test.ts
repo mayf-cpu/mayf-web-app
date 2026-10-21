@@ -80,3 +80,13 @@ test('early renewal extends from previous pass expiry instead of purchase date',
   await settleVerifiedAnnualPassWebhook(repository, receipt, 365, new Date('2026-10-21T00:00:00Z'));
   assert.equal((writes[0] as any).entitlement.expiresAt, '2028-01-01T00:00:00.000Z');
 });
+
+test('settlement honors purchased duration even if the configured duration later changes', async () => {
+  const { repository, writes } = fixture({ ...order, metadata: { annualPassDurationDays: 180 } });
+  const purchased = new Date('2026-10-21T00:00:00Z');
+  await settleVerifiedAnnualPassWebhook(repository, receipt, 365, purchased);
+  assert.equal((writes[0] as any).entitlement.expiresAt, new Date(purchased.getTime() + 180 * 86400000).toISOString());
+  const bad = fixture({ ...order, metadata: { annualPassDurationDays: '9999' } });
+  await assert.rejects(settleVerifiedAnnualPassWebhook(bad.repository, receipt, 365), /purchased membership duration/);
+  assert.equal(bad.writes.length, 0);
+});

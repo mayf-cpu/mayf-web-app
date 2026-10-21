@@ -37,6 +37,11 @@ export async function settleVerifiedAnnualPassWebhook(
   }
   const order: StoredOrder | null = await repository.getOrderByProviderOrderId(receipt.provider, receipt.providerOrderId);
   if (!order) return 'unknown_order'; // gateway should retry, not get a successful acknowledgment
+  const purchasedDuration = order.metadata?.annualPassDurationDays;
+  if (purchasedDuration !== undefined) {
+    if (typeof purchasedDuration !== 'number' || !Number.isInteger(purchasedDuration) || purchasedDuration < 1 || purchasedDuration > 3650) throw new Error('Invalid purchased membership duration.');
+    durationDays = purchasedDuration;
+  }
   if (order.provider !== receipt.provider || order.providerOrderId !== receipt.providerOrderId) {
     throw new Error('Provider order mismatch');
   }

@@ -1,3 +1,5 @@
+import { annualPassSettings } from './src/lib/payments/annualPassSettingsRepository';
+import { annualPassPrice } from './src/lib/payments/annualPassSettings';
 import { probeStagingConnectivity } from './src/lib/ingestion/stagingConnectivity';
 import { auditLegacyPdfMigration } from './src/lib/download/legacyMigrationAudit';
 import { canReadPremiumContent, publicContent } from './src/lib/catalogue/catalogueAccess';
@@ -920,8 +922,8 @@ async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
     // AUTHORITATIVE PRICE CALCULATION: Prevent price manipulation
     // Never trust client-supplied amounts for Annual Pass or catalog items.
     const isUsd = currency.toUpperCase() === 'USD';
-    const passSettings = entitlementService.getSettings();
-    const authoritativePassPrice = isUsd ? 29 : (passSettings.salePrice || 999);
+    const passSettings = await annualPassSettings.read();
+    const authoritativePassPrice = annualPassPrice(passSettings, currency);
 
     // Until catalogue prices are resolved from the authoritative CMS,
     // checkout supports ONLY one Annual Pass. Never accept a client
@@ -955,9 +957,10 @@ async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
         unitPrice: authoritativeGross,
         quantity: 1,
         annualPass: true,
-        description: '1-Year Unlimited Access to All Formula Decks, Chapter Materials, & AI Teacher',
+        description: `${passSettings.durationDays}-day Annual Pass`,
       }],
       grossAmount: authoritativeGross,
+      annualPassDurationDays: passSettings.durationDays,
       coupon: chosenCoupon,
       currency,
       preferredProvider: provider as PaymentProvider,
@@ -1136,7 +1139,7 @@ async function handleDurablePaymentWebhook(provider: PaymentProvider, req: Reque
       return res.status(503).json({ status: 'retry_required', error: 'Payment storage unavailable' });
     }
     const result = await settleVerifiedAnnualPassWebhook(
-      new DurablePaymentRepository(db), verified, entitlementService.getSettings().durationDays,
+      new DurablePaymentRepository(db), verified, (await annualPassSettings.read()).durationDays,
     );
     if (result === 'unknown_order') {
       await recordReview('ORDER_NOT_FOUND');
@@ -1303,13 +1306,13 @@ app.post('/api/admin/payments/simulate-webhook', requireAuth, requireAdmin, asyn
 /**
  * Public Annual Pass Configuration (For pricing & feature cards)
  */
-app.get('/api/annual-pass/config', (_req: Request, res: Response) => {
-  return res.json({
-    success: true,
-    settings: entitlementService.getSettings(),
-  });
-});
-
+app.get('/api/annual-pass/config', asyncRoute(async (_req: Request, res: Response) => {
+  const settings = await annualPassSettings.read();
+  const { updatedBy, ...publicSettings } = settings;
+  const taxRatePercentage = await paymentSettingsRepository.run(() => paymentService.getMaskedSettings().taxRatePercentage);
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({ success: true, settings: publicSettings, effectivePriceINR: settings.enabled ? annualPassPrice(settings, 'INR') : settings.regularPrice, taxRatePercentage, checkoutEnabled: process.env.MAYF_ENABLE_CHECKOUT === 'true' });
+}));
 /**
  * Student Active Entitlement Status & Expiry Check
  * Automatically reflects expired state without removing order history.
@@ -1323,26 +1326,26 @@ app.get('/api/student/entitlement', requireAuth, asyncRoute(async (req: Authenti
     daysRemaining: status.daysRemaining,
     reason: status.reason,
     entitlement: status.entitlement,
-    settings: entitlementService.getSettings(),
+    settings: await annualPassSettings.read(),
   });
 }));
 
 /**
  * Admin: Get Annual Pass Settings
  */
-app.get('/api/admin/annual-pass/settings', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+app.get('/api/admin/annual-pass/settings', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
   return res.json({
     success: true,
-    settings: entitlementService.getSettings(),
+    settings: await annualPassSettings.read(),
   });
-});
+}));
 
 /**
  * Admin: Update Annual Pass Settings
  */
-app.post('/api/admin/annual-pass/settings', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/annual-pass/settings', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const updated = entitlementService.updateSettings(req.body, req.userAuth?.uid || 'admin');
+    const updated = await annualPassSettings.save(req.body, req.userAuth!.uid);
     return res.json({
       success: true,
       settings: updated,
@@ -1351,7 +1354,7 @@ app.post('/api/admin/annual-pass/settings', requireAuth, requireAdmin, (req: Aut
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message || 'Failed to update Annual Pass settings' });
   }
-});
+}));
 
 /**
  * Admin: List All Entitlements

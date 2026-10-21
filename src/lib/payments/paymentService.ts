@@ -205,6 +205,8 @@ export class PaymentService {
     providerResult: ProviderOrderResult;
   }> {
     const { userId, items, grossAmount, coupon, currency = 'INR', preferredProvider, customerDetails } = req;
+    const purchasedDuration = req.annualPassDurationDays ?? 365;
+    if (!Number.isInteger(purchasedDuration) || purchasedDuration < 1 || purchasedDuration > 3650) throw new Error('Invalid purchased membership duration.');
 
     // Calculate coupon discount securely on server (never trust client-calculated discounts)
     let discount = 0;
@@ -270,6 +272,7 @@ export class PaymentService {
       tax,
       currency: currency.toUpperCase(),
       provider: providerType,
+      metadata: { annualPassDurationDays: purchasedDuration },
       providerOrderId: '', // will be populated from adapter result
       providerPaymentId: undefined,
       status: 'created',

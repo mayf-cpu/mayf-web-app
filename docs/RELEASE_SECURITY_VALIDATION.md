@@ -16,3 +16,7 @@ Candidate: consolidated staging PR #77. Production remains blocked pending opera
 3. Complete payment sandbox/webhook/late-capture/refund acceptance and the remaining code requirements in PAYMENT_RELEASE_GATES.md. Checkout flags stay off until that succeeds.
 4. Validate Gemini, Drive/Sheets/R2 imports, settings saves and remaining frontend/feature parity.
 5. Require successful exact-SHA CI, reviewed combined diff and rollback readiness before promotion. The user has requested production deployment after all issues are fixed; that condition is not yet satisfied. No live deployment, real payment or production data change was performed for this reconciliation.
+
+## Membership and financial presentation follow-through
+
+Annual Pass configuration and editor saves are now durable, with validation and revision conflicts. Public pricing, enabled status and added tax are reflected in the pass/checkout UI. Order duration is snapshotted before provider initialization and honored at signed settlement. Demo customer defaults, invented checkout Turnstile tokens and automatic sample coupons were removed. Changing provider or clearing a coupon invalidates stale quote responses. Sales still require the existing checkout flags and sandbox acceptance. This follow-through passes 203 application tests, TypeScript and frontend build locally; its exact pushed CI and live staging evidence remain to be recorded.

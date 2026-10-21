@@ -31,29 +31,25 @@ export const AnnualPassPage: React.FC = () => {
     promotionalEndDate: '2027-03-31',
   });
 
+  const [configLoaded, setConfigLoaded] = useState(false);
+  const [configError, setConfigError] = useState('');
+  const [displayPrice, setDisplayPrice] = useState(0);
+  const [checkoutEnabled, setCheckoutEnabled] = useState(false);
+
   useEffect(() => {
     async function loadConfig() {
       try {
         const res = await fetch('/api/annual-pass/config');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && data.settings) {
-            setConfig(data.settings);
-          }
-        }
-      } catch (err) {
-        console.warn('Could not load dynamic pass config, using standard defaults:', err);
-      }
+        const data = await res.json();
+        if (!res.ok || !data.success || !Number.isFinite(data.effectivePriceINR)) throw new Error('Membership pricing is unavailable. Please retry later.');
+        setConfig(data.settings); setDisplayPrice(data.effectivePriceINR); setCheckoutEnabled(data.checkoutEnabled === true); setConfigLoaded(true);
+      } catch (error: any) { setConfigError(error.message || 'Membership pricing could not be loaded.'); }
     }
+
     loadConfig();
   }, []);
 
-  const isPromoActive = Boolean(
-    config.promotionalStartDate &&
-    config.promotionalEndDate &&
-    new Date(config.promotionalStartDate) <= new Date() &&
-    new Date(config.promotionalEndDate) >= new Date()
-  );
+  const isPromoActive = configLoaded && displayPrice < config.regularPrice;
 
   const faqs = [
     {
@@ -80,6 +76,7 @@ export const AnnualPassPage: React.FC = () => {
 
   return (
     <SharedLayout>
+      {configError && <p role="alert" className="p-3 rounded bg-red-50 text-red-700">{configError}</p>}
       <SeoHead
         title={pageTitle}
         description={pageDesc}
@@ -95,7 +92,7 @@ export const AnnualPassPage: React.FC = () => {
           description: pageDesc,
           offers: {
             '@type': 'Offer',
-            price: String(config.salePrice),
+            price: String(displayPrice),
             priceCurrency: config.currency,
             availability: 'https://schema.org/InStock',
             url: 'https://mayf.co.in/annual-pass',
@@ -197,9 +194,9 @@ export const AnnualPassPage: React.FC = () => {
 
               <div className="flex items-baseline gap-2 mb-1">
                 <span className="font-mono tabular-nums text-4xl sm:text-5xl font-extrabold text-[#0037B0]">
-                  ₹{config.salePrice}
+                  ₹{configLoaded ? displayPrice : '—'}
                 </span>
-                {config.regularPrice > config.salePrice && (
+                {configLoaded && config.regularPrice > displayPrice && (
                   <span className="font-mono text-base text-[#94A3B8] line-through">
                     ₹{config.regularPrice}
                   </span>
@@ -207,7 +204,7 @@ export const AnnualPassPage: React.FC = () => {
                 <span className="text-xs text-[#64748B]">/ {config.durationDays} days</span>
               </div>
               <p className="text-xs text-[#059669] font-semibold mb-6">
-                Less than ₹{Math.max(1, Math.round(config.salePrice / config.durationDays))} per day for full access.
+                Less than ₹{Math.max(1, Math.round(displayPrice / config.durationDays))} per day for full access.
               </p>
 
               <div className="space-y-3 text-xs sm:text-sm text-[#0F172A] border-t border-[#F1F5F9] pt-6 font-medium">
@@ -221,10 +218,10 @@ export const AnnualPassPage: React.FC = () => {
             </div>
 
             <div className="pt-8">
-              {config.enabled ? (
+              {configLoaded && config.enabled && checkoutEnabled ? (
                 <Link href="/checkout?plan=annual-pass">
                   <Button variant="accent" fullWidth size="lg" className="font-bold text-base shadow-md">
-                    <span>Get Annual Pass for ₹{config.salePrice}</span>
+                    <span>Get Annual Pass for ₹{configLoaded ? displayPrice : '—'}</span>
                     <ArrowRight className="w-4 h-4 ml-1.5" />
                   </Button>
                 </Link>

@@ -52,6 +52,7 @@ export interface StoredOrder {
 }
 
 export interface CreateOrderRequest {
+  annualPassDurationDays?: number; // Server-selected checkout snapshot, not accepted from request bodies.
   userId: string;
   items: PaymentOrderItem[];
   grossAmount: number;
@@ -147,6 +148,7 @@ export interface MaskedPaymentGatewaySettings {
 }
 
 export interface AnnualPassSettings {
+  familyPrice?: number; // Proposal only; family checkout is not enabled.
   enabled: boolean;
   name: string;
   regularPrice: number;

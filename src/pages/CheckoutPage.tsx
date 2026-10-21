@@ -10,7 +10,8 @@
  * - Real-time coupon calculation (BOARD2026, etc.)
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { SessionGuard } from '../lib/auth/sessionGuard';
 import {
   ShieldCheck,
   Lock,
@@ -51,11 +52,14 @@ export const CheckoutPage: React.FC = () => {
 
   // Gateway Selection
   const [selectedProvider, setSelectedProvider] = useState<PaymentProvider>('razorpay');
+  const providerRef = useRef(selectedProvider); providerRef.current = selectedProvider;
+  const quoteGuard = useRef(new SessionGuard());
+  useEffect(() => { quoteGuard.current.invalidate(); setCouponValidation(null); setAppliedCoupon(''); setCouponLoading(false); }, [selectedProvider]);
 
   // Form State
-  const [studentName, setStudentName] = useState(user?.displayName || 'Arjun Sharma');
-  const [email, setEmail] = useState(user?.email || 'parent.sharma@gmail.com');
-  const [phone, setPhone] = useState(user?.phoneNumber || '+91 98765 43210');
+  const [studentName, setStudentName] = useState(user?.displayName || '');
+  const [email, setEmail] = useState(user?.email || '');
+  const [phone, setPhone] = useState(user?.phoneNumber || '');
   const [studentClass, setStudentClass] = useState(user?.studentClass || 'Class 10');
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState('');
@@ -90,11 +94,17 @@ export const CheckoutPage: React.FC = () => {
   }, []);
 
   // Pricing calculations
-  const [configuredPriceINR, setConfiguredPriceINR] = useState(999);
+  const [configuredPriceINR, setConfiguredPriceINR] = useState(0);
+  const [pricingLoaded, setPricingLoaded] = useState(false);
+  const [passAvailable, setPassAvailable] = useState(false);
+  const [taxRate, setTaxRate] = useState(0);
   const [configuredPassName, setConfiguredPassName] = useState('Maths at Your Fingertips Annual Pass (Class 5–10)');
 
   // Authoritative server-side coupon validation
   const validateCouponOnServer = async (codeToValidate: string, gross: number) => {
+    const isCurrent = quoteGuard.current.begin();
+    const currency = providerRef.current === 'razorpay' ? 'INR' : 'USD';
+    if (currency === 'USD') gross = 29;
     const cleanCode = (codeToValidate || '').trim().toUpperCase();
     if (!cleanCode) {
       setCouponValidation(null);
@@ -114,7 +124,7 @@ export const CheckoutPage: React.FC = () => {
         body: JSON.stringify({
           code: cleanCode,
           cartGrossAmount: gross,
-          currency: selectedProvider === 'razorpay' ? 'INR' : 'USD',
+          currency,
           userId: user?.uid,
           items: [
             {
@@ -129,6 +139,7 @@ export const CheckoutPage: React.FC = () => {
       });
 
       const data = await res.json();
+      if (!isCurrent()) return;
       if (data.success && data.valid) {
         setCouponValidation({
           valid: true,
@@ -163,6 +174,7 @@ export const CheckoutPage: React.FC = () => {
         });
       }
     } catch (err: any) {
+      if (!isCurrent()) return;
       setCouponValidation({
         valid: false,
         code: cleanCode,
@@ -172,33 +184,26 @@ export const CheckoutPage: React.FC = () => {
       });
       setAppliedCoupon('');
     } finally {
-      setCouponLoading(false);
+      if (isCurrent()) setCouponLoading(false);
     }
   };
 
   useEffect(() => {
     async function loadConfigAndCoupon() {
-      let initialGross = 999;
+      let initialGross = 0;
       try {
         const res = await fetch('/api/annual-pass/config');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && data.settings) {
-            if (data.settings.salePrice) {
-              setConfiguredPriceINR(data.settings.salePrice);
-              initialGross = data.settings.salePrice;
-            }
-            if (data.settings.name) setConfiguredPassName(data.settings.name);
-          }
-        }
-      } catch (err) {
-        console.warn('Could not fetch pass config in checkout:', err);
-      }
+        const data = await res.json();
+        if (!res.ok || !data.success || !Number.isFinite(data.effectivePriceINR) || data.effectivePriceINR <= 0 || !Number.isFinite(data.taxRatePercentage)) throw new Error('Checkout pricing is unavailable. Please retry later.');
+        initialGross = data.effectivePriceINR;
+        setConfiguredPriceINR(initialGross); setConfiguredPassName(data.settings.name);
+        setTaxRate(data.taxRatePercentage); setPassAvailable(data.settings.enabled === true && data.checkoutEnabled === true); setPricingLoaded(true);
+      } catch (error: any) { setErrorMsg(error.message || 'Checkout pricing could not be loaded.'); return; }
 
       // Check URL query parameters for coupon
       try {
         const params = new URLSearchParams(window.location.search);
-        const urlCoupon = params.get('coupon') || 'BOARD2026';
+        const urlCoupon = params.get('coupon') || '';
         if (urlCoupon) {
           const upper = urlCoupon.trim().toUpperCase();
           setCouponCode(upper);
@@ -223,7 +228,9 @@ export const CheckoutPage: React.FC = () => {
   const grossPrice = isINR ? configuredPriceINR : 29;
   const isDiscountActive = Boolean(couponValidation && couponValidation.valid && couponValidation.discountAmount > 0);
   const discountAmount = isDiscountActive ? couponValidation!.discountAmount : 0;
-  const netAmount = isDiscountActive ? couponValidation!.netAmount : grossPrice;
+  const discountedSubtotal = isDiscountActive ? couponValidation!.netAmount : grossPrice;
+  const taxAmount = Math.round(discountedSubtotal * taxRate / 100);
+  const netAmount = discountedSubtotal + taxAmount;
 
   const handleApplyCoupon = (e: React.FormEvent) => {
     e.preventDefault();
@@ -231,6 +238,7 @@ export const CheckoutPage: React.FC = () => {
   };
 
   const handleRemoveCoupon = () => {
+    quoteGuard.current.invalidate();
     setCouponCode('');
     setAppliedCoupon('');
     setCouponValidation(null);
@@ -246,17 +254,8 @@ export const CheckoutPage: React.FC = () => {
     setVerificationSuccess(null);
 
     try {
-      // 1. Verify Bot Challenge (Cloudflare Turnstile)
-      try {
-        await fetch('/api/turnstile/verify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: 'cf-test-valid-checkout-token' }),
-        });
-      } catch (err) {
-        console.warn('Turnstile check non-blocking warning:', err);
-      }
-
+      if (!pricingLoaded || !passAvailable) throw new Error('Checkout is not currently available.');
+      if (import.meta.env.PROD && !firebaseUser) throw new Error('Please sign in with Google before checkout.');
       // 2. Obtain verified session token
       const token = firebaseUser
         ? await firebaseUser.getIdToken()
@@ -535,7 +534,7 @@ export const CheckoutPage: React.FC = () => {
                     UPI (Google Pay, PhonePe, Paytm, BHIM), Indian NetBanking & RuPay / Visa / MC
                   </p>
                   <span className="font-mono font-bold text-sm text-[#00687A]">
-                    ₹{appliedCoupon.toUpperCase() === 'BOARD2026' ? '899' : '999'} INR
+                    ₹{pricingLoaded ? configuredPriceINR : '—'} INR
                   </span>
                 </div>
 
@@ -725,9 +724,9 @@ export const CheckoutPage: React.FC = () => {
                 )}
 
                 <div className="flex justify-between text-[#475569]">
-                  <span>Taxes & GST (Included)</span>
+                  <span>Tax ({taxRate}%)</span>
                   <span className="font-mono tabular-nums text-[#059669]">
-                    Included
+                    {isINR ? `₹${taxAmount}` : `$${taxAmount}`}
                   </span>
                 </div>
 
@@ -757,10 +756,11 @@ export const CheckoutPage: React.FC = () => {
                 fullWidth
                 size="lg"
                 isLoading={isProcessing}
+                disabled={!pricingLoaded || !passAvailable}
                 className="font-bold text-sm shadow-md"
               >
                 <span>
-                  Pay {isINR ? `₹${netAmount}` : `$${netAmount}`} & Start Learning
+                  {!pricingLoaded ? 'Loading pricing…' : !passAvailable ? 'Checkout currently unavailable' : `Pay ${isINR ? `₹${netAmount}` : `$${netAmount}`} & Start Learning`}
                 </span>
                 <ArrowRight className="w-4 h-4 ml-1.5" />
               </Button>
