@@ -296,6 +296,23 @@ class AdminService {
     }
   }
 
+  /** Persisted SEO settings, always requested with the current Firebase session. */
+  async getSeoSettings(): Promise<{ success: boolean; settings?: { canonicalDomain: string; defaultTitle: string; defaultDesc: string }; error?: string }> {
+    const response = await fetch('/api/admin/seo', { headers: await this.getAuthHeaders() });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.error || 'Unable to load SEO settings.');
+    return data;
+  }
+
+  async saveSeoSettings(settings: { canonicalDomain: string; defaultTitle: string; defaultDesc: string }): Promise<{ success: boolean; settings?: { canonicalDomain: string; defaultTitle: string; defaultDesc: string }; error?: string }> {
+    const response = await fetch('/api/admin/seo', {
+      method: 'PUT', headers: await this.getAuthHeaders(), body: JSON.stringify(settings),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.error || 'SEO settings were not saved.');
+    return data;
+  }
+
   async getMetrics(): Promise<AdminMetrics> {
     try {
       const headers = await this.getAuthHeaders();
