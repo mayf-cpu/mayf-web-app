@@ -57,3 +57,16 @@ test('discounted checkout stays disabled without reservation approval, while cou
   assert.match(block, /COUPON_CHECKOUT_NOT_READY/);
   assert.match(block, /catalogueRepository\.run\(\(\) => paymentService\.createOrder\(/);
 });
+
+
+test('only verified payment callbacks can enter the private reconciliation queue', () => {
+  const server = read('server.ts');
+  const handler = server.slice(server.indexOf('async function handleDurablePaymentWebhook('),
+    server.indexOf("app.post('/api/payments/webhook/razorpay'"));
+  assert.match(handler, /if \(!verifiedReceipt\?\.isValid \|\| !verifiedReceipt\.eventId\) return;/);
+  assert.match(handler, /await paymentService\.verifyWebhookReceipt\(provider, req\.headers, rawBody\)/);
+  assert.match(handler, /await recordReview\('ORDER_NOT_FOUND'\)/);
+  assert.match(handler, /await recordReview\(verifiedReceipt\?\.eventType/);
+  assert.match(server, /app\.get\('\/api\/admin\/payments\/reconciliation', requireAuth, requireAdmin/);
+  assert.doesNotMatch(server, /app\.get\('\/api\/payments\/reconciliation'/);
+});
