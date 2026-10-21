@@ -1837,27 +1837,27 @@ app.post('/api/admin/admins/claim', requireAuth, requireAdmin, asyncRoute(async 
  * 14. Audit Logs Retrieval
  * Returns audit entries filtered by category (admin, subscription, content, refund, security, user)
  */
-app.get('/api/admin/audit-logs', requireAuth, requireAdmin, (req: Request, res: Response) => {
+app.get('/api/admin/audit-logs', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   const { category, action, actorEmail, limit } = req.query as Record<string, string>;
-  const logs = auditLogService.getLogs({
+  const logs = await catalogueRepository.run(() => auditLogService.getLogs({
     category,
     action,
     actorEmail,
     limit: limit ? parseInt(limit, 10) : 100,
-  });
+  }));
   return res.json(logs);
-});
+}));
 
 /**
  * 15. Export Audit Logs as CSV
  */
-app.get('/api/admin/audit-logs/export', requireAuth, requireAdmin, (req: Request, res: Response) => {
+app.get('/api/admin/audit-logs/export', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   const { category } = req.query as Record<string, string>;
-  const csv = auditLogService.exportCsv(category);
+  const csv = await catalogueRepository.run(() => auditLogService.exportCsv(category));
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename="mayf-audit-logs-${new Date().toISOString().split('T')[0]}.csv"`);
   return res.send(csv);
-});
+}));
 
 /**
  * 16. Security Configuration: Get Settings
