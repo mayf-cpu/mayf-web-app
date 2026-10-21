@@ -9,6 +9,7 @@ import { GoogleGenAI } from '@google/genai';
 import { getAdminAuth, getAdminFirestore, adminSetCustomUserClaims, getFirebaseAdminConfig, getFirebaseAdminDiagnostics, verifyStudentSessionToken } from './src/lib/firebase/admin';
 import {
   INGESTION_JOBS_STORE,
+  refreshIngestionJobs,
   verifyWebhookSecret,
   processRegistryRow,
   processBatchIngestion,
@@ -3810,6 +3811,7 @@ app.post('/api/ingestion/webhook', asyncRoute(async (req: Request, res: Response
     }
 
     // Process rows idempotently and copy approved files to production Cloud Storage
+    await refreshIngestionJobs();
     const response = await processBatchIngestion(items as ContentRegistryRow[], 'apps_script_webhook');
     return res.json(response);
   } catch (error: any) {
@@ -3825,8 +3827,8 @@ app.post('/api/ingestion/webhook', asyncRoute(async (req: Request, res: Response
 // Admin Ingestion Jobs API
 // Gated strictly with requireAuth, requireAdmin
 // -------------------------------------------------------------
-app.get('/api/admin/ingest/jobs', requireAuth, requireAdmin, (_req: Request, res: Response) => {
-  const jobs = INGESTION_JOBS_STORE;
+app.get('/api/admin/ingest/jobs', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  const jobs = await refreshIngestionJobs();
   const summary = {
     all: jobs.length,
     pending: jobs.filter((j) => j.status === 'pending').length,
@@ -3841,7 +3843,7 @@ app.get('/api/admin/ingest/jobs', requireAuth, requireAdmin, (_req: Request, res
     summary,
     jobs,
   });
-});
+}));
 
 app.post('/api/admin/ingest/retry', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   try {
@@ -3850,6 +3852,7 @@ app.post('/api/admin/ingest/retry', requireAuth, requireAdmin, asyncRoute(async 
       return res.status(400).json({ success: false, error: 'jobId is required to retry import.' });
     }
 
+    await refreshIngestionJobs();
     const updatedJob = await retryIngestionJob(jobId);
     return res.json({
       success: true,
@@ -3864,6 +3867,7 @@ app.post('/api/admin/ingest/retry', requireAuth, requireAdmin, asyncRoute(async 
 
 app.post('/api/admin/ingest/sync', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
   try {
+    await refreshIngestionJobs();
     const syncOutcome = await syncRegistryNow();
     return res.json({
       success: true,
@@ -3879,6 +3883,7 @@ app.post('/api/admin/ingest/sync', requireAuth, requireAdmin, asyncRoute(async (
 app.post('/api/admin/ingest/simulate-approval', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   try {
     const { content_id } = req.body;
+    await refreshIngestionJobs();
     const target = INGESTION_JOBS_STORE.find((j) => j.content_id === content_id);
     if (!target) {
       return res.status(404).json({ success: false, error: `Row with content_id "${content_id}" not found.` });
