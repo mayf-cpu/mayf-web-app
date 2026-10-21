@@ -1,3 +1,4 @@
+import { auditLegacyPdfMigration } from './src/lib/download/legacyMigrationAudit';
 import { canReadPremiumContent, publicContent } from './src/lib/catalogue/catalogueAccess';
 import { asyncRoute } from './src/lib/http/asyncRoute';
 import { filterCatalogue } from './src/lib/catalogue/catalogueQuery';
@@ -3828,6 +3829,13 @@ app.post('/api/ingestion/webhook', asyncRoute(async (req: Request, res: Response
 // Admin Ingestion Jobs API
 // Gated strictly with requireAuth, requireAdmin
 // -------------------------------------------------------------
+app.get('/api/admin/ingest/legacy-migration-audit', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const db = getAdminFirestore();
+  if (!db) return res.status(503).json({ success: false, error: 'CMS database unavailable' });
+  return res.json({ success: true, ...await auditLegacyPdfMigration(db) });
+}));
+
 app.get('/api/admin/ingest/jobs', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
   const jobs = await refreshIngestionJobs();
   const summary = {
