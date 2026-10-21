@@ -11,11 +11,12 @@
 
 import { ContentRegistryRow, IngestionJobRecord, ImportJobStatus, WebhookIngestResponse } from './types';
 import { copyDriveFileToProductionStorage } from './driveStorageAdapter';
+import { loadIngestionJobs, saveIngestionJob } from './durableIngestionJobs';
 import { ContentItem, StudentClass, ContentType } from '../firebase/types';
 import { getAdminFirestore } from '../firebase/admin';
 import { importPublicationPolicy } from './importPublicationPolicy';
 
-// In-memory persistent job store (synced with Firestore /importJobs in live environment)
+// Initial fixture state for local development; Firestore is authoritative for live jobs.
 export let INGESTION_JOBS_STORE: IngestionJobRecord[] = [
   // 1. IMPORTED - Class 10 Real Numbers
   {
@@ -284,6 +285,7 @@ export async function processRegistryRow(
       createdAt: existingJobIndex !== -1 ? INGESTION_JOBS_STORE[existingJobIndex].createdAt : timestamp,
       updatedAt: timestamp,
     };
+    await saveIngestionJob(rejectedJob);
     if (existingJobIndex !== -1) {
       INGESTION_JOBS_STORE[existingJobIndex] = rejectedJob;
     } else {
@@ -313,6 +315,7 @@ export async function processRegistryRow(
       updatedAt: timestamp,
     };
 
+    await saveIngestionJob(failedJob);
     if (existingJobIndex !== -1) {
       INGESTION_JOBS_STORE[existingJobIndex] = failedJob;
     } else {
@@ -437,6 +440,7 @@ export async function processRegistryRow(
     completedAt: timestamp,
   };
 
+  await saveIngestionJob(successfulJob);
   if (existingJobIndex !== -1) {
     INGESTION_JOBS_STORE[existingJobIndex] = successfulJob;
   } else {
@@ -526,6 +530,7 @@ export async function retryIngestionJob(jobId: string): Promise<IngestionJobReco
     failed.triggeredBy = 'admin_retry';
     failed.sourceRowMetadata = { ...failed.sourceRowMetadata,
       import_status: 'FAILED', import_error: failed.errorMessage };
+    await saveIngestionJob(failed);
     return failed;
   }
 }
@@ -547,4 +552,11 @@ export async function syncRegistryNow(): Promise<{ syncedJobs: IngestionJobRecor
     syncedJobs: INGESTION_JOBS_STORE,
     totalProcessed: processed.length,
   };
+}
+
+/** Reload authoritative job state before admin reads or mutates jobs. */
+export async function refreshIngestionJobs(): Promise<IngestionJobRecord[]> {
+  const jobs = await loadIngestionJobs();
+  INGESTION_JOBS_STORE.splice(0, INGESTION_JOBS_STORE.length, ...jobs);
+  return INGESTION_JOBS_STORE;
 }
