@@ -67,3 +67,7 @@ Do not close original PRs merely to reduce the PR count; first verify no unique 
 - Removed the checkout's unsupported instant-refund guarantee and fixed decimal currency rendering for tax-inclusive totals.
 - Local validation: 223 application tests, TypeScript and frontend build pass. Three gateway creation scenarios and five confirmation scenarios cover test-key use, failures/mismatches/live-key staging rejection, ownership, delayed settlement, timeout, wrong order and account cancellation. Worker CI now also checks that the confirmation and refund-review APIs require authentication.
 - Previous credential-reset commit 19d258d passed CI run 39649384587 including Worker smoke. Live sandbox acceptance, Stripe checkout, paid-resource parity and operational staging remain outstanding; all commerce flags stay off.
+
+## Connected Sheets registry parity (2026-10-21)
+
+PR #5's actual saved Google Sheets registry configuration, authenticated Admin connection UI and Google Sheets approved-row import were adapted to the consolidated branch without replacing the newer durable import jobs, R2/PDF ingest or Firestore CMS transaction. The manual sync fetches up to five **Approved** rows from the saved tab per call, imports each through the secured current pipeline, and posts outcome metadata back to Sheets; unknown failures are returned rather than treated as successful. Read/save requires authenticated admin and available Firestore. Staging Sheets API permissions, Drive access and real writeback remain unverified.

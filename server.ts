@@ -3780,6 +3780,19 @@ app.post('/api/ingestion/webhook', asyncRoute(async (req: Request, res: Response
 // Admin Ingestion Jobs API
 // Gated strictly with requireAuth, requireAdmin
 // -------------------------------------------------------------
+app.get('/api/admin/ingest/config', requireAuth, requireAdmin, asyncRoute(async (_req, res) => {
+  if (!getAdminFirestore()) return res.status(503).json({ success: false, error: 'Import database unavailable' });
+  const { registrySource } = await import('./src/lib/ingestion/registrySource');
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({ success: true, config: await registrySource.read(), serviceAccountEmail: getFirebaseAdminConfig().clientEmail });
+}));
+app.put('/api/admin/ingest/config', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  if (!getAdminFirestore()) return res.status(503).json({ success: false, error: 'Import database unavailable' });
+  const { registrySource } = await import('./src/lib/ingestion/registrySource');
+  res.setHeader('Cache-Control', 'no-store');
+  try { return res.json({ success: true, config: await registrySource.save(req.body || {}) }); }
+  catch (error: any) { return res.status(400).json({ success: false, error: error.message }); }
+}));
 app.get('/api/admin/ingest/legacy-migration-audit', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-store');
   const db = getAdminFirestore();
@@ -3827,12 +3840,12 @@ app.post('/api/admin/ingest/retry', requireAuth, requireAdmin, asyncRoute(async 
 
 app.post('/api/admin/ingest/sync', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
   try {
-    await refreshIngestionJobs();
     const syncOutcome = await syncRegistryNow();
     return res.json({
-      success: true,
+      success: syncOutcome.failedCount === 0,
       totalProcessed: syncOutcome.totalProcessed,
-      message: `Synchronized ${syncOutcome.totalProcessed} pending/approved rows from Content Registry.`,
+      failedCount: syncOutcome.failedCount,
+      message: `Processed ${syncOutcome.totalProcessed} approved Google Sheets rows. Failed imports: ${syncOutcome.failedCount}.`,
     });
   } catch (error: any) {
     console.error('[MAYF Ingestion] Manual sync failure:', error);

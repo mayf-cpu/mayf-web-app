@@ -1,106 +1,51 @@
-import React, { useState } from 'react';
-import {
-  FileSpreadsheet,
-  RefreshCw,
-  CheckCircle2,
-  AlertCircle,
-  Cloud,
-  Layers,
-  ArrowRight,
-  Database,
-} from 'lucide-react';
-import { Button } from '../../ui/Button';
+import React, { useEffect, useState } from 'react';
 import { adminService } from '../../../services/adminService';
+import { Button } from '../../ui/Button';
 
 export const AdminImportSection: React.FC = () => {
   const [spreadsheetId, setSpreadsheetId] = useState('');
-  const [syncing, setSyncing] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<string | null>(null);
-  const [syncError, setSyncError] = useState<string | null>(null);
-
-  const handleTriggerSync = async () => {
-    if (syncing) return;
-    setSyncing(true);
-    setSyncStatus(null);
-    setSyncError(null);
-    try {
-      const res = await fetch('/api/admin/ingest/sync', {
-        method: 'POST',
-        headers: await adminService.getAuthHeaders(),
-      });
-      const data = await res.json();
-      if (!res.ok || data.success !== true) {
-        throw new Error(data.error || 'The import service could not synchronize approved jobs.');
-      }
-      const processed = Number(data.totalProcessed);
-      if (!Number.isFinite(processed) || processed < 0) {
-        throw new Error('Import service returned an invalid processing count.');
-      }
-      setSyncStatus('Import sync completed. ' + processed + ' existing approved/pending jobs processed. Check the import jobs list for individual results.');
-    } catch (error) {
-      setSyncError(error instanceof Error ? error.message : 'Import sync failed.');
-    } finally {
-      setSyncing(false);
-    }
+  const [tabName, setTabName] = useState('Content Registry');
+  const [serviceAccountEmail, setServiceAccountEmail] = useState('');
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const load = async () => {
+    const headers = await adminService.getAuthHeaders();
+    const [configResponse, jobsResponse] = await Promise.all([fetch('/api/admin/ingest/config', { headers }), fetch('/api/admin/ingest/jobs', { headers })]);
+    const config = await configResponse.json(); const history = await jobsResponse.json();
+    if (!configResponse.ok || !jobsResponse.ok || !config.success || !history.success) throw new Error(config.error || history.error || 'Unable to load import configuration.');
+    setSpreadsheetId(config.config.spreadsheetId); setTabName(config.config.tabName); setJobs(history.jobs || []); setServiceAccountEmail(config.serviceAccountEmail || '');
   };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-heading font-extrabold text-slate-900 tracking-tight">
-            Curriculum Ingestion & Drive / Sheets Pipeline
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Process registered approved/pending import jobs. New Google Sheets edits arrive through the separately configured authenticated webhook.
-          </p>
-        </div>
-
-        <Button
-          size="sm"
-          variant="primary"
-          onClick={handleTriggerSync}
-          disabled={syncing}
-          className="gap-1.5 shadow-xs"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-          <span>{syncing ? 'Syncing Pipeline...' : 'Trigger Sync Now'}</span>
-        </Button>
-      </div>
-
-      {syncStatus && (
-        <div role="status" className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-800 flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>{syncStatus}</span>
-        </div>
-      )}
-      {syncError && (
-        <div role="alert" className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs font-medium text-red-800 flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-          <span>Sync failed: {syncError}</span>
-        </div>
-      )}
-
-      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-2xs space-y-4">
-        <h3 className="font-heading font-bold text-sm text-slate-900 flex items-center gap-2">
-          <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-          <span>Google Sheets Master Registry ID (reference only)</span>
-        </h3>
-
-        <div className="space-y-1.5">
-          <label className="text-xs font-semibold text-slate-700">Spreadsheet ID:</label>
-          <input
-            type="text"
-            value={spreadsheetId}
-            onChange={(e) => setSpreadsheetId(e.target.value)}
-            placeholder="Enter your registry sheet ID for reference"
-            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-900"
-          />
-          <p className="text-[11px] text-slate-500">
-            This reference field is not connected to the server and is not saved. The button above processes existing registered import jobs; use the authenticated Apps Script webhook to submit new rows.
-          </p>
-        </div>
-      </div>
+  useEffect(() => { setBusy(true); void load().catch(error => setError(error.message)).finally(() => setBusy(false)); }, []);
+  const run = async (action: 'save' | 'sync') => {
+    setBusy(true); setError(''); setMessage('');
+    try {
+      const saved = await fetch('/api/admin/ingest/config', { method: 'PUT', headers: await adminService.getAuthHeaders(), body: JSON.stringify({ spreadsheetId, tabName }) });
+      const config = await saved.json();
+      if (!saved.ok || !config.success) throw new Error(config.error || 'Registry connection was not saved.');
+      if (action === 'sync') {
+        const response = await fetch('/api/admin/ingest/sync', { method: 'POST', headers: await adminService.getAuthHeaders() });
+        const result = await response.json();
+        if (!response.ok || !result.success) throw new Error(result.error || `${result.failedCount || 0} imports failed. Inspect the import log.`);
+        setMessage(`Processed ${result.totalProcessed} approved rows. Each run imports at most five rows.`);
+      } else setMessage('Registry connection saved.');
+      await load();
+    } catch (error: any) { setError(error.message); }
+    finally { setBusy(false); }
+  };
+  return <div className="space-y-5 text-slate-900">
+    <h2 className="text-xl font-bold">Curriculum Registry & Drive Import</h2>
+    <p className="text-sm text-slate-600">Read approved spreadsheet rows, copy their actual Drive files into storage and save the resource and import log together.</p>
+    {error && <p role="alert" className="rounded bg-red-50 p-3 text-red-700">{error}</p>}
+    {message && <p role="status" className="rounded bg-emerald-50 p-3 text-emerald-700">{message}</p>}
+    <div className="space-y-4 rounded-xl border bg-white p-5">
+      <label className="block text-sm">Registry spreadsheet ID<input className="mt-1 block w-full rounded border p-2" value={spreadsheetId} onChange={event => setSpreadsheetId(event.target.value)} placeholder="Paste the ID from your spreadsheet URL" /></label>
+      <label className="block text-sm">Registry tab name<input className="mt-1 block w-full rounded border p-2" value={tabName} onChange={event => setTabName(event.target.value)} /></label>
+      {serviceAccountEmail && <p className="text-sm">Service account: <code>{serviceAccountEmail}</code></p>}
+      <p className="text-xs text-slate-600">Share the registry as Editor and source files as Viewer with the configured service account. Enable Sheets and Drive APIs. Rows require content_id, title, status, visibility, content_type and access_type columns. Only Approved rows are imported.</p>
+      <div className="flex flex-wrap gap-3"><Button disabled={busy} onClick={() => run('save')}>Save Connection</Button><Button disabled={busy || !spreadsheetId} onClick={() => run('sync')}>Sync Approved Rows</Button><Button disabled={busy} variant="outline" onClick={() => { setBusy(true); void load().catch(error => setError(error.message)).finally(() => setBusy(false)); }}>Refresh Jobs</Button></div>
     </div>
-  );
+    <div className="rounded-xl border bg-white">{!jobs.length && <p className="p-5 text-sm text-slate-600">No import jobs have been recorded.</p>}{jobs.map(job => <article key={job.id} className="border-b p-4 text-sm"><p className="font-semibold">{job.title}</p><p>{job.status} · {job.content_id}</p>{job.errorMessage && <p className="mt-2 text-red-700">{job.errorMessage}</p>}</article>)}</div>
+  </div>;
 };

@@ -545,20 +545,26 @@ export async function retryIngestionJob(jobId: string): Promise<IngestionJobReco
 /**
  * Triggers full sync with Google Sheet staging registry.
  */
-export async function syncRegistryNow(): Promise<{ syncedJobs: IngestionJobRecord[]; totalProcessed: number }> {
-  // Finds any approved rows in the registry and imports them
-  const approvedRows = INGESTION_JOBS_STORE.filter((j) => j.status === 'approved' || j.status === 'pending');
-  const processed: IngestionJobRecord[] = [];
-
-  for (const item of approvedRows) {
-    const outcome = await processRegistryRow(item.sourceRowMetadata, 'admin_manual_sync');
-    processed.push(outcome.job);
+export async function syncRegistryNow(): Promise<{ syncedJobs: IngestionJobRecord[]; totalProcessed: number; failedCount: number }> {
+  // Google Sheets is the authoritative source for manual "Sync Approved Rows".
+  // Never implicitly import a pending row or silently fall back to sample jobs.
+  const { registrySource, readRegistrySheet, writeRegistryResult } = await import('./registrySource');
+  const source = await registrySource.read();
+  const registry = await readRegistrySheet(source);
+  const approved = registry.rows.filter(item => item.row.status === 'Approved').slice(0, 5);
+  let failedCount = 0;
+  for (const item of approved) {
+    let outcome: { success: boolean; firestore_id?: string; error?: string };
+    try {
+      outcome = await processRegistryRow(item.row, 'admin_manual_sync');
+    } catch (error) {
+      outcome = { success: false, error: error instanceof Error ? error.message : 'Import failed' };
+    }
+    if (!outcome.success) failedCount++;
+    // Propagates Sheets write failure, so admin cannot see a false success.
+    await writeRegistryResult(source, item.sheetRow, registry.headers, outcome, registry.token);
   }
-
-  return {
-    syncedJobs: INGESTION_JOBS_STORE,
-    totalProcessed: processed.length,
-  };
+  return { syncedJobs: await refreshIngestionJobs(), totalProcessed: approved.length, failedCount };
 }
 
 /** Reload authoritative job state before admin reads or mutates jobs. */
