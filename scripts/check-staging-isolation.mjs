@@ -29,3 +29,20 @@ assert.equal(staging.services,undefined,'Staging must not bind production Worker
 assert.equal(staging.d1_databases,undefined,'Staging must not bind unreviewed D1 databases');
 assert.equal(staging.kv_namespaces,undefined,'Staging must not bind unreviewed KV namespaces');
 assert.equal(staging.unsafe,undefined,'Staging must not contain unsafe Worker bindings');
+
+const approvedStagingFlags = [
+  'APP_ENV',
+  'MAYF_ENABLE_CHECKOUT',
+  'MAYF_ENABLE_ADMIN_REFUNDS',
+  'MAYF_ENABLE_COUPON_CHECKOUT',
+  'MAYF_ENABLE_PAYMENT_SIMULATION',
+];
+assert.deepEqual(
+  Object.keys(staging.vars ?? {}).sort(),
+  approvedStagingFlags.sort(),
+  'Staging must not acquire unreviewed plain-text environment variables or flags',
+);
+assert.equal(staging.custom_domains,undefined,'Staging must not attach custom domains');
+assert.equal(staging.dispatch_namespaces,undefined,'Staging must not bind dispatch namespaces');
+assert.equal(staging.queues,undefined,'Staging must not bind queues');
+assert.equal(staging.durable_objects,undefined,'Staging must not bind Durable Objects');
