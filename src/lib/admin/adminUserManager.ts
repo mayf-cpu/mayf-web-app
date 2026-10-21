@@ -1,3 +1,4 @@
+import { readStudentOrders, readStudentActivity } from './studentHistory';
 /**
  * Server-Side Admin User Management Controller.
  * Powered by Firebase Admin SDK custom claims and token revocation.
@@ -522,13 +523,9 @@ class AdminUserManager {
   }
 
   // --- Student Orders & Activity ---
-  public getStudentOrders(uid: string): StudentOrderItem[] {
-    return this.orders.get(uid) || [];
-  }
+  public getStudentOrders(uid: string) { return readStudentOrders(getAdminFirestore(), uid); }
 
-  public getStudentActivity(uid: string): StudentActivityLogItem[] {
-    return this.activityLogs.get(uid) || [];
-  }
+  public getStudentActivity(uid: string) { return readStudentActivity(getAdminFirestore(), uid); }
 
   // --- Admin Role Assignment (Strict RBAC Hierarchy) ---
   public async setUserRole(

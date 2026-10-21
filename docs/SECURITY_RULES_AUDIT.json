@@ -1,0 +1,11 @@
+{
+  "score": 4,
+  "summary": "Repository rules have been hardened and passed eight Firestore emulator scenarios. Live deployed rules, bucket access and server IAM have not been verified, so this is not a production security certification.",
+  "findings": [
+    { "check": "Authority source", "severity": "critical", "issue": "Previously, raw visible CMS records were publicly readable even when they included attachment/source metadata.", "recommendation": "Resolved in source: public clients must use sanitized Worker APIs; raw CMS reads require an administrator token." },
+    { "check": "Update bypass", "severity": "major", "issue": "Previously, owners could create or rewrite AI response status, usage metrics and session payloads directly from the browser.", "recommendation": "Resolved in source: generation and feedback writes use verified Worker routes only." },
+    { "check": "Business logic vs rules", "severity": "major", "issue": "Administrator browser writes could bypass the new atomic commerce/catalogue repository invariants.", "recommendation": "Resolved in source: financial and CMS writes are server-only; server service-account access is governed by IAM." },
+    { "check": "Type safety and storage abuse", "severity": "moderate", "issue": "Profile creation used a denylist and client activity fields lacked bounded scalar schemas.", "recommendation": "Resolved in source: allowlisted fields, owner checks, immutable identities, bounded strings/scalars and boolean-only notification read updates." },
+    { "check": "Deployment acceptance", "severity": "minor", "issue": "The active production/preview rules and bucket IAM have not been retrieved or deployed in this session. Client-originated activity still needs operational abuse monitoring and retention.", "recommendation": "Deploy the verified rules to the intended Firebase project, inspect bucket access and service-account permissions, then verify genuine account/asset flows before release." }
+  ]
+}

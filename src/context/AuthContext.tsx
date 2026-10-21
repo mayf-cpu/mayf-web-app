@@ -1,3 +1,7 @@
+import { SessionGuard } from '../lib/auth/sessionGuard';
+import { completeLogout } from '../lib/auth/sessionLogout';
+import { readBookmarks, writeBookmarks } from '../lib/bookmarks/bookmarkStorage';
+import { setActivityUser } from '../lib/activity/activityService';
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
@@ -107,28 +111,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
   const [loading, setLoading] = useState<boolean>(true);
 
-  const [savedItemIds, setSavedItemIds] = useState<string[]>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('mayf_saved_items');
-      if (saved) {
-        try {
-          return JSON.parse(saved);
-        } catch {
-          return ['quad-formula', 'pythagoras-theorem'];
-        }
-      }
-    }
-    return ['quad-formula', 'pythagoras-theorem'];
-  });
+  const bookmarkOwner = user?.uid || null;
+  const readSaved = (uid: string | null) => typeof window !== 'undefined' ? readBookmarks(localStorage, uid) : [];
+  const [bookmarks, setBookmarks] = useState<{ owner: string | null; ids: string[] }>(() => ({ owner: bookmarkOwner, ids: readSaved(bookmarkOwner) }));
+  const savedItemIds = bookmarks.owner === bookmarkOwner ? bookmarks.ids : [];
+  useEffect(() => {
+    setBookmarks({ owner: bookmarkOwner, ids: readSaved(bookmarkOwner) });
+  }, [bookmarkOwner]);
 
   // Listen to Firebase Auth state
   useEffect(() => {
+    const guard = new SessionGuard();
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      const active = guard.begin();
+      const isCurrent = () => active() && (auth.currentUser?.uid || null) === (fbUser?.uid || null);
+      setLoading(true);
+      if (isProductionClient) { setUser(null); setEntitlements(defaultAnonymousEntitlements); }
+      setActivityUser(fbUser?.uid || null);
       setFirebaseUser(fbUser);
 
       if (fbUser) {
         // 1. Fetch claims cryptographically signed by Firebase
         const claims = await getVerifiedClaims(fbUser);
+        if (!isCurrent()) return;
         const email = (fbUser.email || '').toLowerCase().trim();
         const isAuthorizedEmail = fbUser.emailVerified && [
           '2026vivekkushwah@gmail.com',
@@ -158,6 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           const userDocRef = doc(db, 'users', fbUser.uid);
           const snap = await getDoc(userDocRef);
+          if (!isCurrent()) return;
 
           if (snap.exists()) {
             const existing = snap.data() as UserProfileDoc;
@@ -206,13 +212,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               updatedAt: now,
             };
 
-            await setDoc(userDocRef, newProfile);
+            await setDoc(userDocRef, JSON.parse(JSON.stringify(newProfile)));
+            if (!isCurrent()) return;
             setUser(newProfile);
             if (typeof window !== 'undefined') {
               localStorage.setItem('mayf_user_profile', JSON.stringify(newProfile));
             }
           }
         } catch (dbError) {
+          if (!isCurrent()) return;
           console.warn('[MAYF Auth] Firestore profile fetch note:', dbError);
           // Graceful fallback profile with Google credentials
           const fallbackProfile: UserProfileDoc = {
@@ -235,17 +243,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // When unauthenticated: Keep user profile null or in fallback state
         // Notice: Free study material will still work completely without authentication!
       }
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => { guard.invalidate(); unsubscribe(); };
   }, []);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('mayf_saved_items', JSON.stringify(savedItemIds));
+    if (typeof window !== 'undefined' && bookmarks.owner === bookmarkOwner) {
+      try { writeBookmarks(localStorage, bookmarks.ids, bookmarkOwner); } catch { /* Local storage can be disabled by the browser. */ }
     }
-  }, [savedItemIds]);
+  }, [bookmarks, bookmarkOwner]);
 
   const signInWithGoogle = async () => {
     setLoading(true);
@@ -366,11 +374,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     setLoading(true);
     try {
-      await signOutUser().catch(() => {});
-      setUser(null);
-      setFirebaseUser(null);
-      setEntitlements(defaultAnonymousEntitlements);
-      localStorage.removeItem('mayf_user_profile');
+      await completeLogout(signOutUser, () => {
+        setActivityUser(null); setUser(null); setFirebaseUser(null);
+        setEntitlements(defaultAnonymousEntitlements);
+        try { localStorage.removeItem('mayf_user_profile'); } catch { /* Browser storage can be unavailable. */ }
+      });
     } finally {
       setLoading(false);
     }
@@ -389,9 +397,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const toggleSavedItem = (itemId: string) => {
-    setSavedItemIds((prev) =>
-      prev.includes(itemId) ? prev.filter((id) => id !== itemId) : [...prev, itemId]
-    );
+    setBookmarks(previous => {
+      const ids = previous.owner === bookmarkOwner ? previous.ids : readSaved(bookmarkOwner);
+      return { owner: bookmarkOwner, ids: ids.includes(itemId) ? ids.filter(id => id !== itemId) : [...ids, itemId] };
+    });
   };
 
   return (

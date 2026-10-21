@@ -1758,22 +1758,21 @@ app.get('/api/admin/students', requireAuth, requireAdmin, refreshAdminUsers, (re
 /**
  * 2. View Full Student Profile with Status & Claims
  */
-app.get('/api/admin/users/:uid', requireAuth, requireAdmin, refreshAdminUsers, (req: Request, res: Response) => {
+app.get('/api/admin/users/:uid', requireAuth, requireAdmin, refreshAdminUsers, asyncRoute(async (req: Request, res: Response) => {
   const { uid } = req.params;
   const profile = adminUserManager.getStudentProfile(uid);
   if (!profile) {
     return res.status(404).json({ error: 'Student not found' });
   }
 
-  const orders = adminUserManager.getStudentOrders(uid);
-  const activity = adminUserManager.getStudentActivity(uid);
+  const [orders, activity] = await Promise.all([adminUserManager.getStudentOrders(uid), adminUserManager.getStudentActivity(uid)]);
 
   return res.json({
     profile,
     orders,
     activity,
   });
-});
+}));
 
 /**
  * 3. Disable / Enable User Account via Firebase Admin SDK
@@ -1929,20 +1928,20 @@ app.put('/api/admin/users/:uid/annual-pass/expiry', requireAuth, requireAdmin, a
 /**
  * 8. View Orders for Given Student
  */
-app.get('/api/admin/users/:uid/orders', requireAuth, requireAdmin, (req: Request, res: Response) => {
+app.get('/api/admin/users/:uid/orders', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   const { uid } = req.params;
-  const orders = adminUserManager.getStudentOrders(uid);
+  const orders = await adminUserManager.getStudentOrders(uid);
   return res.json(orders);
-});
+}));
 
 /**
  * 9. View Activity for Given Student
  */
-app.get('/api/admin/users/:uid/activity', requireAuth, requireAdmin, (req: Request, res: Response) => {
+app.get('/api/admin/users/:uid/activity', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   const { uid } = req.params;
-  const activity = adminUserManager.getStudentActivity(uid);
+  const activity = await adminUserManager.getStudentActivity(uid);
   return res.json(activity);
-});
+}));
 
 /**
  * 10. Role Management (Make Admin / SuperAdmin / Student)

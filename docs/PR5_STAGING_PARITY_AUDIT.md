@@ -36,3 +36,12 @@ Do not close original PRs merely to reduce the PR count; first verify no unique 
 - Invalid coupon input is rejected before provider order creation; only a validated, discounted code is persisted on the order. Coupon state is reloaded from Firestore at checkout.
 - **Still blocked:** pre-gateway coupon reservations now hold a discount for 30 minutes and are released after checkout initialization failures; abandoned holds are reclaimed lazily. If verified gateway capture or its webhook arrives after the hold expires, manual reconciliation can still be required. `MAYF_ENABLE_COUPON_CHECKOUT` and the general checkout flag remain disabled pending live staging acceptance.
 - Staging workflow targets the consolidated branch with manual opt-in, but requires registration on the default GitHub branch or an approved equivalent staging-only executor. No environment has been deployed from these commits.
+
+## Authentication, privacy and security reconciliation (2026-10-21)
+
+- Reconciled the later PR #5 changes through bae3880 into the consolidated candidate by inspecting source equivalence first. The independent client files matched their earlier baseline; newer payment/Drive/R2 implementations were preserved rather than replaced.
+- Ported account-scoped activity/recent-view caches, guest/account local favorites, absence of fabricated learner history, delayed-request guards, confirmed sign-out/error handling, profile-auth race protection, visible share popovers and honest clipboard feedback.
+- Adapted administrator student history to the candidate's **paymentOrders** collection and server-filtered owner queries; retained the candidate's paid-status semantics and asynchronous inspector guards. No legacy orders collection is substituted for the durable ledger.
+- Ported hardened Firestore rules, bounded profile/activity schemas, Java 21 emulator coverage and the patched gRPC transport dependency. Extended the existing regression workflow with Java, the rules emulator and production dependency audit; retained its existing Worker smoke step.
+- Local rules tests cover both legacy and candidate payment collection bypass attempts. Repository rules do not change the active Firebase rules; actual rules deployment/IAM/bucket inspection and authenticated isolated staging remain blocking.
+- Source comparison and these ports do not certify every PR #5 feature. Remaining Annual Pass/import/settings/admin differences require targeted parity review. Old PRs/branches are preserved and must not be merged in parallel into main.

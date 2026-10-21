@@ -1,3 +1,4 @@
+import { ActivityCache } from './activityCache';
 /**
  * Student Activity Logging & Retention Service
  * Maths at Your Fingertips (mayf.co.in)
@@ -29,18 +30,19 @@ const RETENTION_DAYS = 30;
 const RECENT_VIEWED_LIMIT = 12;
 
 type ActivityListener = (activities: ActivityLog[]) => void;
-const listeners = new Set<ActivityListener>();
+const listeners = new Map<ActivityListener, string | null>();
 
 // In-memory cache per session
-let inMemoryActivities: ActivityLog[] = [];
-let inMemoryRecentlyViewed: RecentlyViewedItem[] = [];
+const cache = new ActivityCache();
+export function setActivityUser(userId: string | null) { cache.switchTo(userId); }
 
 /**
  * Notify in-app subscribers without Firestore round-trips
  */
 function notifyListeners() {
-  const current = [...inMemoryActivities];
-  listeners.forEach((listener) => {
+  const current = [...cache.activities];
+  listeners.forEach((owner, listener) => {
+    if (owner !== cache.owner) return;
     try {
       listener(current);
     } catch (err) {
@@ -52,10 +54,10 @@ function notifyListeners() {
 /**
  * Subscribe to local activity changes
  */
-export function subscribeToActivity(listener: ActivityListener): () => void {
-  listeners.add(listener);
+export function subscribeToActivity(listener: ActivityListener, userId: string | null = cache.owner): () => void {
+  listeners.set(listener, userId);
   // Send current immediately
-  listener([...inMemoryActivities]);
+  listener(cache.owner === userId ? [...cache.activities] : []);
   return () => {
     listeners.delete(listener);
   };
@@ -79,6 +81,7 @@ function filterRetentionWindow(logs: ActivityLog[]): ActivityLog[] {
   const cutoffTime = Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000;
   return logs
     .filter((log) => {
+      if (!log || typeof log.id !== 'string' || log.id.startsWith('act-sample-')) return false;
       const logTime = new Date(log.createdAt).getTime();
       return !isNaN(logTime) && logTime >= cutoffTime;
     })
@@ -105,6 +108,7 @@ export async function logProductEvent({
   targetType?: 'formula' | 'chapter' | 'download' | 'course' | 'ai_doubt' | 'membership' | 'general';
   metadata?: Record<string, unknown>;
 }): Promise<ActivityLog> {
+  cache.switchTo(userId);
   const timestamp = new Date().toISOString();
   const id = `act_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
@@ -121,7 +125,7 @@ export async function logProductEvent({
   };
 
   // 1. Update in-memory state
-  inMemoryActivities = [newLog, ...inMemoryActivities.filter((a) => a.id !== id)].slice(0, MAX_STORED_EVENTS);
+  cache.activities = [newLog, ...cache.activities.filter((a) => a.id !== id)].slice(0, MAX_STORED_EVENTS);
   notifyListeners();
 
   // 2. Update Recently Viewed if applicable (formula_view, content_view, course_open)
@@ -140,7 +144,7 @@ export async function logProductEvent({
   // 3. Persist to localStorage
   if (typeof window !== 'undefined') {
     try {
-      localStorage.setItem(getStorageKey(userId), JSON.stringify(inMemoryActivities));
+      localStorage.setItem(getStorageKey(userId), JSON.stringify(cache.activities));
     } catch {
       // Ignore quota storage warnings
     }
@@ -160,14 +164,15 @@ export async function logProductEvent({
  * Record a recently viewed item
  */
 export function recordRecentlyViewed(userId: string, item: RecentlyViewedItem) {
-  inMemoryRecentlyViewed = [
+  cache.switchTo(userId);
+  cache.recentlyViewed = [
     item,
-    ...inMemoryRecentlyViewed.filter((r) => r.slug !== item.slug || r.type !== item.type),
+    ...cache.recentlyViewed.filter((r) => r.slug !== item.slug || r.type !== item.type),
   ].slice(0, RECENT_VIEWED_LIMIT);
 
   if (typeof window !== 'undefined') {
     try {
-      localStorage.setItem(getRecentlyViewedKey(userId), JSON.stringify(inMemoryRecentlyViewed));
+      localStorage.setItem(getRecentlyViewedKey(userId), JSON.stringify(cache.recentlyViewed));
     } catch {
       // Ignore quota warnings
     }
@@ -178,75 +183,39 @@ export function recordRecentlyViewed(userId: string, item: RecentlyViewedItem) {
  * Retrieve recently viewed items for user
  */
 export function getRecentlyViewed(userId?: string): RecentlyViewedItem[] {
-  if (inMemoryRecentlyViewed.length > 0) {
-    return inMemoryRecentlyViewed;
+  cache.switchTo(userId || null);
+  if (cache.recentlyViewed.length > 0) {
+    return cache.recentlyViewed;
   }
 
   if (typeof window !== 'undefined' && userId) {
     try {
       const stored = localStorage.getItem(getRecentlyViewedKey(userId));
       if (stored) {
-        inMemoryRecentlyViewed = JSON.parse(stored);
-        return inMemoryRecentlyViewed;
+        cache.recentlyViewed = JSON.parse(stored);
+        return cache.recentlyViewed;
       }
     } catch {
       // Return fallback
     }
   }
 
-  // Sensible default starter items for a new learner
-  return [
-    {
-      id: 'quad-formula',
-      title: 'Quadratic Formula (Sridharacharya)',
-      type: 'formula',
-      slug: 'quadratic-formula',
-      category: 'Algebra',
-      classLevel: 'Class 10',
-      viewedAt: new Date(Date.now() - 35 * 60 * 1000).toISOString(),
-    },
-    {
-      id: 'pythagoras-theorem',
-      title: 'Pythagorean Theorem & Distance Metric',
-      type: 'formula',
-      slug: 'pythagoras-theorem',
-      category: 'Geometry',
-      classLevel: 'Class 10',
-      viewedAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
-    },
-    {
-      id: 'ap-nth-term',
-      title: 'Arithmetic Progression nth Term',
-      type: 'formula',
-      slug: 'arithmetic-progression-nth-term',
-      category: 'Arithmetic',
-      classLevel: 'Class 10',
-      viewedAt: new Date(Date.now() - 8 * 3600 * 1000).toISOString(),
-    },
-    {
-      id: 'trig-identities-pythagorean',
-      title: 'Fundamental Pythagorean Trig Identities',
-      type: 'formula',
-      slug: 'fundamental-pythagorean-trig-identities',
-      category: 'Trigonometry',
-      classLevel: 'Class 10',
-      viewedAt: new Date(Date.now() - 24 * 3600 * 1000).toISOString(),
-    },
-  ];
+  return [];
 }
 
 /**
  * Load user activities with cost-disciplined single query (No expensive persistent realtime listener)
  */
 export async function loadUserActivities(userId: string): Promise<ActivityLog[]> {
+  cache.switchTo(userId);
   // 1. Try local storage first for instant load
   if (typeof window !== 'undefined') {
     try {
       const stored = localStorage.getItem(getStorageKey(userId));
       if (stored) {
         const parsed = JSON.parse(stored);
-        const filtered = filterRetentionWindow(parsed);
-        inMemoryActivities = filtered;
+        const filtered = filterRetentionWindow(Array.isArray(parsed) ? parsed.filter(item => item.userId === userId) : []);
+        cache.activities = filtered;
         notifyListeners();
       }
     } catch {
@@ -264,14 +233,15 @@ export async function loadUserActivities(userId: string): Promise<ActivityLog[]>
     );
 
     const snapshot = await getDocs(q);
-    if (!snapshot.empty) {
+    if (cache.owner !== userId) return [];
+    {
       const firestoreLogs: ActivityLog[] = [];
       snapshot.forEach((docSnap) => {
         firestoreLogs.push(docSnap.data() as ActivityLog);
       });
 
       const filtered = filterRetentionWindow(firestoreLogs);
-      inMemoryActivities = filtered;
+      cache.apply(userId, filtered);
       notifyListeners();
 
       if (typeof window !== 'undefined') {
@@ -283,13 +253,7 @@ export async function loadUserActivities(userId: string): Promise<ActivityLog[]>
     console.debug('[ActivityService] Firestore fetch skipped (using local cache):', err);
   }
 
-  // 3. Fallback to initial seed if empty
-  if (inMemoryActivities.length === 0) {
-    inMemoryActivities = getSampleActivities(userId);
-    notifyListeners();
-  }
-
-  return inMemoryActivities;
+  return cache.owner === userId ? [...cache.activities] : [];
 }
 
 /**
@@ -299,7 +263,7 @@ async function persistToFirestoreWithPruning(userId: string, newLog: ActivityLog
   try {
     // 1. Write the new document
     const docRef = doc(db, 'activityLogs', newLog.id);
-    await setDoc(docRef, newLog);
+    await setDoc(docRef, JSON.parse(JSON.stringify(newLog)));
 
     // 2. Prune old logs if excess exist (Cost-effective batch check)
     // Only prune occasionally (e.g. 1 in 5 events) to avoid needless read calls
@@ -344,8 +308,7 @@ async function persistToFirestoreWithPruning(userId: string, newLog: ActivityLog
  * Clear or prune local cache
  */
 export function clearUserActivitiesCache(userId: string) {
-  inMemoryActivities = [];
-  inMemoryRecentlyViewed = [];
+  if (cache.owner === userId) { cache.activities = []; cache.recentlyViewed = []; }
   if (typeof window !== 'undefined') {
     localStorage.removeItem(getStorageKey(userId));
     localStorage.removeItem(getRecentlyViewedKey(userId));
@@ -353,79 +316,5 @@ export function clearUserActivitiesCache(userId: string) {
   notifyListeners();
 }
 
-/**
- * Initial sample seed activities for clean demo display
- */
-export function getSampleActivities(userId: string): ActivityLog[] {
-  const now = Date.now();
-  return [
-    {
-      id: 'act-sample-1',
-      userId,
-      eventType: 'formula_view',
-      title: 'Viewed Quadratic Formula (Sridharacharya)',
-      targetId: 'quad-formula',
-      targetSlug: 'quadratic-formula',
-      targetType: 'formula',
-      metadata: { category: 'Algebra', classLevel: 'Class 10' },
-      createdAt: new Date(now - 12 * 60 * 1000).toISOString(),
-    },
-    {
-      id: 'act-sample-2',
-      userId,
-      eventType: 'ai_question',
-      title: 'Asked Professor Sigma: "How to find discriminant in 2x^2 + 5x + 3 = 0?"',
-      targetType: 'ai_doubt',
-      metadata: { topic: 'Quadratic Equations', classLevel: 'Class 10' },
-      createdAt: new Date(now - 45 * 60 * 1000).toISOString(),
-    },
-    {
-      id: 'act-sample-3',
-      userId,
-      eventType: 'save',
-      title: 'Bookmarked formula: Pythagorean Theorem',
-      targetId: 'pythagoras-theorem',
-      targetSlug: 'pythagoras-theorem',
-      targetType: 'formula',
-      createdAt: new Date(now - 2 * 3600 * 1000).toISOString(),
-    },
-    {
-      id: 'act-sample-4',
-      userId,
-      eventType: 'download',
-      title: 'Downloaded Class 10 Board Formula Cheatsheet PDF',
-      targetId: 'dl-10-cheatsheet',
-      targetType: 'download',
-      createdAt: new Date(now - 5 * 3600 * 1000).toISOString(),
-    },
-    {
-      id: 'act-sample-5',
-      userId,
-      eventType: 'course_open',
-      title: 'Opened Course: Class 10 Board Mathematics Mastery',
-      targetId: 'course-class-10-mastery',
-      targetSlug: 'class-10-mastery',
-      targetType: 'course',
-      createdAt: new Date(now - 24 * 3600 * 1000).toISOString(),
-    },
-    {
-      id: 'act-sample-6',
-      userId,
-      eventType: 'content_view',
-      title: 'Studied Chapter: Real Numbers & Euclid Division Lemma',
-      targetId: 'ch-real-numbers',
-      targetSlug: 'real-numbers',
-      targetType: 'chapter',
-      createdAt: new Date(now - 36 * 3600 * 1000).toISOString(),
-    },
-    {
-      id: 'act-sample-7',
-      userId,
-      eventType: 'purchase',
-      title: 'Subscribed to Maths at Your Fingertips Annual Pass (2026–2027)',
-      targetType: 'membership',
-      metadata: { plan: 'Annual Pass', amount: 999 },
-      createdAt: new Date(now - 3 * 24 * 3600 * 1000).toISOString(),
-    },
-  ];
-}
+/** Compatibility helper: new accounts have an empty activity history. */
+export function getSampleActivities(_userId: string): ActivityLog[] { return []; }

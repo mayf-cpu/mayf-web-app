@@ -115,7 +115,8 @@ export const AdminPortalPage: React.FC = () => {
       await logout();
       setServerAuthorized(null);
       setAuthError(null);
-    } finally {
+    } catch { setAuthError('Sign-out failed. Please retry.'); }
+    finally {
       setAuthenticating(false);
     }
   };

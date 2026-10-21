@@ -25,12 +25,21 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - name: Set up Java for Firestore rules tests
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
       - name: Install locked dependencies
         run: npm ci
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
       - name: TypeScript validation
         run: npm run lint
       - name: Regression tests
         run: npm test
+      - name: Firestore security rules
+        run: npm run test:rules
       - name: Production frontend build
         run: npm run build
       - name: Worker API smoke tests
