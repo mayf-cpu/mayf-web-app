@@ -4,6 +4,7 @@ import type { FirestoreDocumentStore } from '../firebase/documentStore';
 import { contentCmsManager } from './contentManager';
 import { ingestionState } from '../ingestion/ingestionService';
 import { categoryManager } from '../categories/categoryManager';
+import { auditLogService } from '../audit/auditLogger';
 
 import { DocumentStateRepository } from '../firebase/documentStateRepository';
 export { DocumentStateRepository as CatalogueRepository } from '../firebase/documentStateRepository';
@@ -12,6 +13,7 @@ export const catalogueRepository = new DocumentStateRepository([
   { collection: 'contentItems', state: contentCmsManager },
   { collection: 'categories', state: categoryManager },
   { collection: 'importJobs', state: ingestionState },
+  { collection: 'adminAuditLogs', state: auditLogService },
 ], getAdminFirestore);
 
 /** Buffer JSON so success is sent only after the durable transaction finishes. */
