@@ -3154,8 +3154,8 @@ app.post('/api/admin/analytics/reset', requireAuth, requireAdmin, (_req: Authent
 app.get('/api/admin/ai-activity', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
   const db = getAdminFirestore();
   if (!db) return res.status(503).json({ success: false, error: 'AI activity storage is unavailable.' });
-  const records = (await db.list('aiTeacherSessions'))
-    .map(doc => ({ ...doc.data, id: doc.id }))
+  const records: Record<string, any>[] = (await db.list('aiTeacherSessions'))
+    .map(doc => ({ ...doc.data, id: doc.id } as Record<string, any>))
     .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).slice(0, 100);
   res.setHeader('Cache-Control', 'no-store');
   return res.json(records.map(record => ({
