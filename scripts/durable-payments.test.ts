@@ -265,3 +265,65 @@ test('refunding latest pass restores the prior expiry cursor atomically', async 
   assert.equal(docs.get('paymentEntitlements/payment-ord-second')?.data.status, 'revoked');
   assert.equal(await repo.recordVerifiedFullRefund(refund), 'duplicate');
 });
+
+
+test('signed coupon order settlement atomically records usage, a receipt and one entitlement', async () => {
+  const { repo, docs } = fixture();
+  docs.set('coupons/TEST10', { data: { id: 'TEST10', code: 'TEST10', enabled: true,
+    timesUsed: 0, usageLimit: 2, perUserLimit: 1, userUsageMap: {} }, revision: 1 });
+  await repo.createOrder({ ...order, coupon: 'TEST10', discount: 10 });
+  assert.equal(await repo.settleVerifiedPayment(payment), 'settled');
+  assert.equal(docs.get('coupons/TEST10')?.data.timesUsed, 1);
+  assert.equal(docs.get('coupons/TEST10')?.data.userUsageMap['student-1'], 1);
+  assert.equal(docs.get('paymentCouponRedemptions/ord-1')?.data.discount, 10);
+  assert.equal(docs.get('paymentOrders/ord-1')?.data.status, 'paid');
+  assert.equal(await repo.settleVerifiedPayment(payment), 'duplicate');
+  assert.equal(docs.get('coupons/TEST10')?.data.timesUsed, 1);
+});
+
+test('coupon global limit is serialized across competing workers and different students', async () => {
+  const { repo, docs } = fixture();
+  docs.set('coupons/ONEUSE', { data: { id: 'ONEUSE', code: 'ONEUSE',
+    timesUsed: 0, usageLimit: 1, perUserLimit: 1, userUsageMap: {} }, revision: 1 });
+  await repo.createOrder({ ...order, coupon: 'ONEUSE', discount: 10 });
+  await repo.createOrder({ ...order, userId: 'student-2', orderId: 'ord-2',
+    providerOrderId: 'gateway-2', coupon: 'ONEUSE', discount: 10 });
+  const second = {
+    ...payment, orderId: 'ord-2', providerOrderId: 'gateway-2',
+    providerPaymentId: 'pay-2', eventId: 'evt-2',
+    entitlement: { ...entitlement, id: 'ent-2', userId: 'student-2',
+      orderId: 'ord-2', paymentId: 'pay-2' },
+  };
+  const results = await Promise.allSettled([
+    repo.settleVerifiedPayment(payment), repo.settleVerifiedPayment(second),
+  ]);
+  assert.equal(results.filter(x => x.status === 'fulfilled').length, 1);
+  assert.equal(docs.get('coupons/ONEUSE')?.data.timesUsed, 1);
+  assert.equal([...docs.keys()].filter(x => x.startsWith('paymentCouponRedemptions/')).length, 1);
+  assert.equal([...docs.values()].filter(x => x.data?.status === 'paid').length, 1);
+});
+
+test('coupon per-student limit and corrupt state reject paid settlement without partial writes', async () => {
+  const { repo, docs } = fixture();
+  await repo.createOrder({ ...order, coupon: 'STUDENT1', discount: 10 });
+  const good = { id: 'STUDENT1', code: 'STUDENT1',
+    timesUsed: 1, usageLimit: 10, perUserLimit: 1,
+    userUsageMap: { 'student-1': 1 } };
+  docs.set('coupons/STUDENT1', { data: good, revision: 1 });
+  await assert.rejects(repo.settleVerifiedPayment(payment), /limit changed after checkout/);
+  assert.equal(docs.get('paymentOrders/ord-1')?.data.status, 'created');
+  assert.equal(docs.has('paymentEntitlements/ent-1'), false);
+  assert.equal(docs.has('paymentCouponRedemptions/ord-1'), false);
+  docs.set('coupons/STUDENT1', { data: { ...good, timesUsed: -1 }, revision: 2 });
+  await assert.rejects(repo.settleVerifiedPayment(payment), /record is invalid/);
+  docs.delete('coupons/STUDENT1');
+  await assert.rejects(repo.settleVerifiedPayment(payment), /removed or has no revision/);
+});
+
+test('discounted order without an authoritative coupon cannot grant a paid pass', async () => {
+  const { repo, docs } = fixture();
+  await repo.createOrder({ ...order, coupon: undefined, discount: 50 });
+  await assert.rejects(repo.settleVerifiedPayment(payment), /unexplained discount/);
+  assert.equal(docs.get('paymentOrders/ord-1')?.data.status, 'created');
+  assert.equal(docs.has('paymentEntitlements/ent-1'), false);
+});
