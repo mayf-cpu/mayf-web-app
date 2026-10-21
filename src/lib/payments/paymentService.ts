@@ -43,6 +43,7 @@ export class PaymentService {
 
   // Payment Gateway Settings (Configurable by admin, secrets kept strictly server-side)
   private settings: PaymentGatewaySettings;
+  private initialSettings: PaymentGatewaySettings;
 
   constructor(private durableOrders?: Pick<DurablePaymentRepository, 'createOrder'>) {
     this.razorpayAdapter = new RazorpayAdapter();
@@ -61,6 +62,8 @@ export class PaymentService {
       allowCouponDiscounts: true,
     };
 
+    this.initialSettings = { ...this.settings };
+
     if (!isProductionPaymentRuntime()) this.seedInitialOrders();
   }
 
@@ -72,6 +75,9 @@ export class PaymentService {
       if (entry) {
         const { id, ...data } = entry;
         this.settings = openGatewaySettings(data);
+      } else {
+        // Never keep stale runtime credentials after persisted settings are removed.
+        this.settings = { ...this.initialSettings };
       }
       this.razorpayAdapter.configure({
         keyId: this.settings.razorpayKeyId,
