@@ -47,7 +47,7 @@ export const AdminAiActivitySection: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs">
           <span className="text-[10px] font-heading font-bold text-slate-500 uppercase tracking-wider">
-            Active Model
+            Last Response Model
           </span>
           <div className="mt-2 text-base font-heading font-extrabold text-slate-900 flex items-center gap-1.5">
             <Sparkles className="w-4 h-4 text-purple-600" />
@@ -119,7 +119,7 @@ export const AdminAiActivitySection: React.FC = () => {
                   <Coins className="w-3.5 h-3.5 text-amber-500" />
                   <span>{log.tokensUsed == null ? '—' : `${log.tokensUsed} tok`}</span>
                 </div>
-                <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                <span className={`inline-flex items-center gap-1 font-semibold px-2 py-0.5 rounded border ${log.resolved ? "text-emerald-700 bg-emerald-50 border-emerald-200" : "text-amber-800 bg-amber-50 border-amber-200"}`}>
                   <CheckCircle2 className="w-3 h-3" />
                   <span>{log.resolved ? 'Resolved' : 'Needs review'}</span>
                 </span>
