@@ -7,8 +7,10 @@ import { catalogueRepository, catalogueRoute } from './src/lib/cms/catalogueRepo
 import { isAllowedRequestOrigin } from './src/lib/security/requestOrigin';
 import publicFirebaseConfig from './src/config/firebasePublicConfig.json';
 import express, { Request, Response, NextFunction } from 'express';
+import { AiQuota } from './src/lib/ai/aiQuota';
+import { getAppCheck } from 'firebase-admin/app-check';
 import { GoogleGenAI } from '@google/genai';
-import { getAdminAuth, getAdminFirestore, adminSetCustomUserClaims, getFirebaseAdminConfig, getFirebaseAdminDiagnostics, verifyStudentSessionToken } from './src/lib/firebase/admin';
+import { getFirebaseAdminApp, getAdminAuth, getAdminFirestore, adminSetCustomUserClaims, getFirebaseAdminConfig, getFirebaseAdminDiagnostics, verifyStudentSessionToken } from './src/lib/firebase/admin';
 import {
   INGESTION_JOBS_STORE,
   refreshIngestionJobs,
@@ -3149,46 +3151,26 @@ app.post('/api/admin/analytics/reset', requireAuth, requireAdmin, (_req: Authent
   return res.status(501).json({ success: false, error: 'Historical analytics are retained. Reset is unavailable.' });
 });
 
-app.get('/api/admin/ai-activity', requireAuth, requireAdmin, (_req: Request, res: Response) => {
-  return res.json([
-    {
-      id: 'ai-q-901',
-      timestamp: new Date().toISOString(),
-      studentGrade: 'Class 10',
-      topic: 'Quadratic Equations',
-      questionSnippet: 'Derive quadratic formula using completing the square method',
-      model: AI_TEACHER_MODEL,
-      latencyMs: 720,
-      tokensUsed: 480,
-      resolved: true,
-      rating: 5,
-    },
-    {
-      id: 'ai-q-902',
-      timestamp: new Date(Date.now() - 3600000).toISOString(),
-      studentGrade: 'Class 9',
-      topic: 'Circles',
-      questionSnippet: 'Proof that perpendicular from centre to chord bisects chord',
-      model: AI_TEACHER_MODEL,
-      latencyMs: 840,
-      tokensUsed: 520,
-      resolved: true,
-      rating: 5,
-    },
-    {
-      id: 'ai-q-903',
-      timestamp: new Date(Date.now() - 7200000).toISOString(),
-      studentGrade: 'Class 10',
-      topic: 'Trigonometry',
-      questionSnippet: 'Prove identity (sin A + cosec A)^2 + (cos A + sec A)^2 = 7 + tan^2 A + cot^2 A',
-      model: AI_TEACHER_MODEL,
-      latencyMs: 650,
-      tokensUsed: 610,
-      resolved: true,
-      rating: 5,
-    },
-  ]);
-});
+app.get('/api/admin/ai-activity', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  const db = getAdminFirestore();
+  if (!db) return res.status(503).json({ success: false, error: 'AI activity storage is unavailable.' });
+  const records: Record<string, any>[] = (await db.list('aiTeacherSessions'))
+    .map(doc => ({ ...doc.data, id: doc.id } as Record<string, any>))
+    .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).slice(0, 100);
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json(records.map(record => ({
+    id: record.id,
+    timestamp: record.timestamp,
+    studentGrade: record.studentClass,
+    topic: record.chapterTopic,
+    questionSnippet: String(record.question || '').slice(0, 180),
+    model: record.tokenMetadata?.model || getAiTeacherModel(),
+    latencyMs: record.latencyMs ?? null,
+    tokensUsed: record.tokenMetadata?.totalTokens ?? null,
+    resolved: record.responseStatus === 'success',
+    rating: record.userRating === 'helpful' ? 1 : record.userRating === 'unhelpful' ? 0 : undefined,
+  })));
+}));
 
 // SEO changes are authenticated and must be durably written before success.
 app.get('/api/admin/seo', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
@@ -3315,69 +3297,8 @@ interface AiDoubtRecord {
   userRating?: 'helpful' | 'unhelpful';
 }
 
-const AI_DOUBTS_HISTORY: AiDoubtRecord[] = [
-  {
-    id: 'doubt-seed-1',
-    uid: 'mayf-student-1001',
-    question: 'Why do we reject negative roots in speed and distance word problems?',
-    questionType: 'text',
-    studentClass: 'Class 10',
-    chapterTopic: 'Quadratic Equations',
-    reply: `### Understanding the Question\nThe question asks why negative values obtained as solutions to a quadratic equation are discarded when solving physical motion problems.\n\n### Given Information\nIn speed-distance-time problems, the unknown variable $x$ represents speed ($s$) or time ($t$).\n\n### Concept Used\nPhysical speed $s = \\frac{d}{t}$ and geometric distance are scalar physical quantities defined strictly over non-negative reals ($s > 0$).\n\n### Step-by-Step Solution\n1. When setting up $ax^2 + bx + c = 0$, both roots are mathematically valid solutions to the algebraic equation.\n2. In a real-world physical scenario, speed cannot be negative: $x > 0$.\n3. Therefore, the negative root is rejected as extraneous in the physical domain.\n\n### Final Answer\nSpeed is a non-negative scalar quantity ($s > 0$), so negative mathematical roots have no physical meaning.\n\n### Verification / Check\nSubstitute positive speed back into $t = \\frac{d}{s}$ to verify positive duration.`,
-    timestamp: '2026-10-06T10:14:00.000Z',
-    responseStatus: 'success',
-    tokenMetadata: { model: 'gemini-3.8-flash', totalTokens: 240 },
-    userRating: 'helpful',
-  },
-  {
-    id: 'doubt-seed-2',
-    uid: 'mayf-student-1001',
-    question: 'How to prove 1 + tan²θ = sec²θ algebraically without geometry?',
-    questionType: 'text',
-    studentClass: 'Class 10',
-    chapterTopic: 'Trigonometry',
-    reply: `### Understanding the Question\nProve the fundamental Pythagorean trigonometric identity $1 + \\tan^2 \\theta = \\sec^2 \\theta$ algebraically from the primary identity.\n\n### Given Information\nPrimary trigonometric identity: $$\\sin^2 \\theta + \\cos^2 \\theta = 1$$\n\n### Concept Used\nReciprocal and quotient identities: $$\\tan \\theta = \\frac{\\sin \\theta}{\\cos \\theta}, \\quad \\sec \\theta = \\frac{1}{\\cos \\theta}$$\n\n### Step-by-Step Solution\n1. Divide both sides of $\\sin^2 \\theta + \\cos^2 \\theta = 1$ by $\\cos^2 \\theta$ (where $\\cos \\theta \\neq 0$):\n$$\\frac{\\sin^2 \\theta}{\\cos^2 \\theta} + \\frac{\\cos^2 \\theta}{\\cos^2 \\theta} = \\frac{1}{\\cos^2 \\theta}$$\n2. Simplify each term:\n$$\\left(\\frac{\\sin \\theta}{\\cos \\theta}\\right)^2 + 1 = \\left(\\frac{1}{\\cos \\theta}\\right)^2$$\n3. Substitute $\\tan \\theta$ and $\\sec \\theta$:\n$$\\tan^2 \\theta + 1 = \\sec^2 \\theta$$\n4. Rearrange terms:\n$$1 + \\tan^2 \\theta = \\sec^2 \\theta$$\n\n### Final Answer\n$$1 + \\tan^2 \\theta = \\sec^2 \\theta$$\n\n### Verification / Check\nFor $\\theta = 45^\\circ$:\n$$1 + \\tan^2 45^\\circ = 1 + 1^2 = 2$$\n$$\\sec^2 45^\\circ = (\\sqrt{2})^2 = 2$$\nLHS = RHS.`,
-    timestamp: '2026-10-05T14:30:00.000Z',
-    responseStatus: 'success',
-    tokenMetadata: { model: 'gemini-3.8-flash', totalTokens: 310 },
-    userRating: 'helpful',
-  },
-];
-
-interface UserAiDailyUsage {
-  count: number;
-  dateStr: string;
-  recentTimestamps: number[];
-}
-const aiUsageMap = new Map<string, UserAiDailyUsage>();
-
-function checkAiQuota(key: string, dailyLimit: number): { allowed: boolean; remaining: number } {
-  const today = new Date().toISOString().split('T')[0];
-  const usage = aiUsageMap.get(key) || { count: 0, dateStr: today, recentTimestamps: [] };
-
-  if (usage.dateStr !== today) {
-    usage.count = 0;
-    usage.dateStr = today;
-    usage.recentTimestamps = [];
-  }
-
-  // Sliding window rate limit: max 15 requests in 3 minutes
-  const now = Date.now();
-  usage.recentTimestamps = usage.recentTimestamps.filter((ts) => now - ts < 180 * 1000);
-  if (usage.recentTimestamps.length >= 15) {
-    return { allowed: false, remaining: 0 };
-  }
-
-  if (usage.count >= dailyLimit) {
-    return { allowed: false, remaining: 0 };
-  }
-
-  usage.count++;
-  usage.recentTimestamps.push(now);
-  aiUsageMap.set(key, usage);
-
-  return { allowed: true, remaining: dailyLimit - usage.count };
-}
+// AI request quotas live in Firestore across Worker instances. No fabricated history or volatile quota maps.
+const aiQuota = new AiQuota(getAdminFirestore);
 
 // -------------------------------------------------------------
 // Formula Deck Public API
@@ -3436,62 +3357,42 @@ app.get('/api/formulas/:slug', (req: Request, res: Response) => {
 app.get('/api/ai-teacher/config', (_req: Request, res: Response) => {
   return res.json({
     success: true,
-    status: 'ok',
+    status: aiClient && geminiApiKey ? 'configured' : 'not_configured',
     model: getAiTeacherModel(),
     supportedImageTypes: ['image/jpeg', 'image/png', 'image/webp'],
-    appCheckEnforced: false,
-    quotas: {
-      anonymousDaily: 30,
-      authenticatedDaily: 100,
-      annualPassDaily: 1000,
-    },
+    appCheckEnforced: process.env.REQUIRE_APP_CHECK === 'true',
+    quotas: { anonymousDaily: 15, authenticatedDaily: 100, annualPassDaily: 1000 },
     version: '2.0.0-multimodal-pedagogy',
   });
 });
 
-/**
- * Fetch Student AI Doubt History
- */
-app.get('/api/ai-teacher/history', asyncRoute(async (req: Request, res: Response) => {
-  const authHeader = req.headers.authorization;
-  let targetUid: string | null = null;
-
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const verified = await verifyStudentSessionToken(authHeader);
-    if (verified.valid && verified.uid) {
-      targetUid = verified.uid;
-    }
-  }
-
-  // Default to student-1001 for dev or match by uid
-  const userHistory = AI_DOUBTS_HISTORY.filter(
-    (record) => record.uid === targetUid || (targetUid && record.uid === 'mayf-student-1001')
-  );
-
-  return res.json({
-    success: true,
-    history: userHistory,
-    total: userHistory.length,
-  });
+/** Read only the authenticated student's real, persisted AI history. */
+app.get('/api/ai-teacher/history', requireAuth, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
+  const db = getAdminFirestore();
+  if (!db) return res.status(503).json({ success: false, error: 'AI history storage is unavailable.' });
+  const history = (await db.queryEqual('aiTeacherSessions', 'userId', req.userAuth!.uid))
+    .map(doc => ({ ...doc.data, id: doc.id }))
+    .sort((x, y) => String((y as any).timestamp).localeCompare(String((x as any).timestamp))).slice(0, 100);
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({ success: true, history, total: history.length });
 }));
 
-/**
- * Rate an AI Teacher Response
- */
-app.post('/api/ai-teacher/rate', (req: Request, res: Response) => {
-  const { doubtId, rating } = req.body;
-  if (!doubtId || (rating !== 'helpful' && rating !== 'unhelpful')) {
-    return res.status(400).json({ error: 'Valid doubtId and rating (helpful/unhelpful) are required' });
+/** Ratings must belong to the authenticated student; conditional writes prevent stale overwrites. */
+app.post('/api/ai-teacher/rate', requireAuth, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
+  const { doubtId, rating } = req.body || {};
+  if (typeof doubtId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(doubtId) ||
+      !['helpful', 'unhelpful'].includes(rating)) {
+    return res.status(400).json({ success: false, error: 'A valid response ID and rating are required.' });
   }
-
-  const target = AI_DOUBTS_HISTORY.find((d) => d.id === doubtId);
-  if (target) {
-    target.userRating = rating;
-    return res.json({ success: true, doubtId, rating });
-  }
-
-  return res.json({ success: true, message: 'Rating noted' });
-});
+  const db = getAdminFirestore();
+  if (!db) return res.status(503).json({ success: false, error: 'AI history storage is unavailable.' });
+  const doc = db.collection('aiTeacherSessions').doc(doubtId);
+  const snapshot = await doc.get();
+  const record = snapshot.data();
+  if (!record || record.userId !== req.userAuth!.uid) return res.status(404).json({ success: false, error: 'AI response not found.' });
+  await doc.set({ ...record, userRating: rating }, { updateTime: snapshot.updateTime });
+  return res.json({ success: true, doubtId, rating });
+}));
 
 /**
  * Main AI Teacher Doubt Endpoint
@@ -3507,10 +3408,19 @@ app.post('/api/ai-teacher/ask', asyncRoute(async (req: Request, res: Response) =
       return res.status(400).json({ error: 'A question message or math image is required' });
     }
 
-    // Optional Firebase App Check verification header
+    if (!aiClient || !geminiApiKey) {
+      return res.status(503).json({ success: false, error: 'AI Teacher is not configured yet.' });
+    }
+
+    // When enabled, verify the App Check signature, not merely header presence.
     const appCheckToken = req.headers['x-firebase-appcheck'];
-    if (process.env.REQUIRE_APP_CHECK === 'true' && !appCheckToken) {
-      return res.status(401).json({ error: 'App Check verification token is required' });
+    if (process.env.REQUIRE_APP_CHECK === 'true') {
+      const app = getFirebaseAdminApp();
+      if (!app || typeof appCheckToken !== 'string') {
+        return res.status(401).json({ success: false, error: 'A valid App Check token is required.' });
+      }
+      try { await getAppCheck(app).verifyToken(appCheckToken); }
+      catch { return res.status(401).json({ success: false, error: 'App Check verification failed.' }); }
     }
 
     // Identify user identity if logged in
@@ -3522,7 +3432,9 @@ app.post('/api/ai-teacher/ask', asyncRoute(async (req: Request, res: Response) =
       const tokenVerification = await verifyStudentSessionToken(authHeader);
       if (tokenVerification.valid && tokenVerification.uid) {
         verifiedUid = tokenVerification.uid;
-        userLimit = 100; // Authenticated free tier
+        // Paid access is read from the durable entitlement store rather than trusting client claims.
+        const pass = await getAuthoritativePassStatus(verifiedUid);
+        userLimit = pass.active || tokenVerification.admin || tokenVerification.superAdmin || tokenVerification.pro ? 1000 : 100;
       }
     }
 
@@ -3533,7 +3445,10 @@ app.post('/api/ai-teacher/ask', asyncRoute(async (req: Request, res: Response) =
 
     // Rate Limiting & Daily Quota Guard
     const quotaKey = verifiedUid ? `user-${verifiedUid}` : `ip-${rawIp}`;
-    const quotaCheck = checkAiQuota(quotaKey, userLimit);
+    if (await checkDownloadRateLimit(`ai-${quotaKey}`, 15, 180000)) {
+      return res.status(429).json({ success: false, error: 'Too many AI requests. Please wait a few minutes.' });
+    }
+    const quotaCheck = await aiQuota.consume(quotaKey, userLimit);
     if (!quotaCheck.allowed) {
       return res.status(429).json({
         error: 'Question limit reached for this session. Please wait a few minutes or upgrade to the Annual Pass for unlimited access.',
@@ -3654,39 +3569,6 @@ CRITICAL PEDAGOGICAL RULES:
       totalTokens?: number;
     } = { model: getAiTeacherModel(), totalTokens: 350 };
 
-    const pedagogicalFallback = (msg: string, grade: string, subjectTopic: string, hasImg: boolean) => {
-      const displayProb = (msg || '').trim() || (hasImg ? 'The problem shown in your uploaded diagram/photograph' : 'The given mathematical problem');
-      return `Hello there! I am Professor Sigma, your Mathematics Teacher. Let's solve this problem step-by-step with complete clarity!
-
-### Understanding the Question
-We are working on **${subjectTopic}** for **${grade}**.
-We need to analyze and solve: "${displayProb.slice(0, 160)}".
-
-### Given Information
-* Class Level: **${grade}** (CBSE & ICSE standards)
-* Chapter Topic: **${subjectTopic}**
-* Known Values: All given parameters and conditions from the problem statement.
-
-### Concept Used
-Standard algebraic properties and identities:
-$$(a + b)^2 = a^2 + 2ab + b^2, \\quad a^2 - b^2 = (a-b)(a+b), \\quad \\text{LHS} = \\text{RHS}$$
-
-### Step-by-Step Solution
-1. **Identify the unknown quantity** and label variables clearly according to standard mathematical notation.
-2. **Translate problem conditions** into a systematic equation or geometric relation.
-3. **Perform algebraic transformations** step-by-step without skipping intermediate calculations.
-4. **Simplify fractions, roots, and units** into their canonical mathematical form.
-
-### Final Answer
-The step-by-step solution has been methodically derived in accordance with the **${grade}** syllabus.
-
-### Verification / Check
-Substitute the calculated answer back into the original problem statement to verify that the solution satisfies all constraints.
-
-### Alternative Method
-You can also verify this using graphical visualization, factorisation, or tabular substitution where applicable.`;
-    };
-
     const userPrompt = message?.trim()
       ? `Student (${classLevel}, ${topic}) asks: "${message}"\nPlease provide your helpful step-by-step solution:`
       : `Student (${classLevel}, ${topic}) has uploaded the attached mathematics image/photo. Please solve the problem shown:`;
@@ -3749,8 +3631,7 @@ You can also verify this using graphical visualization, factorisation, or tabula
     }
 
     if (!successfullyGenerated) {
-      replyText = pedagogicalFallback(message, classLevel, topic, Boolean(validImagePart));
-      selectedModel = 'professor-sigma-pedagogical-engine';
+      return res.status(503).json({ success: false, error: 'AI Teacher is temporarily unavailable. No answer was generated.' });
     }
 
     const doubtId = `doubt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
@@ -3767,9 +3648,11 @@ You can also verify this using graphical visualization, factorisation, or tabula
       tokenMetadata,
     };
 
-    AI_DOUBTS_HISTORY.unshift(doubtRecord);
-    if (AI_DOUBTS_HISTORY.length > 500) {
-      AI_DOUBTS_HISTORY.pop();
+    // Anonymous questions are not attributed to any student's history.
+    if (verifiedUid) {
+      const db = getAdminFirestore();
+      if (!db) throw new Error('AI history storage is unavailable.');
+      await db.collection('aiTeacherSessions').doc(doubtId).set({ ...doubtRecord, userId: verifiedUid });
     }
 
     return res.json({
@@ -3781,39 +3664,8 @@ You can also verify this using graphical visualization, factorisation, or tabula
       timestamp: doubtRecord.timestamp,
     });
   } catch (error: any) {
-    console.warn('[MAYF Server] Handled AI Teacher generation notice:', error?.message || error);
-    const fallbackText = `Hello there! I am Professor Sigma, your Mathematics Teacher.
-
-### Understanding the Question
-Let's examine the mathematical problem carefully for **${req.body?.studentClass || 'Class 10'}** on **${req.body?.chapterTopic || 'General Mathematics'}**.
-
-### Given Information
-* Class: ${req.body?.studentClass || 'Class 10'}
-* Problem: "${(req.body?.message || 'Attached mathematical problem').slice(0, 100)}"
-
-### Concept Used
-Fundamental algebraic identities and syllabus theorem rules:
-$$(a + b)^2 = a^2 + 2ab + b^2, \\quad a^2 - b^2 = (a-b)(a+b)$$
-
-### Step-by-Step Solution
-1. Identify all given coefficients and isolate the targeted variable.
-2. Apply standard simplification rules and verify units.
-3. Check the solution against board syllabus standards.
-
-### Final Answer
-The step-by-step solution has been derived for your syllabus.
-
-### Verification / Check
-Substitute the answer back into the original equation to ensure consistency.`;
-
-    return res.json({
-      success: true,
-      doubtId: `doubt-${Date.now()}-fallback`,
-      reply: fallbackText,
-      model: 'professor-sigma-pedagogical-engine',
-      quotaRemaining: 25,
-      timestamp: new Date().toISOString(),
-    });
+    console.warn('[MAYF AI Teacher] Request failed:', error?.message || error);
+    return res.status(503).json({ success: false, error: 'AI Teacher request could not be completed. Please retry.' });
   }
 }));
 
