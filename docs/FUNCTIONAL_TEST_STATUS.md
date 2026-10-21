@@ -144,3 +144,10 @@ Keep this PR in draft until the open durability and demonstration-path findings 
 - Favorites now use separate guest/account browser keys, validate loaded IDs and start empty. A rendered account never sees another account's previous favorite state while effects catch up. Switching accounts loads only that account's local list.
 - The ambiguous old shared mayf_saved_items key is retained but not automatically assigned to any account; this prevents silently exposing one account's favorites to another. Cross-device/cloud bookmark synchronization remains pending; these lists are explicitly browser-local.
 - Two tests cover guest/account separation, legacy-cache exclusion, key collision prevention, malformed data and duplicate/non-string IDs. 92 automated tests, TypeScript and production build pass. Authenticated cross-account UI verification remains pending sign-in.
+
+## Administrator student history
+
+- The student inspector and full-profile API now read persisted orders/activity for the exact Firebase user ID rather than Worker memory arrays. Email matching is not used. Order totals include discount/tax and retain actual currency/status/payment IDs; missing payment IDs stay empty.
+- Client activity is labelled as reported usage, bounded to 50 records from the last 30 days and excludes other users, synthetic sample IDs and future timestamps. Missing storage fails explicitly; request failures are not transformed into successful empty histories.
+- Opening/closing another student invalidates the earlier inspector request; stale results cannot replace the currently inspected student's history. Old rows are cleared while the new request loads.
+- Three tests cover exact order ownership/financial totals, activity owner/retention/sample exclusion and unavailable storage. 95 automated tests, TypeScript and production build pass. Authenticated live student-inspector acceptance remains pending. These reads currently enumerate collections; owner-indexed server queries are a future scaling requirement.

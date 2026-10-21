@@ -54,7 +54,7 @@ export interface StudentRecord {
 
 export interface StudentActivityRecord {
   id: string;
-  type: 'ai_doubt' | 'formula_deck' | 'pdf_download' | 'login' | 'quiz_attempt';
+  type: string;
   title: string;
   description: string;
   timestamp: string;
@@ -438,25 +438,14 @@ class AdminService {
   }
 
   async getUserOrders(uid: string): Promise<OrderRecord[]> {
-    try {
-      const headers = await this.getAuthHeaders();
-      const res = await fetch(`/api/admin/users/${uid}/orders`, { headers });
-      if (!res.ok) return [];
-      return await res.json();
-    } catch {
-      return [];
-    }
+    const res = await fetch(`/api/admin/users/${encodeURIComponent(uid)}/orders`, { headers: await this.getAuthHeaders() });
+    if (!res.ok) throw new Error(`Student orders could not be loaded (${res.status}).`);
+    return res.json();
   }
-
   async getUserActivity(uid: string): Promise<StudentActivityRecord[]> {
-    try {
-      const headers = await this.getAuthHeaders();
-      const res = await fetch(`/api/admin/users/${uid}/activity`, { headers });
-      if (!res.ok) return [];
-      return await res.json();
-    } catch {
-      return [];
-    }
+    const res = await fetch(`/api/admin/users/${encodeURIComponent(uid)}/activity`, { headers: await this.getAuthHeaders() });
+    if (!res.ok) throw new Error(`Student activity could not be loaded (${res.status}).`);
+    return res.json();
   }
 
   async setUserRole(
