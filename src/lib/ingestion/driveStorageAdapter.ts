@@ -1,3 +1,4 @@
+import { hasPdfMarkers } from '../download/pdfIntegrity';
 /**
  * Authenticated Google Drive staging -> private Cloudflare R2 PDF import.
  * Never invent a public storage URL. Only confirmed PDF uploads are successes.
@@ -101,7 +102,7 @@ export async function copyDriveFileToProductionStorage(
   const bytes = new Uint8Array(length);
   let cursor = 0;
   for (const chunk of chunks) { bytes.set(chunk, cursor); cursor += chunk.byteLength; }
-  if (bytes.length < 9 || String.fromCharCode(...bytes.subarray(0, 5)) !== '%PDF-')
+  if (!hasPdfMarkers(bytes))
     throw new Error('Google Drive source is not a valid PDF');
   await bucket.put(key, bytes, { httpMetadata: { contentType: 'application/pdf' } });
   const stored = await bucket.head(key);
