@@ -288,6 +288,7 @@ export class PaymentService {
       newOrder.couponReservationExpiresAt = claim.expiresAt;
       couponReserved = true;
     }
+    try {
     // Call adapter to generate gateway order / checkout session
     const providerResult = await adapter.createOrder(newOrder);
     newOrder.providerOrderId = providerResult.providerOrderId;
@@ -297,6 +298,16 @@ export class PaymentService {
       await this.durableOrders.createOrder(newOrder);
     } else if (isProductionPaymentRuntime()) {
       throw new Error('Payment checkout unavailable: durable order storage is not configured');
+    }
+    } catch (error) {
+      if (couponReserved && validatedCoupon) {
+        try {
+          await this.durableOrders!.releaseCouponReservation!(orderId, validatedCoupon);
+        } catch (releaseError) {
+          console.error('[MAYF] Coupon reservation release failed:', releaseError);
+        }
+      }
+      throw error;
     }
     // Maintain the legacy index for existing development tests and readers.
     this.ordersStore.set(orderId, newOrder);
