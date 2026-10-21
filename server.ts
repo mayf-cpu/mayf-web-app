@@ -1808,18 +1808,23 @@ app.post('/api/admin/admins/claim', requireAuth, requireAdmin, asyncRoute(async 
   const target = await auth.getUserByEmail(String(email).trim());
   await adminSetCustomUserClaims(target.uid, { role: role || 'admin', admin: true, superAdmin: role === 'superAdmin' });
   const isSuper = role === 'superAdmin';
-  auditLogService.log({
-    action: 'ADMIN_CREATED',
-    category: 'admin',
-    actorUid: req.userAuth?.uid || 'admin',
-    actorEmail: req.userAuth?.email || 'admin@mayf.co.in',
-    actorRole: 'superAdmin',
-    targetId: target.uid,
-    targetEmail: email,
-    targetType: 'administrator_role',
-    details: { email, role, admin: true, superAdmin: isSuper },
-    status: 'success',
-  });
+  // Persist the audit event before acknowledging this privileged role change.
+  // The Firebase Auth operation above is external to Firestore and cannot be
+  // transactionally rolled back; a failed audit write must never report success.
+  await catalogueRepository.run(() => {
+    auditLogService.log({
+      action: 'ADMIN_CREATED',
+      category: 'admin',
+      actorUid: req.userAuth?.uid || 'admin',
+      actorEmail: req.userAuth?.email || 'admin@mayf.co.in',
+      actorRole: 'superAdmin',
+      targetId: target.uid,
+      targetEmail: email,
+      targetType: 'administrator_role',
+      details: { email, role, admin: true, superAdmin: isSuper },
+      status: 'success',
+    });
+  }, true);
 
   return res.json({
     success: true,
