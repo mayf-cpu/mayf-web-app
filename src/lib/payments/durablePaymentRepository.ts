@@ -31,7 +31,8 @@ export class DurablePaymentRepository {
    * Expired holds are reclaimed lazily as part of the next reservation.
    */
   async reserveCoupon(args: {
-    orderId: string; userId: string; code: string; discount: number; now?: Date;
+    orderId: string; userId: string; code: string; discount: number;
+    expectedUpdatedAt?: string; now?: Date;
   }): Promise<{ expiresAt: string }> {
     const { orderId, userId, discount } = args;
     validId(orderId); validId(userId);
@@ -49,6 +50,9 @@ export class DurablePaymentRepository {
         !Number.isSafeInteger(coupon.timesUsed) || coupon.timesUsed < 0 ||
         !coupon.userUsageMap || typeof coupon.userUsageMap !== 'object') {
       throw new Error('Coupon is disabled or corrupt');
+    }
+    if (args.expectedUpdatedAt && coupon.updatedAt !== args.expectedUpdatedAt) {
+      throw new Error('Coupon terms changed since quote; please recalculate discount');
     }
     const holds = coupon.activeReservations || {};
     if (typeof holds !== 'object' || Array.isArray(holds)) throw new Error('Invalid coupon reservation ledger');
