@@ -11,7 +11,8 @@ test('staging configuration remains isolated from production', () => {
 test('manual workflow never targets production configuration', () => {
  const flow=readFileSync(new URL('../.github/workflows/deploy-staging.yml',import.meta.url),'utf8');
  assert.ok(flow.includes('workflow_dispatch:'));
- assert.ok(flow.includes("github.ref_name == 'staging/integrated-acceptance-2026-10-21'"));
+ assert.ok(flow.includes("github.ref_name == 'staging/consolidated-mayf-2026-10-21'"));
+ assert.ok(flow.includes('inputs.confirm_isolated_staging == true'));
  assert.ok(flow.includes('wrangler.staging.jsonc'));
  assert.ok(!flow.includes('wrangler deploy --config wrangler.jsonc'));
 });
