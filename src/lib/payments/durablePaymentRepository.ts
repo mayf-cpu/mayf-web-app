@@ -14,6 +14,8 @@ const ENTITLEMENT_COLLECTION = 'paymentEntitlements';
 const RENEWAL_CURSOR_COLLECTION = 'paymentRenewalCursors';
 const COUPON_COLLECTION = 'coupons';
 const COUPON_REDEMPTION_COLLECTION = 'paymentCouponRedemptions';
+const COUPON_RESERVATION_COLLECTION = 'paymentCouponReservations';
+const COUPON_HOLD_MS = 30 * 60_000;
 
 function validId(value: string): string {
   if (!value || value.includes('/') || value.length > 400) throw new Error('Invalid payment record identifier');
@@ -22,6 +24,101 @@ function validId(value: string): string {
 
 export class DurablePaymentRepository {
   constructor(private readonly store: FirestoreDocumentStore) {}
+
+  /**
+   * Reserve a real discount BEFORE creating a chargeable gateway order.
+   * The coupon document is a shared optimistic-concurrency serialization point.
+   * Expired holds are reclaimed lazily as part of the next reservation.
+   */
+  async reserveCoupon(args: {
+    orderId: string; userId: string; code: string; discount: number;
+    expectedUpdatedAt?: string; now?: Date;
+  }): Promise<{ expiresAt: string }> {
+    const { orderId, userId, discount } = args;
+    validId(orderId); validId(userId);
+    const code = args.code.trim().toUpperCase();
+    if (!/^[A-Z0-9_-]{1,64}$/.test(code) ||
+        !Number.isFinite(discount) || discount <= 0) {
+      throw new Error('Invalid coupon reservation');
+    }
+    const nowMs = (args.now || new Date()).getTime();
+    if (!Number.isFinite(nowMs)) throw new Error('Invalid reservation time');
+    const couponRef = await this.store.collection(COUPON_COLLECTION).doc(code).get();
+    if (!couponRef.exists || !couponRef.updateTime) throw new Error('Coupon not available for reservation');
+    const coupon = couponRef.data();
+    if (!coupon || coupon.code !== code || !coupon.enabled ||
+        !Number.isSafeInteger(coupon.timesUsed) || coupon.timesUsed < 0 ||
+        !coupon.userUsageMap || typeof coupon.userUsageMap !== 'object') {
+      throw new Error('Coupon is disabled or corrupt');
+    }
+    if (args.expectedUpdatedAt && coupon.updatedAt !== args.expectedUpdatedAt) {
+      throw new Error('Coupon terms changed since quote; please recalculate discount');
+    }
+    const holds = coupon.activeReservations || {};
+    if (typeof holds !== 'object' || Array.isArray(holds)) throw new Error('Invalid coupon reservation ledger');
+    const active: Record<string, { userId: string; discount: number; expiresAt: string }> = {};
+    for (const [key, value] of Object.entries(holds) as [string, any][]) {
+      if (!value || typeof value.userId !== 'string' ||
+          !Number.isFinite(Date.parse(value.expiresAt)) ||
+          !Number.isFinite(value.discount)) throw new Error('Invalid coupon hold');
+      if (Date.parse(value.expiresAt) > nowMs) active[key] = value;
+    }
+    if (active[orderId]) throw new Error('This order already has a coupon reservation');
+    if (Object.keys(active).length >= 100) throw new Error('Coupon reservation capacity is temporarily full');
+    const userCount = coupon.userUsageMap[userId] || 0;
+    if (!Number.isSafeInteger(userCount) || userCount < 0) throw new Error('Invalid student redemption count');
+    const globalLimit = coupon.usageLimit;
+    const userLimit = coupon.perUserLimit;
+    if ((globalLimit != null && (!Number.isSafeInteger(globalLimit) ||
+       coupon.timesUsed + Object.keys(active).length >= globalLimit)) ||
+        (userLimit != null && (!Number.isSafeInteger(userLimit) ||
+       userCount + Object.values(active).filter(h => h.userId === userId).length >= userLimit))) {
+      throw new Error('Coupon redemption capacity exhausted');
+    }
+    const expiresAt = new Date(nowMs + COUPON_HOLD_MS).toISOString();
+    await this.store.commit([
+      { collection: COUPON_COLLECTION, id: code, updateTime: couponRef.updateTime,
+        data: { ...coupon, activeReservations: {
+          ...active, [orderId]: { userId, discount, expiresAt },
+        } } },
+      { collection: COUPON_RESERVATION_COLLECTION, id: orderId,
+        data: { orderId, userId, code, discount, expiresAt, status: 'reserved',
+          createdAt: new Date(nowMs).toISOString() } },
+    ]);
+    return { expiresAt };
+  }
+
+  /** Release an abandoned gateway checkout; never decrement redeemed usage. */
+  async releaseCouponReservation(orderId: string, code: string): Promise<void> {
+    validId(orderId);
+    const couponCode = code.trim().toUpperCase();
+    if (!/^[A-Z0-9_-]{1,64}$/.test(couponCode)) throw new Error('Invalid coupon');
+    const reservationRef = await this.store.collection(COUPON_RESERVATION_COLLECTION).doc(orderId).get();
+    if (!reservationRef.exists) return;
+    const reservation = reservationRef.data();
+    if (!reservation) throw new Error('Corrupt reservation record');
+    if (reservation.code !== couponCode) throw new Error('Coupon reservation ownership mismatch');
+    if (reservation.status === 'released') return;
+    if (reservation.status !== 'reserved' || !reservationRef.updateTime) {
+      throw new Error('Cannot release a settled or invalid coupon reservation');
+    }
+    const couponRef = await this.store.collection(COUPON_COLLECTION).doc(couponCode).get();
+    if (!couponRef.exists || !couponRef.updateTime) throw new Error('Coupon was removed before release');
+    const coupon = couponRef.data();
+    if (!coupon) throw new Error('Coupon record missing');
+    if (coupon.activeReservations?.[orderId]?.userId !== reservation.userId) {
+      throw new Error('Coupon hold no longer matches the reservation');
+    }
+    const active = { ...coupon.activeReservations };
+    delete active[orderId];
+    await this.store.commit([
+      { collection: COUPON_COLLECTION, id: couponCode, updateTime: couponRef.updateTime,
+        data: { ...coupon, activeReservations: active } },
+      { collection: COUPON_RESERVATION_COLLECTION, id: orderId,
+        updateTime: reservationRef.updateTime,
+        data: { ...reservation, status: 'released', releasedAt: new Date().toISOString() } },
+    ]);
+  }
 
   async createOrder(order: StoredOrder): Promise<void> {
     if (order.status !== 'created' && order.status !== 'pending') throw new Error('New payment order cannot be settled');
@@ -262,6 +359,33 @@ export class DurablePaymentRepository {
           typeof coupon.userUsageMap !== 'object' || Array.isArray(coupon.userUsageMap)) {
         throw new Error('Paid coupon record is invalid; manual reconciliation required');
       }
+      // A paid discounted order must possess its own pre-gateway reservation.
+      // Retries or stale reservations are never silently counted as new sales.
+      if (order.couponReservationId !== orderId ||
+          !order.couponReservationExpiresAt ||
+          !Number.isFinite(Date.parse(order.couponReservationExpiresAt))) {
+        throw new Error('Paid discounted order lacks a valid pre-charge reservation; manual reconciliation required');
+      }
+      const hold = coupon.activeReservations?.[orderId];
+      if (!hold || hold.userId !== order.userId ||
+          hold.discount !== order.discount ||
+          hold.expiresAt !== order.couponReservationExpiresAt) {
+        throw new Error('Paid coupon hold does not match order; manual reconciliation required');
+      }
+      const reservationRef = await this.store.collection(COUPON_RESERVATION_COLLECTION).doc(orderId).get();
+      const reservation = reservationRef.data();
+      if (!reservationRef.exists || !reservationRef.updateTime ||
+          reservation?.status !== 'reserved' || reservation?.userId !== order.userId ||
+          reservation?.code !== code || reservation?.discount !== order.discount ||
+          reservation?.expiresAt !== hold.expiresAt) {
+        throw new Error('Paid coupon reservation is missing or changed; manual reconciliation required');
+      }
+      // The gateway can report an event after expiry; hold duration must be
+      // checked against verified charge time. The current orchestrator uses
+      // observed webhook time, so late delivery requires manual reconciliation.
+      if (Date.parse(hold.expiresAt) <= Date.parse(paidAt)) {
+        throw new Error('Coupon checkout hold expired before settlement; manual reconciliation required');
+      }
       const previousCount = coupon.userUsageMap[order.userId] ?? 0;
       if (!Number.isSafeInteger(previousCount) || previousCount < 0) {
         throw new Error('Paid coupon student usage is corrupt; manual reconciliation required');
@@ -276,14 +400,20 @@ export class DurablePaymentRepository {
       }
       const redemption = await this.store.collection(COUPON_REDEMPTION_COLLECTION).doc(validId(orderId)).get();
       if (redemption.exists) throw new Error('Coupon was previously redeemed by this order; manual reconciliation required');
+      const remainingHolds = { ...coupon.activeReservations };
+      delete remainingHolds[orderId];
       couponWrites.push(
         { collection: COUPON_COLLECTION, id: code, updateTime: couponRef.updateTime,
           data: { ...coupon, timesUsed: coupon.timesUsed + 1,
+            activeReservations: remainingHolds,
             userUsageMap: { ...coupon.userUsageMap, [order.userId]: previousCount + 1 },
             updatedAt: paidAt } },
         { collection: COUPON_REDEMPTION_COLLECTION, id: validId(orderId),
           data: { orderId, userId: order.userId, code, discount: order.discount,
             provider, providerPaymentId, redeemedAt: paidAt } },
+        { collection: COUPON_RESERVATION_COLLECTION, id: validId(orderId),
+          updateTime: reservationRef.updateTime,
+          data: { ...reservation, status: 'redeemed', providerPaymentId, redeemedAt: paidAt } },
       );
     } else if (order.discount > 0) {
       throw new Error('Paid order contains an unexplained discount; manual reconciliation required');
