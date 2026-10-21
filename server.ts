@@ -3840,6 +3840,7 @@ app.post('/api/admin/ingest/retry', requireAuth, requireAdmin, asyncRoute(async 
 
 app.post('/api/admin/ingest/sync', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
   try {
+    await refreshIngestionJobs();
     const syncOutcome = await syncRegistryNow();
     return res.json({
       success: syncOutcome.failedCount === 0,
