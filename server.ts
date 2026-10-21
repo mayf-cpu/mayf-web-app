@@ -2103,27 +2103,13 @@ app.post('/api/admin/security/config', requireAuth, requireSuperAdmin, (req: Aut
  * 18. Order Refund Endpoint
  * Logs audit entry: refund-related changes
  */
-app.post('/api/admin/orders/:orderId/refund', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
-  const { orderId } = req.params;
-  const { reason, amount } = req.body;
-
-  auditLogService.log({
-    action: 'REFUND_PROCESSED',
-    category: 'refund',
-    actorUid: req.userAuth?.uid || 'admin',
-    actorEmail: req.userAuth?.email || 'admin@mayf.co.in',
-    actorRole: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
-    targetId: orderId,
-    targetType: 'payment_order',
-    details: { orderId, amount, reason: reason || 'Customer refund request' },
-    status: 'success',
-  });
-
-  return res.json({
-    success: true,
-    orderId,
-    status: 'refunded',
-    message: `Order ${orderId} has been refunded and audit log recorded.`,
+// Refunds must be confirmed with the payment provider and durably reconciled.
+// The signed Razorpay refund webhook handles verified FULL refunds; initiating
+// a gateway refund from this admin route is not implemented and must not report success.
+app.post('/api/admin/orders/:orderId/refund', requireAuth, requireAdmin, (_req: AuthenticatedRequest, res: Response) => {
+  return res.status(501).json({
+    success: false, code: 'REFUND_INITIATION_NOT_IMPLEMENTED',
+    error: 'Refund initiation from the admin panel is not available. Verify the transaction with the gateway and allow the signed refund webhook to reconcile the ledger and access. Do not treat this order as refunded yet.',
   });
 });
 
@@ -3182,51 +3168,26 @@ app.put('/api/admin/seo', requireAuth, requireAdmin, asyncRoute(async (req: Requ
   catch (error: any) { return res.status(400).json({ success: false, error: error.message || 'SEO settings were not saved.' }); }
 }));
 
-app.get('/api/admin/orders', requireAuth, requireAdmin, (_req: Request, res: Response) => {
-  const stored = paymentService.getAllOrders();
-  if (stored && stored.length > 0) {
-    return res.json(
-      stored.map((o: StoredOrder) => ({
-        id: o.orderId,
-        orderNumber: o.providerOrderId || o.orderId,
-        customerEmail: o.customerDetails?.email || 'student@mayf.co.in',
-        planName: o.items[0]?.title || 'Annual Pass (Classes 5–10)',
-        amount: o.grossAmount,
-        currency: o.currency,
-        gateway: o.provider,
-        status: o.status,
-        createdAt: o.createdAt,
-        paymentId: o.providerPaymentId || 'pay_' + o.orderId.slice(0, 10),
-      }))
-    );
-  }
-  return res.json([
-    {
-      id: 'ord-801',
-      orderNumber: 'MAYF-2026-8910',
-      customerEmail: 'arjun.sharma@mayf.co.in',
-      planName: 'Annual Pass (Classes 5–10)',
-      amount: 1999,
-      currency: 'INR',
-      gateway: 'razorpay',
-      status: 'captured',
-      createdAt: '2026-10-08T04:22:00.000Z',
-      paymentId: 'pay_rzp_98a7s6d5f4',
-    },
-    {
-      id: 'ord-802',
-      orderNumber: 'MAYF-2026-8909',
-      customerEmail: 'priya.patel@gmail.com',
-      planName: 'Annual Pass Family Pack (2 Children)',
-      amount: 2999,
-      currency: 'INR',
-      gateway: 'stripe',
-      status: 'paid',
-      createdAt: '2026-10-07T19:15:00.000Z',
-      paymentId: 'pi_3MtwBwLkdIwHu7ix28aZlKst',
-    },
-  ]);
-});
+/** Real authoritative payment ledger. Never seed the admin screen with demonstration orders. */
+app.get('/api/admin/orders', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  const db = getAdminFirestore();
+  if (!db) return res.status(503).json({ success: false, error: 'Order ledger storage is unavailable.' });
+  const orders = await new DurablePaymentRepository(db).getAllOrders();
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json(orders.map(order => ({
+    id: order.orderId,
+    orderNumber: order.providerOrderId || order.orderId,
+    customerEmail: order.customerDetails?.email || '',
+    planName: order.items[0]?.title || 'Annual Pass',
+    amount: order.grossAmount - order.discount + (order.tax || 0),
+    currency: order.currency,
+    gateway: order.provider,
+    status: order.status,
+    createdAt: order.createdAt,
+    paymentId: order.providerPaymentId || '',
+  })));
+}));
+
 
 const IN_MEMORY_BROADCASTS = [
   {
