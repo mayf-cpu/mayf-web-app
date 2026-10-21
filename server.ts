@@ -979,8 +979,11 @@ async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
       },
     });
   } catch (error: any) {
+    if (typeof error?.message === 'string' && error.message.startsWith('Coupon not applicable:')) {
+      return res.status(400).json({ success: false, code: 'INVALID_COUPON', error: error.message });
+    }
     console.error('[MAYF Payments] Order creation error:', error);
-    return res.status(500).json({ success: false, error: error?.message || 'Failed to create order' });
+    return res.status(503).json({ success: false, error: 'Checkout could not be initialized. No purchase was acknowledged.' });
   }
 }
 
