@@ -37,3 +37,16 @@ test('expired leases are reclaimed and stale workers cannot remove new owner loc
  await assert.rejects(new IngestionLock(store).acquire('content-102',200001),/already being imported/);
  await fresh.release();
 });
+
+test('lease renewal prolongs exclusive import ownership and stale owner cannot renew',async()=>{
+ const {store}=fixture();
+ const now=Date.now();
+ const old=await new IngestionLock(store).acquire('content-103',now);
+ await old.renew();
+ await old.assertOwner();
+ await assert.rejects(new IngestionLock(store).acquire('content-103',now+1000),/already being imported/);
+ await old.release();
+ const next=await new IngestionLock(store).acquire('content-103',Date.now());
+ await assert.rejects(old.renew(),/ownership lost/);
+ await next.release();
+});

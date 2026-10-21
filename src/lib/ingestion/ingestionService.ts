@@ -255,7 +255,8 @@ export function verifyWebhookSecret(authHeader: string | undefined): boolean {
  */
 async function processRegistryRowInternal(
   row: ContentRegistryRow,
-  triggeredBy: IngestionJobRecord['triggeredBy'] = 'apps_script_webhook'
+  triggeredBy: IngestionJobRecord['triggeredBy'] = 'apps_script_webhook',
+  renewLease: () => Promise<void> = async () => {},
 ): Promise<{ success: boolean; firestore_id?: string; error?: string; job: IngestionJobRecord }> {
   const timestamp = new Date().toISOString();
   const contentId = row.content_id?.trim();
@@ -336,6 +337,7 @@ async function processRegistryRowInternal(
   const existing = await db.collection('contentItems').doc(firestoreId).get();
   if (existing.exists && !existing.updateTime) throw new Error('CMS revision unavailable');
   const previous = existing.exists ? existing.data() || {} : {};
+  await renewLease();
   const storageResult = await copyDriveFileToProductionStorage(
     row.drive_file_id,
     row.thumbnail_drive_file_id,
@@ -398,6 +400,7 @@ async function processRegistryRowInternal(
   // The R2 transfer alone is not a completed import. The CMS record must be
   // committed durably before the job can be reported as imported.
   const publication = importPublicationPolicy(previous, existing.exists, isPubliclyVisible);
+  await renewLease();
   await db.commit([{
     collection: 'contentItems', id: firestoreId,
     ...(existing.updateTime ? { updateTime: existing.updateTime } : {}),
@@ -466,7 +469,7 @@ export async function processRegistryRow(
  const db = getAdminFirestore();
  if (!db) throw new Error('Import database unavailable');
  const lease = await new IngestionLock(db).acquire(row.content_id);
- try { return await processRegistryRowInternal(row, triggeredBy); }
+ try { return await processRegistryRowInternal(row, triggeredBy, lease.renew); }
  finally { await lease.release(); }
 }
 
