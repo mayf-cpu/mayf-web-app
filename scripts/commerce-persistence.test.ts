@@ -123,3 +123,17 @@ test('paid item access is scoped to its buyer and product and ends on refund', (
   payments.getOrder('item-order')!.status = 'refunded';
   assert.equal(hasPurchasedContentAccess(buyer, { id: 'resource-a' }, payments, entitlements), false);
 });
+
+test('concurrent payment callbacks cannot both commit duplicate entitlements or coupon usage', async () => {
+  const { fresh } = fixture(); const initial = fresh();
+  await initial.repository.run(() => putOrder(initial), true);
+  const first = fresh(); const second = fresh();
+  const results = await Promise.allSettled([first.repository.run(() => fulfill(first), true), second.repository.run(() => fulfill(second), true)]);
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  const committed = fresh();
+  await committed.repository.run(() => { assert.equal(committed.entitlements.getAllEntitlements().length, 1); assert.equal(committed.coupons.getCoupon('QA100')?.timesUsed, 1); });
+});
+test('invalid membership price, dates and duration cannot replace valid settings', () => {
+  const entitlements = new EntitlementService();
+  for (const patch of [{ salePrice: NaN }, { regularPrice: -1 }, { familyPrice: -100 }, { durationDays: 1.5 }, { promotionalStartDate: 'invalid' }, { promotionalStartDate: '2027-05-01', promotionalEndDate: '2027-01-01' }]) assert.throws(() => entitlements.updateSettings(patch));
+});

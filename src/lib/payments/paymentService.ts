@@ -336,6 +336,10 @@ export class PaymentService {
       };
     }
 
+    if (verification.rawAmount !== undefined && (Math.round(verification.rawAmount * 100) !== Math.round((order.grossAmount - order.discount + (order.tax || 0)) * 100) || verification.currency?.toUpperCase() !== order.currency.toUpperCase())) {
+      return { success: false, order, entitlementGranted: false, error: 'Captured payment amount or currency does not match this order.' };
+    }
+
     // Do not publish an in-memory paid state if durable redemption fails.
     if (order.coupon) {
       this.couponEngine.recordCouponRedemption(order.coupon, order.userId);

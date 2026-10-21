@@ -18,7 +18,9 @@ import {
 } from './src/lib/ingestion/ingestionService';
 import { ContentRegistryRow } from './src/lib/ingestion/types';
 import crypto from 'crypto';
-import { getDownloadableItem } from './src/lib/download/downloadRegistry';
+import { DownloadTickets } from './src/lib/download/downloadTickets';
+import { fetchDownloadAsset } from './src/lib/download/fileDelivery';
+import { getAdminFirestore } from './src/lib/firebase/admin';
 import { FORMULA_DECK_ITEMS } from './src/data/formulaDeckData';
 import { paymentService } from './src/lib/payments/paymentService';
 import { entitlementService } from './src/lib/payments/entitlementService';
@@ -498,31 +500,17 @@ function logDownloadAudit(params: {
   console.info(`[MAYF Download Audit] ${params.action} | ${params.contentId} | ${params.accessType} | ${params.status}${params.reason ? ` | ${params.reason}` : ''}`);
 }
 
-interface DownloadTokenRecord {
-  token: string;
-  contentId: string;
-  fileName: string;
-  mimeType: string;
-  accessType: 'free' | 'paid';
-  uid: string | null;
-  clientIpHash: string;
-  createdAt: number;
-  expiresAt: number;
-  used: boolean;
+const downloadTickets = new DownloadTickets(getAdminFirestore);
+async function resolveDownloadResource(contentId: string) {
+  return catalogueRepository.run(() => {
+    const record = contentCmsManager.exportState().find(item => (item.id === contentId || item.slug === contentId) && item.visible && item.status === 'published' && !item.isDeleted);
+    const resource = record ? contentCmsManager.getItem(record.id) : null;
+    if (!resource || !resource.downloadAllowed) return null;
+    const file = resource.files?.find((file: any) => file.url && file.name && file.mimeType);
+    if (!file) return null;
+    return { ...resource, file, fileName: file.name, mimeType: file.mimeType };
+  });
 }
-
-const DOWNLOAD_TOKENS_STORE = new Map<string, DownloadTokenRecord>();
-
-// Periodic cleanup of expired short-lived tokens
-app.use((_req, _res, next) => {
-  const now = Date.now();
-  for (const [token, record] of DOWNLOAD_TOKENS_STORE.entries()) {
-    if (record.expiresAt < now || record.used) {
-      DOWNLOAD_TOKENS_STORE.delete(token);
-    }
-  }
-  next();
-});
 
 /**
  * Download Authorization Endpoint
@@ -558,7 +546,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
     }
 
     // Lookup item in download registry
-    const item = getDownloadableItem(contentId);
+    const item = await resolveDownloadResource(contentId);
     if (!item) {
       logDownloadAudit({
         contentId,
@@ -620,8 +608,7 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
           });
         }
         // Check server-side entitlement status
-        const passCheck = await commerceRepository.run(() => entitlementService.checkActiveEntitlement(verifiedUid!));
-        userHasEntitlement = passCheck.active;
+        userHasEntitlement = await commerceRepository.run(() => hasPurchasedContentAccess(tokenVerification, item as any, paymentService, entitlementService));
       }
     }
 
@@ -664,13 +651,11 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
 
     // Generate short-lived (60 seconds) cryptographically secure single-use token
     // Bound strictly to client IP hash to prevent download URL sharing
-    const downloadToken = crypto.randomBytes(32).toString('hex');
     const clientIpHash = crypto.createHash('sha256').update(rawIp).digest('hex').substring(0, 16);
     const expiresInSeconds = 60;
     const expiresAt = Date.now() + expiresInSeconds * 1000;
 
-    DOWNLOAD_TOKENS_STORE.set(downloadToken, {
-      token: downloadToken,
+    const downloadToken = await downloadTickets.issue({
       contentId: item.id,
       fileName: item.fileName,
       mimeType: item.mimeType,
@@ -709,105 +694,27 @@ app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Respon
  * Enforces IP binding to prevent URL sharing.
  */
 app.get('/api/downloads/file/:token', asyncRoute(async (req: Request, res: Response) => {
-  const { token } = req.params;
   const rawIp = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || '127.0.0.1');
-
-  // Rate Limiting: max 20 file downloads per minute per IP
-  if (checkDownloadRateLimit(`dl-ip-${rawIp}`, 20, 60 * 1000)) {
-    return res.status(429).send('Download rate limit exceeded. Please try again later.');
+  if (checkDownloadRateLimit(`dl-ip-${rawIp}`, 20, 60 * 1000)) return res.status(429).json({ error: 'Download rate limit exceeded. Try again shortly.' });
+  const ipHash = crypto.createHash('sha256').update(rawIp).digest('hex').substring(0, 16);
+  try {
+    const { ticket } = await downloadTickets.read(req.params.token, ipHash);
+    const resource = await resolveDownloadResource(ticket.contentId);
+    if (!resource) return res.status(404).json({ error: 'This resource is unavailable for download.' });
+    const bytes = await fetchDownloadAsset(resource.file);
+    await downloadTickets.consume(req.params.token, ipHash);
+    const fileName = resource.fileName.replace(/[^\w.-]/g, '_');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', resource.mimeType);
+    res.setHeader('Content-Length', String(bytes.length));
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    logDownloadAudit({ contentId: resource.id, uid: ticket.uid, accessType: ticket.accessType, status: 'successful', action: 'file_served', req });
+    return res.send(bytes);
+  } catch (error: any) {
+    return res.status(503).json({ error: error.message || 'File delivery is temporarily unavailable.' });
   }
 
-  const tokenRecord = DOWNLOAD_TOKENS_STORE.get(token);
-
-  if (!tokenRecord) {
-    return res.status(404).json({
-      error: 'Download link is invalid or has expired. Please initiate verification again.',
-    });
-  }
-
-  if (tokenRecord.expiresAt < Date.now()) {
-    DOWNLOAD_TOKENS_STORE.delete(token);
-    return res.status(410).json({
-      error: 'Download token has expired (60-second limit). Please re-verify to generate a fresh link.',
-    });
-  }
-
-  if (tokenRecord.used) {
-    return res.status(403).json({
-      error: 'Download token has already been consumed. Download tokens are strictly single-use.',
-    });
-  }
-
-  // Security Check: Download URL Sharing Prevention
-  // Ensure requesting IP matches the IP that authorized the token
-  const callerIpHash = crypto.createHash('sha256').update(rawIp).digest('hex').substring(0, 16);
-  if (tokenRecord.clientIpHash && tokenRecord.clientIpHash !== callerIpHash) {
-    logDownloadAudit({
-      contentId: tokenRecord.contentId,
-      uid: tokenRecord.uid,
-      accessType: tokenRecord.accessType,
-      status: 'failed',
-      action: 'file_served',
-      reason: 'Download URL sharing detected: IP address does not match authorized session',
-      req,
-    });
-    return res.status(403).json({
-      error: 'Download link cannot be shared across different networks or devices. Please generate a new download.',
-    });
-  }
-
-  // Enforce single-use: invalidate token immediately
-  tokenRecord.used = true;
-  DOWNLOAD_TOKENS_STORE.delete(token);
-
-  const item = getDownloadableItem(tokenRecord.contentId);
-  const safeFileName = (tokenRecord.fileName || 'MAYF_Document.pdf').replace(/[^\w.-]/g, '_');
-
-  // Security Headers: anti-caching, no-sniff, secure attachment
-  res.setHeader('Content-Disposition', `attachment; filename="${safeFileName}"`);
-  res.setHeader('Content-Type', tokenRecord.mimeType || 'application/pdf');
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-
-  logDownloadAudit({
-    contentId: tokenRecord.contentId,
-    uid: tokenRecord.uid,
-    accessType: tokenRecord.accessType,
-    status: 'successful',
-    action: 'file_served',
-    req,
-  });
-
-  // Synthesize verified high-density educational study content
-  const documentBody =
-    `======================================================================\n` +
-    `  MATHS AT YOUR FINGERTIPS (mayf.co.in) - OFFICIAL EDUCATIONAL RESOURCE\n` +
-    `======================================================================\n\n` +
-    `Document:    ${item?.title || tokenRecord.contentId}\n` +
-    `Grade Level: ${item?.classLevel || 'Class 5–10 CBSE & ICSE'}\n` +
-    `Category:    ${item?.category || 'Mathematics Revision'}\n` +
-    `Access Tier: ${tokenRecord.accessType === 'paid' ? 'Verified Annual Pass / Pro Entitlement' : 'Public Free Resource'}\n` +
-    `User ID:     ${tokenRecord.uid ? `UID:${tokenRecord.uid}` : 'Public Anonymous Learner'}\n` +
-    `Issued At:   ${new Date().toISOString()}\n` +
-    `Security:    Cloudflare Turnstile Verified Single-Use Authorization\n\n` +
-    `----------------------------------------------------------------------\n` +
-    `RESOURCE OVERVIEW & SYLLABUS ALIGNMENT:\n` +
-    `----------------------------------------------------------------------\n` +
-    `${item?.description || 'Official CBSE & ICSE Mathematics Revision Asset.'}\n\n` +
-    `----------------------------------------------------------------------\n` +
-    `CORE MATHEMATICAL CONCEPTS & FORMULA REFERENCE:\n` +
-    `----------------------------------------------------------------------\n` +
-    `* Real Numbers: Fundamental Theorem of Arithmetic, Euclid Lemma a = bq + r.\n` +
-    `* Polynomials: Quadratic roots sum = -b/a, product = c/a.\n` +
-    `* Quadratic Formula: x = (-b +- sqrt(b^2 - 4ac)) / 2a.\n` +
-    `* Arithmetic Progressions: a_n = a + (n-1)d, S_n = (n/2)(2a + (n-1)d).\n` +
-    `* Trigonometry: sin^2(x) + cos^2(x) = 1, 1 + tan^2(x) = sec^2(x).\n` +
-    `* Coordinate Geometry: Distance formula, Section formula ((m1x2+m2x1)/(m1+m2), (m1y2+m2y1)/(m1+m2)).\n` +
-    `* Geometry: Basic Proportionality Theorem (Thales), Tangent equality theorem.\n` +
-    `* Mensuration: Cylinder Vol = pi*r^2*h, Cone Vol = 1/3*pi*r^2*h, Sphere Vol = 4/3*pi*r^3.\n\n` +
-    `Verified by Professor Sigma. Maths at Your Fingertips (c) 2026 mayf.co.in.\n`;
-
-  return res.send(Buffer.from(documentBody, 'utf-8'));
 }));
 
 /**
@@ -1167,7 +1074,8 @@ app.post('/api/admin/payments/simulate-webhook', requireAuth, requireAdmin, coup
 app.get('/api/annual-pass/config', couponRoute(false, (_req: Request, res: Response) => {
   return res.json({
     success: true,
-    settings: entitlementService.getSettings(),
+    settings: { ...entitlementService.getSettings(), effectivePrice: resolveCheckoutCart([], 'INR', { ...entitlementService.getSettings(), enabled: true }, () => null).grossAmount },
+    taxRatePercentage: paymentService.getMaskedSettings().taxRatePercentage,
   });
 }));
 

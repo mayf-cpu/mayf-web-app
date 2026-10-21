@@ -130,6 +130,17 @@ export class EntitlementService {
   }
 
   updateSettings(partial: Partial<AnnualPassSettings>, adminId = 'admin'): AnnualPassSettings {
+    for (const price of [partial.regularPrice, partial.salePrice, partial.familyPrice]) {
+      if (price !== undefined && (!Number.isFinite(price) || price <= 0)) throw new Error('Membership prices must be positive numbers.');
+    }
+    if (partial.durationDays !== undefined && (!Number.isInteger(partial.durationDays) || partial.durationDays <= 0 || partial.durationDays > 3650)) throw new Error('Pass duration must be 1–3650 whole days.');
+    if (partial.enabled !== undefined && typeof partial.enabled !== 'boolean') throw new Error('Invalid membership availability.');
+    for (const date of [partial.promotionalStartDate, partial.promotionalEndDate]) {
+      if (date && !Number.isFinite(Date.parse(date))) throw new Error('Invalid promotional date.');
+    }
+    const starts = partial.promotionalStartDate === undefined ? this.settings.promotionalStartDate : partial.promotionalStartDate;
+    const ends = partial.promotionalEndDate === undefined ? this.settings.promotionalEndDate : partial.promotionalEndDate;
+    if (starts && ends && Date.parse(starts) > Date.parse(ends)) throw new Error('Promotion end date must follow its start date.');
     this.settings = {
       ...this.settings,
       ...partial,

@@ -66,7 +66,7 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
 
     // When real credentials are configured in production, call Razorpay API:
     // https://api.razorpay.com/v1/orders
-    const isLiveKey = this.keyId.startsWith('rzp_live_') && this.keySecret && !this.keySecret.includes('sandbox');
+    const isLiveKey = /^rzp_(live|test)_/.test(this.keyId) && !this.keyId.includes('mayf2026demo') && Boolean(this.keySecret) && !this.keySecret.includes('sandbox');
     let providerOrderId = '';
 
     if (isLiveKey) {
@@ -78,6 +78,7 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
             Authorization: `Basic ${basicAuth}`,
             'Content-Type': 'application/json',
           },
+          signal: AbortSignal.timeout(15000),
           body: JSON.stringify({
             amount: amountInPaise,
             currency: 'INR',
@@ -94,15 +95,14 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
           const data = await resp.json();
           providerOrderId = data.id;
         } else {
-          const errText = await resp.text();
-          console.warn('[Razorpay] Live API call responded with non-200:', errText);
+          console.warn('[Razorpay] Order API rejected request:', resp.status);
         }
       } catch (err) {
-        console.warn('[Razorpay] Network error reaching Razorpay live API, falling back to deterministic order ID:', err);
+        console.warn('[Razorpay] Order API could not be reached.');
       }
     }
 
-    if (!providerOrderId && isProductionPaymentRuntime()) {
+    if (!providerOrderId && (isLiveKey || isProductionPaymentRuntime())) {
       throw new Error('Payment gateway could not create an order. Check its configuration and try again.');
     }
     if (!providerOrderId) {
@@ -141,6 +141,8 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
     valid: boolean;
     providerPaymentId: string;
     error?: string;
+    rawAmount?: number;
+    currency?: string;
   }> {
     const { providerOrderId, providerPaymentId, signature } = req;
 
@@ -205,10 +207,17 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
       };
     }
 
-    return {
-      valid: true,
-      providerPaymentId,
-    };
+    const hasGatewayKeys = /^rzp_(live|test)_/.test(this.keyId) && !this.keyId.includes('mayf2026demo') && !this.keySecret.includes('sandbox');
+    if (hasGatewayKeys) {
+      try {
+        const response = await fetch(`https://api.razorpay.com/v1/payments/${encodeURIComponent(providerPaymentId)}`, { headers: { Authorization: `Basic ${Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64')}` }, signal: AbortSignal.timeout(15000) });
+        if (!response.ok) return { valid: false, providerPaymentId, error: 'Payment status could not be verified.' };
+        const payment = await response.json();
+        if (payment.id !== providerPaymentId || payment.order_id !== providerOrderId || payment.status !== 'captured') return { valid: false, providerPaymentId, error: 'Payment has not been captured for this order yet.' };
+        return { valid: true, providerPaymentId, rawAmount: payment.amount / 100, currency: payment.currency };
+      } catch { return { valid: false, providerPaymentId, error: 'Payment status is temporarily unavailable.' }; }
+    }
+    return { valid: true, providerPaymentId };
   }
 
   /**

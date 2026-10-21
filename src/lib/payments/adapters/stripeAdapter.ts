@@ -65,8 +65,9 @@ export class StripeAdapter implements PaymentProviderAdapter {
     const amountInCents = Math.round(finalPayable * 100);
     const currencyCode = (order.currency || 'USD').toLowerCase();
 
-    const isLiveKey = this.secretKey.startsWith('sk_live_') && !this.secretKey.includes('sandbox');
+    const isLiveKey = /^sk_(live|test)_/.test(this.secretKey) && !this.secretKey.includes('sandbox');
     let providerOrderId = '';
+    let checkoutUrl = '';
 
     if (isLiveKey) {
       try {
@@ -77,6 +78,9 @@ export class StripeAdapter implements PaymentProviderAdapter {
         params.append('line_items[0][price_data][product_data][name]', 'Maths at Your Fingertips Annual Pass');
         params.append('line_items[0][quantity]', '1');
         params.append('mode', 'payment');
+        const origin = new URL(process.env.PUBLIC_APP_URL || 'https://mayf.co.in').origin;
+        params.append('success_url', `${origin}/checkout?orderId=${encodeURIComponent(order.orderId)}&stripeSessionId={CHECKOUT_SESSION_ID}`);
+        params.append('cancel_url', `${origin}/checkout?cancelled=1`);
         params.append('client_reference_id', order.orderId);
         params.append('metadata[userId]', order.userId);
         params.append('metadata[orderId]', order.orderId);
@@ -88,21 +92,22 @@ export class StripeAdapter implements PaymentProviderAdapter {
             'Content-Type': 'application/x-www-form-urlencoded',
           },
           body: params.toString(),
+          signal: AbortSignal.timeout(15000),
         });
 
         if (resp.ok) {
           const data = await resp.json();
           providerOrderId = data.id;
+          if (typeof data.url === 'string' && new URL(data.url).protocol === 'https:' && new URL(data.url).hostname === 'checkout.stripe.com') checkoutUrl = data.url;
         } else {
-          const errText = await resp.text();
-          console.warn('[Stripe] Live API call non-200 response:', errText);
+          console.warn('[Stripe] Checkout API rejected request:', resp.status);
         }
       } catch (err) {
         console.warn('[Stripe] Network error reaching Stripe live API:', err);
       }
     }
 
-    if (!providerOrderId && isProductionPaymentRuntime()) {
+    if ((!providerOrderId || (isLiveKey && !checkoutUrl)) && (isLiveKey || isProductionPaymentRuntime())) {
       throw new Error('Payment gateway could not create an order. Check its configuration and try again.');
     }
     if (!providerOrderId) {
@@ -119,6 +124,7 @@ export class StripeAdapter implements PaymentProviderAdapter {
       keyId: this.publishableKey,
       clientPayload: {
         sessionId: providerOrderId,
+        checkoutUrl,
         publishableKey: this.publishableKey,
         customerEmail: order.customerDetails?.email,
       },
@@ -132,6 +138,8 @@ export class StripeAdapter implements PaymentProviderAdapter {
     valid: boolean;
     providerPaymentId: string;
     error?: string;
+    rawAmount?: number;
+    currency?: string;
   }> {
     const { providerOrderId, providerPaymentId, stripeSessionId } = req;
     const targetSessionId = stripeSessionId || providerOrderId;
@@ -147,18 +155,21 @@ export class StripeAdapter implements PaymentProviderAdapter {
     const resolvedPaymentId = providerPaymentId || `pi_mayf_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
 
     // If live Stripe credentials configured, retrieve Session status from Stripe API
-    const isLiveKey = this.secretKey.startsWith('sk_live_') && !this.secretKey.includes('sandbox');
+    const isLiveKey = /^sk_(live|test)_/.test(this.secretKey) && !this.secretKey.includes('sandbox');
     if (isLiveKey) {
       try {
-        const resp = await fetch(`https://api.stripe.com/v1/checkout/sessions/${targetSessionId}`, {
+        const resp = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(targetSessionId)}`, {
           headers: { Authorization: `Bearer ${this.secretKey}` },
+          signal: AbortSignal.timeout(15000),
         });
         if (resp.ok) {
           const sessionData = await resp.json();
-          if (sessionData.payment_status === 'paid') {
+          if (sessionData.id === targetSessionId && sessionData.payment_status === 'paid' && sessionData.client_reference_id === req.orderId) {
             return {
               valid: true,
               providerPaymentId: sessionData.payment_intent || resolvedPaymentId,
+              rawAmount: sessionData.amount_total / 100,
+              currency: sessionData.currency,
             };
           } else {
             return {
