@@ -13,6 +13,7 @@ import { ContentRegistryRow, IngestionJobRecord, ImportJobStatus, WebhookIngestR
 import { copyDriveFileToProductionStorage } from './driveStorageAdapter';
 import { loadIngestionJobs, saveIngestionJob } from './durableIngestionJobs';
 import { ingestionJobIdForContent } from './ingestionJobId';
+import { IngestionLock } from './ingestionLock';
 import { ContentItem, StudentClass, ContentType } from '../firebase/types';
 import { getAdminFirestore } from '../firebase/admin';
 import { importPublicationPolicy } from './importPublicationPolicy';
@@ -252,7 +253,7 @@ export function verifyWebhookSecret(authHeader: string | undefined): boolean {
  * Ingests a single Content Registry row from Google Sheet.
  * Idempotently creates or updates the target Firestore document.
  */
-export async function processRegistryRow(
+async function processRegistryRowInternal(
   row: ContentRegistryRow,
   triggeredBy: IngestionJobRecord['triggeredBy'] = 'apps_script_webhook'
 ): Promise<{ success: boolean; firestore_id?: string; error?: string; job: IngestionJobRecord }> {
@@ -458,6 +459,17 @@ export async function processRegistryRow(
 /**
  * Batch processes items sent from Google Apps Script.
  */
+export async function processRegistryRow(
+ row: ContentRegistryRow,
+ triggeredBy: IngestionJobRecord['triggeredBy'] = 'apps_script_webhook'
+): Promise<{ success: boolean; firestore_id?: string; error?: string; job: IngestionJobRecord }> {
+ const db = getAdminFirestore();
+ if (!db) throw new Error('Import database unavailable');
+ const lease = await new IngestionLock(db).acquire(row.content_id);
+ try { return await processRegistryRowInternal(row, triggeredBy); }
+ finally { await lease.release(); }
+}
+
 export async function processBatchIngestion(
   items: ContentRegistryRow[],
   triggeredBy: IngestionJobRecord['triggeredBy'] = 'apps_script_webhook'
