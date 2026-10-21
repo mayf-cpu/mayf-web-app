@@ -45,7 +45,7 @@ export class PaymentService {
   private settings: PaymentGatewaySettings;
   private initialSettings: PaymentGatewaySettings;
 
-  constructor(private durableOrders?: Pick<DurablePaymentRepository, 'createOrder'>) {
+  constructor(private durableOrders?: Pick<DurablePaymentRepository, 'createOrder'> & Partial<Pick<DurablePaymentRepository, 'reserveCoupon' | 'releaseCouponReservation'>>) {
     this.razorpayAdapter = new RazorpayAdapter();
     this.stripeAdapter = new StripeAdapter();
 
@@ -95,7 +95,7 @@ export class PaymentService {
   };
 
   /** Configure persistent storage before checkout. Never treat a missing store as success. */
-  configureDurableOrders(repository: Pick<DurablePaymentRepository, 'createOrder'>): void {
+  configureDurableOrders(repository: Pick<DurablePaymentRepository, 'createOrder'> & Partial<Pick<DurablePaymentRepository, 'reserveCoupon' | 'releaseCouponReservation'>>): void {
     this.durableOrders = repository;
   }
 
@@ -209,6 +209,7 @@ export class PaymentService {
     // Calculate coupon discount securely on server (never trust client-calculated discounts)
     let discount = 0;
     let validatedCoupon = coupon ? coupon.trim().toUpperCase() : undefined;
+    let quotedCouponUpdatedAt: string | undefined;
     if (validatedCoupon) {
       if (!this.settings.allowCouponDiscounts) {
         throw new Error('Coupon not applicable: coupon discounts are currently disabled.');
@@ -227,6 +228,7 @@ export class PaymentService {
       }
       discount = val.discountAmount;
       validatedCoupon = val.code;
+      quotedCouponUpdatedAt = val.coupon?.updatedAt;
     }
     // Cap discount to gross amount
     discount = Math.min(discount, grossAmount);
@@ -276,8 +278,23 @@ export class PaymentService {
       customerDetails,
     };
 
-    // Call adapter to generate gateway order / checkout session
-    const providerResult = await adapter.createOrder(newOrder);
+    let couponReserved = false;
+    if (validatedCoupon) {
+      if (!this.durableOrders?.reserveCoupon || !this.durableOrders?.releaseCouponReservation) {
+        throw new Error('Coupon not applicable: reservation storage is unavailable.');
+      }
+      const claim = await this.durableOrders.reserveCoupon({
+        orderId, userId, code: validatedCoupon, discount,
+        expectedUpdatedAt: quotedCouponUpdatedAt,
+      });
+      newOrder.couponReservationId = orderId;
+      newOrder.couponReservationExpiresAt = claim.expiresAt;
+      couponReserved = true;
+    }
+    let providerResult: ProviderOrderResult;
+    try {
+      // Call adapter to generate gateway order / checkout session
+      providerResult = await adapter.createOrder(newOrder);
     newOrder.providerOrderId = providerResult.providerOrderId;
 
     // Never return checkout credentials before the order is durably recorded.
@@ -285,6 +302,16 @@ export class PaymentService {
       await this.durableOrders.createOrder(newOrder);
     } else if (isProductionPaymentRuntime()) {
       throw new Error('Payment checkout unavailable: durable order storage is not configured');
+    }
+    } catch (error) {
+      if (couponReserved && validatedCoupon) {
+        try {
+          await this.durableOrders!.releaseCouponReservation!(orderId, validatedCoupon);
+        } catch (releaseError) {
+          console.error('[MAYF] Coupon reservation release failed:', releaseError);
+        }
+      }
+      throw error;
     }
     // Maintain the legacy index for existing development tests and readers.
     this.ordersStore.set(orderId, newOrder);
