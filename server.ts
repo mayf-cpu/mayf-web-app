@@ -3377,62 +3377,42 @@ app.get('/api/formulas/:slug', (req: Request, res: Response) => {
 app.get('/api/ai-teacher/config', (_req: Request, res: Response) => {
   return res.json({
     success: true,
-    status: 'ok',
+    status: aiClient && geminiApiKey ? 'configured' : 'not_configured',
     model: getAiTeacherModel(),
     supportedImageTypes: ['image/jpeg', 'image/png', 'image/webp'],
-    appCheckEnforced: false,
-    quotas: {
-      anonymousDaily: 30,
-      authenticatedDaily: 100,
-      annualPassDaily: 1000,
-    },
+    appCheckEnforced: process.env.REQUIRE_APP_CHECK === 'true',
+    quotas: { anonymousDaily: 15, authenticatedDaily: 100, annualPassDaily: 1000 },
     version: '2.0.0-multimodal-pedagogy',
   });
 });
 
-/**
- * Fetch Student AI Doubt History
- */
-app.get('/api/ai-teacher/history', asyncRoute(async (req: Request, res: Response) => {
-  const authHeader = req.headers.authorization;
-  let targetUid: string | null = null;
-
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const verified = await verifyStudentSessionToken(authHeader);
-    if (verified.valid && verified.uid) {
-      targetUid = verified.uid;
-    }
-  }
-
-  // Default to student-1001 for dev or match by uid
-  const userHistory = AI_DOUBTS_HISTORY.filter(
-    (record) => record.uid === targetUid || (targetUid && record.uid === 'mayf-student-1001')
-  );
-
-  return res.json({
-    success: true,
-    history: userHistory,
-    total: userHistory.length,
-  });
+/** Read only the authenticated student's real, persisted AI history. */
+app.get('/api/ai-teacher/history', requireAuth, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
+  const db = getAdminFirestore();
+  if (!db) return res.status(503).json({ success: false, error: 'AI history storage is unavailable.' });
+  const history = (await db.queryEqual('aiTeacherSessions', 'userId', req.userAuth!.uid))
+    .map(doc => ({ ...doc.data, id: doc.id }))
+    .sort((x, y) => String(y.timestamp).localeCompare(String(x.timestamp))).slice(0, 100);
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({ success: true, history, total: history.length });
 }));
 
-/**
- * Rate an AI Teacher Response
- */
-app.post('/api/ai-teacher/rate', (req: Request, res: Response) => {
-  const { doubtId, rating } = req.body;
-  if (!doubtId || (rating !== 'helpful' && rating !== 'unhelpful')) {
-    return res.status(400).json({ error: 'Valid doubtId and rating (helpful/unhelpful) are required' });
+/** Ratings must belong to the authenticated student; conditional writes prevent stale overwrites. */
+app.post('/api/ai-teacher/rate', requireAuth, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
+  const { doubtId, rating } = req.body || {};
+  if (typeof doubtId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(doubtId) ||
+      !['helpful', 'unhelpful'].includes(rating)) {
+    return res.status(400).json({ success: false, error: 'A valid response ID and rating are required.' });
   }
-
-  const target = AI_DOUBTS_HISTORY.find((d) => d.id === doubtId);
-  if (target) {
-    target.userRating = rating;
-    return res.json({ success: true, doubtId, rating });
-  }
-
-  return res.json({ success: true, message: 'Rating noted' });
-});
+  const db = getAdminFirestore();
+  if (!db) return res.status(503).json({ success: false, error: 'AI history storage is unavailable.' });
+  const doc = db.collection('aiTeacherSessions').doc(doubtId);
+  const snapshot = await doc.get();
+  const record = snapshot.data();
+  if (!record || record.userId !== req.userAuth!.uid) return res.status(404).json({ success: false, error: 'AI response not found.' });
+  await doc.set({ ...record, userRating: rating }, { updateTime: snapshot.updateTime });
+  return res.json({ success: true, doubtId, rating });
+}));
 
 /**
  * Main AI Teacher Doubt Endpoint
