@@ -35,13 +35,17 @@ export function getFirebaseAdminConfig(): FirebaseAdminConfig {
 
   const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY || account.private_key;
 
-  // Staging can never fall back to, or impersonate, the production project.
-  // Require the real service-account JSON project to agree with any override:
-  // a declared staging project ID alone does not isolate its credentials.
+  // The owner confirmed this existing project's data is disposable (2026-10-22).
+  // Reuse requires explicit staging-only opt-in; never infer it from a project ID.
+  const approvedSharedDevelopment = process.env.APP_ENV === 'staging' &&
+    process.env.MAYF_ALLOW_SHARED_DEVELOPMENT_FIREBASE === 'true' &&
+    projectId === 'maths-at-your-fingertips' &&
+    account.project_id === projectId;
   const safeStagingCredentials = process.env.APP_ENV !== 'staging' ||
-    (Boolean(account.project_id && account.project_id !== 'maths-at-your-fingertips') &&
-      account.project_id === projectId &&
-      !clientEmail.endsWith('@maths-at-your-fingertips.iam.gserviceaccount.com'));
+    (Boolean(account.project_id) && account.project_id === projectId &&
+      clientEmail === account.client_email &&
+      clientEmail.endsWith('@' + projectId + '.iam.gserviceaccount.com') &&
+      (approvedSharedDevelopment || account.project_id !== 'maths-at-your-fingertips'));
 
   return {
     projectId,

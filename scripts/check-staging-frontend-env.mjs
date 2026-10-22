@@ -20,15 +20,26 @@ for (const key of required) {
 assert.equal(env.VITE_APP_ENV, 'staging', 'Staging build must explicitly select VITE_APP_ENV=staging');
 assert.equal(env.VITE_FIREBASE_PROJECT_ID, env.MAYF_STAGING_FIREBASE_PROJECT_ID,
   'Staging frontend project ID must match declared isolated staging Firebase project');
-assert.notEqual(env.VITE_FIREBASE_PROJECT_ID, prod.projectId, 'Staging frontend must not use production Firebase');
-assert.notEqual(env.VITE_FIREBASE_API_KEY, prod.apiKey, 'Staging web API key must not be production');
-assert.notEqual(env.VITE_FIREBASE_AUTH_DOMAIN, prod.authDomain, 'Staging auth domain must not be production');
-assert.notEqual(env.VITE_FIREBASE_STORAGE_BUCKET, prod.storageBucket, 'Staging storage bucket must not be production');
-assert.notEqual(env.VITE_FIREBASE_APP_ID, prod.appId, 'Staging web app ID must not be production');
+const approvedSharedDevelopment = env.MAYF_ALLOW_SHARED_DEVELOPMENT_FIREBASE === 'true' &&
+  env.VITE_FIREBASE_PROJECT_ID === 'maths-at-your-fingertips' &&
+  prod.projectId === 'maths-at-your-fingertips';
+if (approvedSharedDevelopment) {
+  for (const [key, field] of Object.entries({
+    VITE_FIREBASE_API_KEY: 'apiKey', VITE_FIREBASE_AUTH_DOMAIN: 'authDomain',
+    VITE_FIREBASE_STORAGE_BUCKET: 'storageBucket', VITE_FIREBASE_APP_ID: 'appId',
+    VITE_FIREBASE_MESSAGING_SENDER_ID: 'messagingSenderId',
+  })) assert.equal(env[key], prod[field], 'Shared development Firebase config mismatch: ' + key);
+} else {
+  assert.notEqual(env.VITE_FIREBASE_PROJECT_ID, prod.projectId, 'Staging frontend must not use production Firebase');
+  assert.notEqual(env.VITE_FIREBASE_API_KEY, prod.apiKey, 'Staging web API key must not be production');
+  assert.notEqual(env.VITE_FIREBASE_AUTH_DOMAIN, prod.authDomain, 'Staging auth domain must not be production');
+  assert.notEqual(env.VITE_FIREBASE_STORAGE_BUCKET, prod.storageBucket, 'Staging storage bucket must not be production');
+  assert.notEqual(env.VITE_FIREBASE_APP_ID, prod.appId, 'Staging web app ID must not be production');
+}
 assert.match(env.VITE_FIREBASE_API_KEY, /^AIzaSy[A-Za-z0-9_-]{20,}$/, 'Expected a genuine-looking Firebase web API key');
 assert.match(env.VITE_FIREBASE_AUTH_DOMAIN, /^[a-z0-9.-]+\.firebaseapp\.com$/, 'Staging must use isolated Firebase Auth domain');
 assert.match(env.VITE_FIREBASE_STORAGE_BUCKET, /^[a-z0-9.-]+\.(firebasestorage\.app|appspot\.com)$/,
   'Expected Firebase storage bucket domain');
 assert.match(env.VITE_FIREBASE_APP_ID, /^1:\d+:web:[A-Za-z0-9]+$/, 'Expected Firebase web app ID');
 assert.match(env.VITE_FIREBASE_MESSAGING_SENDER_ID, /^\d+$/, 'Expected Firebase sender ID');
-console.log('PASS: staging frontend Firebase build-time isolation validated (runtime Worker binding still needs inspection)');
+console.log(approvedSharedDevelopment ? 'PASS: owner-approved shared development Firebase config validated; data is shared' : 'PASS: isolated staging Firebase config validated');

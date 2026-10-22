@@ -38,6 +38,7 @@ jobs:
         run: npm run test:rules
       - name: Verify isolated staging frontend Firebase configuration
         env:
+          MAYF_ALLOW_SHARED_DEVELOPMENT_FIREBASE: 'true'
           VITE_APP_ENV: staging
           MAYF_STAGING_FIREBASE_PROJECT_ID: ${{ vars.MAYF_STAGING_FIREBASE_PROJECT_ID }}
           VITE_FIREBASE_PROJECT_ID: ${{ vars.MAYF_STAGING_FIREBASE_PROJECT_ID }}
@@ -49,6 +50,7 @@ jobs:
         run: node scripts/check-staging-frontend-env.mjs
       - name: Build frontend with isolated staging Firebase configuration
         env:
+          MAYF_ALLOW_SHARED_DEVELOPMENT_FIREBASE: 'true'
           VITE_APP_ENV: staging
           MAYF_STAGING_FIREBASE_PROJECT_ID: ${{ vars.MAYF_STAGING_FIREBASE_PROJECT_ID }}
           VITE_FIREBASE_PROJECT_ID: ${{ vars.MAYF_STAGING_FIREBASE_PROJECT_ID }}
@@ -78,7 +80,7 @@ jobs:
           test -n "$STAGING_CLOUDFLARE_TOKEN" || { echo "Missing staging Cloudflare API token"; exit 1; }
           test -n "$STAGING_CLOUDFLARE_ACCOUNT" || { echo "Missing staging Cloudflare account ID"; exit 1; }
           test -n "$STAGING_FIREBASE_PROJECT" || { echo "Missing staging Firebase project ID"; exit 1; }
-          test "$STAGING_FIREBASE_PROJECT" != "maths-at-your-fingertips" || { echo "Do not use the production Firebase project"; exit 1; }
+          # Firebase identity and explicit shared-development consent were validated before the build above.
       - name: Verify Cloudflare staging R2 and service-account binding (read-only)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.MAYF_STAGING_CLOUDFLARE_API_TOKEN }}

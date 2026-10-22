@@ -32,6 +32,7 @@ assert.equal(staging.unsafe,undefined,'Staging must not contain unsafe Worker bi
 
 const approvedStagingFlags = [
   'APP_ENV',
+  'MAYF_ALLOW_SHARED_DEVELOPMENT_FIREBASE',
   'MAYF_ENABLE_CHECKOUT',
   'MAYF_ENABLE_ADMIN_REFUNDS',
   'MAYF_ENABLE_COUPON_CHECKOUT',
@@ -46,3 +47,5 @@ assert.equal(staging.custom_domains,undefined,'Staging must not attach custom do
 assert.equal(staging.dispatch_namespaces,undefined,'Staging must not bind dispatch namespaces');
 assert.equal(staging.queues,undefined,'Staging must not bind queues');
 assert.equal(staging.durable_objects,undefined,'Staging must not bind Durable Objects');
+
+assert.equal(staging.vars?.MAYF_ALLOW_SHARED_DEVELOPMENT_FIREBASE,'true','Owner-approved shared development policy must be explicit');
