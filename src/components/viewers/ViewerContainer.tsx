@@ -27,7 +27,7 @@ export const ViewerContainer: React.FC<ViewerContainerProps> = ({ item }) => {
           case 'worksheet':
             return (
               <PdfViewer
-                pdfUrl={primaryFile?.url || 'https://raw.githubusercontent.com/mozilla/pdf.js/ba2edeae/web/compressed.tracemonkey-pldi-09.pdf'}
+                pdfUrl={primaryFile?.url || ''}
                 title={item.title}
                 fileName={`${item.slug}.pdf`}
                 downloadAllowed={item.downloadAllowed}

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { ShieldCheck, Download, AlertCircle, CheckCircle2, Lock, X, RefreshCw, LogIn } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { clientConfig } from '../../config/env';
-import { requestDownloadAuthorization, triggerAuthorizedDownload } from '../../lib/download/downloadClient';
+import { requestDownloadAuthorization, triggerAuthorizedDownload, fetchAuthorizedPdf } from '../../lib/download/downloadClient';
 import { trackContentDownload } from '../../lib/analytics/analyticsService';
 import { Button } from './Button';
 import { LoadingSpinner } from './LoadingState';
@@ -39,6 +39,7 @@ interface TurnstileModalProps {
   classLevel?: string;
   fallbackFileName?: string;
   onDownloadSuccess?: (fileName: string) => void;
+  onPdfReady?: (pdf: Blob) => void;
 }
 
 export const TurnstileModal: React.FC<TurnstileModalProps> = ({
@@ -50,6 +51,7 @@ export const TurnstileModal: React.FC<TurnstileModalProps> = ({
   classLevel,
   fallbackFileName = 'MAYF_Study_Document.pdf',
   onDownloadSuccess,
+  onPdfReady,
 }) => {
   const { user, firebaseUser, entitlements, signInWithGoogle } = useAuth();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -139,10 +141,11 @@ export const TurnstileModal: React.FC<TurnstileModalProps> = ({
       const response = await requestDownloadAuthorization(contentId, token, idToken);
 
       // Trigger download using the single-use short-lived download URL
-      await triggerAuthorizedDownload(response.downloadUrl, response.fileName || fallbackFileName);
+      if (onPdfReady) onPdfReady(await fetchAuthorizedPdf(response.downloadUrl));
+      else await triggerAuthorizedDownload(response.downloadUrl, response.fileName || fallbackFileName);
 
       // Log GA4 / Firebase Analytics content_download event
-      trackContentDownload({
+      if (!onPdfReady) trackContentDownload({
         content_id: contentId,
         title: title || 'Mathematics Study PDF',
         category: 'Mathematics',
@@ -173,7 +176,7 @@ export const TurnstileModal: React.FC<TurnstileModalProps> = ({
         }
       }
     }
-  }, [contentId, firebaseUser, user, fallbackFileName, onDownloadSuccess, onClose]);
+  }, [contentId, firebaseUser, user, fallbackFileName, onDownloadSuccess, onPdfReady, onClose]);
 
   // Render Turnstile widget inside the container
   useEffect(() => {
@@ -356,7 +359,7 @@ export const TurnstileModal: React.FC<TurnstileModalProps> = ({
             <div className="space-y-4">
               <div className="text-center space-y-1">
                 <p className="text-xs font-semibold text-slate-700">
-                  Complete the security challenge to initiate download
+                  {onPdfReady ? 'Complete the security challenge to open this PDF' : 'Complete the security challenge to initiate download'}
                 </p>
                 <p className="text-[11px] text-slate-500">
                   Managed Cloudflare Turnstile protects against automated bots.
@@ -378,7 +381,7 @@ export const TurnstileModal: React.FC<TurnstileModalProps> = ({
                       <CheckCircle2 className="w-6 h-6" />
                     </div>
                     <p className="font-heading font-bold text-xs sm:text-sm text-emerald-800">
-                      Security Verified! Download starting...
+                      {onPdfReady ? 'Security verified. PDF ready to view.' : 'Security verified. PDF delivered to your browser.'}
                     </p>
                   </div>
                 ) : (
