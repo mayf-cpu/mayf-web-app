@@ -156,7 +156,8 @@ export function openOnboardingTour() {
 
 export const OnboardingWizard: React.FC = () => {
   const { user } = useAuth();
-  const { navigate } = useNavigation();
+  const { navigate, currentRoute } = useNavigation();
+  const isAdminRoute = currentRoute.route === '/admin-portal';
 
   const [isOpen, setIsOpen] = useState(false);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -164,6 +165,7 @@ export const OnboardingWizard: React.FC = () => {
 
   // Check if onboarding should automatically open for new user on first login
   useEffect(() => {
+    if (isAdminRoute) { setIsOpen(false); return; }
     if (!user?.uid) return;
 
     const storageKey = `${ONBOARDING_STORAGE_PREFIX}${user.uid}`;
@@ -176,7 +178,7 @@ export const OnboardingWizard: React.FC = () => {
       }, 700);
       return () => clearTimeout(timer);
     }
-  }, [user?.uid, hasDismissedPermanently]);
+  }, [user?.uid, hasDismissedPermanently, isAdminRoute]);
 
   // Listen for manual trigger events (e.g. from Dashboard "Tour" button)
   useEffect(() => {
@@ -238,7 +240,7 @@ export const OnboardingWizard: React.FC = () => {
 
   // Keyboard accessibility
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || isAdminRoute) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -252,9 +254,9 @@ export const OnboardingWizard: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, currentStepIndex]);
+  }, [isOpen, currentStepIndex, isAdminRoute]);
 
-  if (!isOpen || !currentStep) {
+  if (isAdminRoute || !isOpen || !currentStep) {
     return null;
   }
 

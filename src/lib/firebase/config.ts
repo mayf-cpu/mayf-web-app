@@ -1,3 +1,4 @@
+import publicFirebaseConfig from '../../config/firebasePublicConfig.json';
 /**
  * Multi-environment Firebase options dictionary.
  * Supports:
@@ -53,13 +54,13 @@ export const firebaseEnvironments: Record<'development' | 'staging' | 'productio
     appCheckSiteKey: getEnv('VITE_FIREBASE_APP_CHECK_SITE_KEY'),
   },
   production: {
-    apiKey: getEnv('VITE_FIREBASE_API_KEY') || 'AIzaSyProdPlaceholderKeyMAYF',
-    authDomain: getEnv('VITE_FIREBASE_AUTH_DOMAIN') || 'mayf-prod.firebaseapp.com',
-    projectId: getEnv('VITE_FIREBASE_PROJECT_ID') || 'mayf-prod',
-    storageBucket: getEnv('VITE_FIREBASE_STORAGE_BUCKET') || 'mayf-prod.appspot.com',
-    messagingSenderId: getEnv('VITE_FIREBASE_MESSAGING_SENDER_ID') || '300000000003',
-    appId: getEnv('VITE_FIREBASE_APP_ID') || '1:300000000003:web:prod0000000000',
-    measurementId: getEnv('VITE_FIREBASE_MEASUREMENT_ID') || 'G-PROD000000',
+    apiKey: getEnv('VITE_FIREBASE_API_KEY') || publicFirebaseConfig.apiKey,
+    authDomain: getEnv('VITE_FIREBASE_AUTH_DOMAIN') || publicFirebaseConfig.authDomain,
+    projectId: getEnv('VITE_FIREBASE_PROJECT_ID') || publicFirebaseConfig.projectId,
+    storageBucket: getEnv('VITE_FIREBASE_STORAGE_BUCKET') || publicFirebaseConfig.storageBucket,
+    messagingSenderId: getEnv('VITE_FIREBASE_MESSAGING_SENDER_ID') || publicFirebaseConfig.messagingSenderId,
+    appId: getEnv('VITE_FIREBASE_APP_ID') || publicFirebaseConfig.appId,
+    measurementId: getEnv('VITE_FIREBASE_MEASUREMENT_ID') || publicFirebaseConfig.measurementId,
     appCheckSiteKey: getEnv('VITE_FIREBASE_APP_CHECK_SITE_KEY'),
   },
 };
@@ -74,7 +75,7 @@ export function getActiveFirebaseConfig(): FirebaseOptions {
  * Prevents Firebase Installations SDK from throwing 400 INVALID_ARGUMENT against Google's servers.
  */
 export function hasRealFirebaseCredentials(): boolean {
-  const envKey = getEnv('VITE_FIREBASE_API_KEY');
+  const envKey = getActiveFirebaseConfig().apiKey;
   if (!envKey) return false;
   if (
     envKey.includes('Placeholder') ||

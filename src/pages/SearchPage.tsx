@@ -9,9 +9,10 @@ import { SearchResultItem } from '../lib/search/searchInterface';
 import { trackSearch } from '../lib/analytics/analyticsService';
 
 export const SearchPage: React.FC = () => {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(() => new URLSearchParams(window.location.search).get('q') || '');
   const [results, setResults] = useState<SearchResultItem[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
   const popularSearches = [
@@ -24,19 +25,23 @@ export const SearchPage: React.FC = () => {
   ];
 
   useEffect(() => {
+    let cancelled = false;
+    setSearchError(null);
     if (!query.trim()) {
+      setIsSearching(false);
       setResults([]);
       setSuggestions([]);
       return;
     }
 
+    setIsSearching(true);
     const timer = setTimeout(async () => {
-      setIsSearching(true);
       try {
         const [items, auto] = await Promise.all([
           searchService.search({ query, limit: 15 }),
           searchService.autocomplete(query, 5),
         ]);
+        if (cancelled) return;
         setResults(items);
         setSuggestions(auto);
 
@@ -47,12 +52,15 @@ export const SearchPage: React.FC = () => {
             results_count: items.length,
           });
         }
+      } catch (error: any) {
+        if (!cancelled) setSearchError(error?.message || "Search is temporarily unavailable. Please try again.");
+        if (!cancelled) { setResults([]); setSuggestions([]); }
       } finally {
-        setIsSearching(false);
+        if (!cancelled) setIsSearching(false);
       }
     }, 150);
 
-    return () => clearTimeout(timer);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [query]);
 
   return (
@@ -73,7 +81,7 @@ export const SearchPage: React.FC = () => {
         <div>
           <div className="flex items-center gap-2 text-xs font-heading font-semibold text-[#00687A] mb-1">
             <Sparkles className="w-3.5 h-3.5 text-[#06B6D4]" />
-            <span>Pluggable Search Service · Normalized Tokens & Prefixes</span>
+            <span>Find formulas, chapters and study material</span>
           </div>
           <h1 className="font-heading font-extrabold text-2xl sm:text-3xl text-[#0F172A] tracking-tight">
             Curriculum & Formula Search
@@ -151,7 +159,8 @@ export const SearchPage: React.FC = () => {
               {isSearching && <span className="text-[#1D4ED8]">Indexing matches...</span>}
             </div>
 
-            {results.length === 0 && !isSearching ? (
+            {searchError && <p role="alert" className="p-4 text-sm text-rose-700 bg-rose-50 rounded-xl">{searchError}</p>}
+            {results.length === 0 && !isSearching && !searchError ? (
               <div className="text-xs text-[#94A3B8] italic p-6 bg-white rounded-lg border border-[#E2E8F0] text-center">
                 No matching formula cards or study modules found for "{query}".
               </div>

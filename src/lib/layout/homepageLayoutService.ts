@@ -30,16 +30,16 @@ class HomepageLayoutService {
       updatedBy: 'system_default',
       blocks: JSON.parse(JSON.stringify(DEFAULT_HOMEPAGE_BLOCKS)),
     };
-    this.initFromFirestore();
+
   }
 
   /**
    * Initialize or restore layout from Firestore /siteSettings/homepageLayout
    */
-  private async initFromFirestore(): Promise<void> {
+  public async initFromFirestore(): Promise<void> {
     try {
       const db = getAdminFirestore();
-      if (!db) return;
+      if (!db) { if (process.env.NODE_ENV === 'production') throw new Error('Firebase storage is not configured'); return; }
 
       const docRef = db.collection('siteSettings').doc('homepageLayout');
       const snap = await docRef.get();
@@ -61,6 +61,7 @@ class HomepageLayoutService {
       }
     } catch (e: any) {
       console.warn('[HomepageLayoutService] Firestore sync note, using authoritative memory cache:', e?.message || e);
+      throw e;
     }
   }
 
@@ -164,26 +165,28 @@ class HomepageLayoutService {
     }));
 
     // Update in-memory configuration
-    this.currentConfig = {
+    const newConfig: HomepageLayoutConfig = {
       version: (this.currentConfig.version || 1) + 1,
       updatedAt: timestamp,
       updatedBy: actor.email,
       blocks: normalizedBlocks,
     };
-    this.cacheTimestamp = Date.now();
-
     // Persist to Firestore /siteSettings/homepageLayout
     try {
       const db = getAdminFirestore();
+      if (!db && process.env.NODE_ENV === 'production') throw new Error('Firebase storage is not configured');
       if (db) {
-        await db.collection('siteSettings').doc('homepageLayout').set(this.currentConfig);
+        await db.collection('siteSettings').doc('homepageLayout').set(newConfig);
       }
     } catch (e: any) {
-      console.warn('[HomepageLayoutService] Firestore persistence note:', e?.message || e);
+      throw e;
     }
 
+    this.currentConfig = newConfig;
+    this.cacheTimestamp = Date.now();
+
     // Audit Log
-    auditLogService.log({
+    await auditLogService.log({
       action: 'SECURITY_CONFIG_UPDATED',
       category: 'security',
       actorUid: actor.uid,
@@ -210,7 +213,8 @@ class HomepageLayoutService {
     patch: { enabled?: boolean; config?: Record<string, any> },
     actor: { uid: string; email: string; role: 'admin' | 'superAdmin' }
   ): Promise<HomepageBlock> {
-    const target = this.currentConfig.blocks.find((b) => b.id === blockId);
+    const blocks = structuredClone(this.currentConfig.blocks);
+    const target = blocks.find((b) => b.id === blockId);
     if (!target) {
       throw new Error(`Block "${blockId}" not found in homepage layout.`);
     }
@@ -225,7 +229,7 @@ class HomepageLayoutService {
 
     target.updatedAt = new Date().toISOString();
 
-    await this.updateLayout(this.currentConfig.blocks, actor);
+    await this.updateLayout(blocks, actor);
     return target;
   }
 

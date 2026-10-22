@@ -19,7 +19,7 @@
  */
 
 import { ContentItem, StudentClass, ContentType, ContentAccessType } from '../firebase/types';
-import { SEED_CONTENT_ITEMS } from '../catalogue/catalogueService';
+import { SEED_CONTENT_ITEMS } from '../catalogue/seedContent';
 import { INGESTION_JOBS_STORE } from '../ingestion/ingestionService';
 import { paymentService } from '../payments/paymentService';
 import { auditLogService } from '../audit/auditLogger';
@@ -66,6 +66,9 @@ class ContentCmsManager {
   private itemsStore: Map<string, CmsContentItem> = new Map();
   private initialized = false;
 
+  public exportState(): Record<string, any>[] { return structuredClone(Array.from(this.itemsStore.values())); }
+  public importState(items: Record<string, any>[]): void { this.itemsStore = new Map(items.map(item => [item.id, item as any])); }
+
   constructor() {
     this.initializeStore();
   }
@@ -101,11 +104,11 @@ class ContentCmsManager {
         lastSync,
         visibilityStatus: isVisible ? 'Visible' : 'Hidden',
         accessLabel: seed.accessType === 'free' ? 'Free' : seed.annualPassIncluded ? 'Annual Pass' : `₹${seed.price || 499}`,
-        views: seed.viewCount || (index + 1) * 820,
-        downloads: seed.downloadCount || (index + 1) * 310,
+        views: 0,
+        downloads: 0,
         sales: {
-          orderCount: mockSalesCount,
-          revenue: mockRevenue,
+          orderCount: 0,
+          revenue: 0,
         },
         isDeleted: false,
         sortOrder: seed.sortOrder ?? index + 1,
@@ -174,7 +177,7 @@ class ContentCmsManager {
       updatedAt: '2026-03-20T14:30:00Z',
       publishedAt: '2025-11-10T12:00:00Z',
     };
-    this.itemsStore.set(archivedItem.id, archivedItem);
+    if (process.env.NODE_ENV !== 'production') this.itemsStore.set(archivedItem.id, archivedItem);
 
     this.initialized = true;
   }
@@ -323,7 +326,10 @@ class ContentCmsManager {
     const slug =
       payload.slug?.trim() ||
       title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-    const id = payload.id?.trim() || `cnt-${payload.contentType || 'pdf'}-${slug}-${Date.now().toString().slice(-4)}`;
+    const id = payload.id?.trim() || `cnt-${payload.contentType || 'pdf'}-${slug}-${crypto.randomUUID()}`;
+
+    if (this.itemsStore.has(id)) throw new Error('A content item with this ID already exists.');
+    if (Array.from(this.itemsStore.values()).some(item => item.slug === slug)) throw new Error('A content item with this URL slug already exists.');
 
     const maxSort = Math.max(0, ...Array.from(this.itemsStore.values()).map((i) => i.sortOrder || 0));
 
@@ -339,14 +345,7 @@ class ContentCmsManager {
       topic: payload.topic || '',
       contentType: (payload.contentType as ContentType) || 'pdf',
       thumbnail: payload.thumbnail || 'https://images.unsplash.com/photo-1509228468518-180dd4864904?w=600&auto=format&fit=crop&q=80',
-      files: payload.files || (payload.contentType === 'pdf' ? [
-        {
-          name: `${slug}.pdf`,
-          url: 'https://raw.githubusercontent.com/mozilla/pdf.js/ba2edeae/web/compressed.tracemonkey-pldi-09.pdf',
-          sizeBytes: 1540000,
-          mimeType: 'application/pdf',
-        },
-      ] : []),
+      files: payload.files || [],
       embedUrl: payload.embedUrl || '',
       source: payload.source || 'MAYF Production Curriculum',
       accessType: payload.accessType || 'free',
@@ -365,7 +364,7 @@ class ContentCmsManager {
       seoTitle: payload.seoTitle || `${title} | Maths at Your Fingertips`,
       seoDescription: payload.seoDescription || payload.shortDescription || '',
       sortOrder: payload.sortOrder ?? maxSort + 1,
-      sourceDriveId: payload.sourceDriveId || `1dr_native_${Date.now().toString().slice(-8)}`,
+      sourceDriveId: payload.sourceDriveId || '',
       importStatus: payload.importStatus || 'direct',
       lastSync: timestamp,
       views: 0,
@@ -417,6 +416,7 @@ class ContentCmsManager {
       throw new Error(`Content item with ID "${id}" not found.`);
     }
 
+    if (payload.slug && Array.from(this.itemsStore.values()).some(item => item.id !== id && item.slug === payload.slug)) throw new Error('A content item with this URL slug already exists.');
     const timestamp = new Date().toISOString();
     const updated: CmsContentItem = {
       ...existing,
@@ -721,7 +721,7 @@ class ContentCmsManager {
     if (!original) throw new Error(`Source content item "${id}" not found.`);
 
     const timestamp = new Date().toISOString();
-    const suffix = Date.now().toString().slice(-4);
+    const suffix = crypto.randomUUID();
     const newTitle = `${original.title} (Copy)`;
     const newSlug = `${original.slug}-copy-${suffix}`;
     const newId = `cnt-${original.contentType}-${newSlug}`;
@@ -836,70 +836,55 @@ class ContentCmsManager {
   /**
    * COUNT CONTENT ITEMS LINKED TO A CATEGORY
    */
-  public countItemsWithCategory(categoryIdentifier: string): number {
-    const term = categoryIdentifier.toLowerCase().trim();
-    let count = 0;
-    for (const item of this.itemsStore.values()) {
-      if (
-        item.categoryId?.toLowerCase() === term ||
-        item.subcategoryId?.toLowerCase() === term ||
-        item.topic?.toLowerCase() === term ||
-        item.id === categoryIdentifier
-      ) {
-        count++;
-      }
-    }
-    return count;
+  private matchesCategory(item: CmsContentItem, name: string, id: string, grades?: string[]): boolean {
+    const fields = [item.categoryId, item.subcategoryId, item.topic];
+    const normalize = (value?: string) => value?.toLowerCase().trim();
+    if (fields.some(value => normalize(value) === normalize(id))) return true;
+    // Legacy records used a display name. Scope these matches to this class,
+    // because Algebra / Geometry occur in several independent class trees.
+    return (!grades?.length || item.classLevels?.some(grade => grades.includes(grade))) && fields.some(value => normalize(value) === normalize(name));
   }
 
-  /**
-   * REASSIGN CATEGORY ACROSS ALL LINKED CONTENT ITEMS
-   */
+  public countItemsWithCategory(name: string, id = name, grades?: string[]): number {
+    return [...this.itemsStore.values()].filter(item => this.matchesCategory(item, name, id, grades)).length;
+  }
+
+  /** Preserve stable category IDs and update legacy display-name references. */
   public reassignCategory(
-    oldCategoryTerm: string,
-    newCategoryName: string,
-    actor: { uid: string; email: string; role: 'admin' | 'superAdmin' }
+    oldName: string,
+    newName: string,
+    actor: { uid: string; email: string; role: 'admin' | 'superAdmin' },
+    oldId = oldName,
+    newId = newName,
+    grades?: string[]
   ): { reassignedCount: number } {
-    const oldTerm = oldCategoryTerm.toLowerCase().trim();
     let reassignedCount = 0;
-    const now = new Date().toISOString();
-
+    const normalize = (value?: string) => value?.toLowerCase().trim();
     for (const item of this.itemsStore.values()) {
+      if (!this.matchesCategory(item, oldName, oldId, grades)) continue;
       let modified = false;
-      if (item.categoryId?.toLowerCase() === oldTerm) {
-        item.categoryId = newCategoryName;
-        modified = true;
+      for (const field of ['categoryId', 'subcategoryId', 'topic'] as const) {
+        if (normalize(item[field]) === normalize(oldId)) {
+          item[field] = newId;
+          modified = true;
+        } else if ((!grades?.length || item.classLevels?.some(grade => grades.includes(grade))) && normalize(item[field]) === normalize(oldName)) {
+          item[field] = newName;
+          modified = true;
+        }
       }
-      if (item.subcategoryId?.toLowerCase() === oldTerm) {
-        item.subcategoryId = newCategoryName;
-        modified = true;
-      }
-      if (item.topic?.toLowerCase() === oldTerm) {
-        item.topic = newCategoryName;
-        modified = true;
-      }
-
       if (modified) {
-        item.updatedAt = now;
-        this.itemsStore.set(item.id, item);
+        item.updatedAt = new Date().toISOString();
         reassignedCount++;
       }
     }
-
     auditLogService.log({
-      action: 'CONTENT_UPDATED',
-      category: 'content',
-      actorUid: actor.uid,
-      actorEmail: actor.email,
-      actorRole: actor.role,
-      targetId: 'category_reassign_batch',
-      targetType: 'curriculum_content',
-      details: { oldCategory: oldCategoryTerm, newCategory: newCategoryName, reassignedCount },
-      status: 'success',
+      action: 'CONTENT_UPDATED', category: 'content', actorUid: actor.uid,
+      actorEmail: actor.email, actorRole: actor.role, targetId: 'category_reassign_batch',
+      targetType: 'curriculum_content', details: { oldCategory: oldName, newCategory: newName, reassignedCount }, status: 'success',
     });
-
     return { reassignedCount };
   }
+
 }
 
 export const contentCmsManager = new ContentCmsManager();

@@ -1,3 +1,4 @@
+import { isProductionPaymentRuntime } from './runtime';
 /**
  * Provider-Independent Payment Service
  * Maths at Your Fingertips (mayf.co.in)
@@ -26,7 +27,8 @@ import {
 } from './types';
 import { RazorpayAdapter } from './adapters/razorpayAdapter';
 import { StripeAdapter } from './adapters/stripeAdapter';
-import { couponService } from '../coupons/couponService';
+import { CouponService, couponService } from '../coupons/couponService';
+import { sealGatewaySettings, openGatewaySettings } from './settingsEncryption';
 
 export class PaymentService {
   private razorpayAdapter: RazorpayAdapter;
@@ -41,25 +43,43 @@ export class PaymentService {
   // Payment Gateway Settings (Configurable by admin, secrets kept strictly server-side)
   private settings: PaymentGatewaySettings;
 
-  constructor() {
+  constructor(private couponEngine: CouponService = couponService) {
     this.razorpayAdapter = new RazorpayAdapter();
     this.stripeAdapter = new StripeAdapter();
 
     this.settings = {
       activeProvider: 'razorpay',
-      testMode: process.env.APP_ENV !== 'production',
-      razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_mayf2026demo',
-      razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || 'rzp_sec_sandbox_k98a7sd6f',
-      razorpayWebhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || 'rzp_whsec_mayf_prod_992',
-      stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_mayf2026intl',
-      stripeSecretKey: process.env.STRIPE_SECRET_KEY || 'sk_test_sandbox_intlk98a7',
-      stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || 'whsec_stripe_mayf_prod_881',
+      testMode: !isProductionPaymentRuntime(),
+      razorpayKeyId: process.env.RAZORPAY_KEY_ID || (isProductionPaymentRuntime() ? '' : 'rzp_test_mayf2026demo'),
+      razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || (isProductionPaymentRuntime() ? '' : 'rzp_sec_sandbox_k98a7sd6f'),
+      razorpayWebhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || (isProductionPaymentRuntime() ? '' : 'rzp_whsec_mayf_prod_992'),
+      stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || (isProductionPaymentRuntime() ? '' : 'pk_test_mayf2026intl'),
+      stripeSecretKey: process.env.STRIPE_SECRET_KEY || (isProductionPaymentRuntime() ? '' : 'sk_test_sandbox_intlk98a7'),
+      stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || (isProductionPaymentRuntime() ? '' : 'whsec_stripe_mayf_prod_881'),
       taxRatePercentage: 18, // 18% GST standard educational rate in India (or 0% exempt)
       allowCouponDiscounts: true,
     };
 
-    this.seedInitialOrders();
+    if (!isProductionPaymentRuntime()) this.seedInitialOrders();
   }
+
+  orderState = {
+    exportState: () => structuredClone([...this.ordersStore.values()].map(order => ({ ...order, id: order.orderId }))),
+    importState: (items: Record<string, any>[]) => { this.ordersStore = new Map(items.map(({ id, ...order }) => [order.orderId, order as StoredOrder])); },
+  };
+  webhookState = {
+    exportState: () => structuredClone([...this.processedWebhookEvents].map(([key, event]) => ({ ...event, eventId: event.id, id: encodeURIComponent(key), eventKey: key }))),
+    importState: (items: Record<string, any>[]) => { this.processedWebhookEvents = new Map(items.map(({ id, eventId, eventKey, ...event }) => [eventKey, { ...event, id: eventId } as WebhookEventLog])); },
+  };
+  settingsState = {
+    exportState: () => [{ id: 'gateway', ...sealGatewaySettings(this.settings) }],
+    importState: (items: Record<string, any>[]) => {
+      const config = items.find(item => item.id === 'gateway');
+      if (config) { const { id, ...settings } = config; this.settings = openGatewaySettings(settings); }
+      this.razorpayAdapter = new RazorpayAdapter({ keyId: this.settings.razorpayKeyId, secretKey: this.settings.razorpayKeySecret, webhookSecret: this.settings.razorpayWebhookSecret, testMode: this.settings.testMode });
+      this.stripeAdapter = new StripeAdapter({ keyId: this.settings.stripePublishableKey, secretKey: this.settings.stripeSecretKey, webhookSecret: this.settings.stripeWebhookSecret, testMode: this.settings.testMode });
+    },
+  };
 
   /**
    * Seed realistic orders to display in Student Dashboard and Admin Payment Ledger
@@ -170,10 +190,10 @@ export class PaymentService {
 
     // Calculate coupon discount securely on server (never trust client-calculated discounts)
     let discount = 0;
-    let validatedCoupon = coupon ? coupon.trim().toUpperCase() : undefined;
+    let validatedCoupon = this.settings.allowCouponDiscounts && coupon ? coupon.trim().toUpperCase() : undefined;
     if (this.settings.allowCouponDiscounts && validatedCoupon) {
-      const val = couponService.validateCoupon({
-        code: validatedCoupon,
+      const val = this.couponEngine.validateCoupon({
+        code: validatedCoupon!,
         userId,
         cartGrossAmount: grossAmount,
         currency,
@@ -195,7 +215,7 @@ export class PaymentService {
     if (this.settings.taxRatePercentage > 0) {
       // Net taxable value
       const taxableAmount = grossAmount - discount;
-      tax = Math.round((taxableAmount * this.settings.taxRatePercentage) / 100);
+      tax = Math.round(taxableAmount * this.settings.taxRatePercentage) / 100;
     }
 
     // Determine target provider adapter
@@ -223,7 +243,7 @@ export class PaymentService {
       ],
       grossAmount,
       discount,
-      coupon: coupon ? coupon.trim().toUpperCase() : undefined,
+      coupon: validatedCoupon,
       tax,
       currency: currency.toUpperCase(),
       provider: providerType,
@@ -316,14 +336,17 @@ export class PaymentService {
       };
     }
 
-    // Cryptographic verification succeeded!
+    if (verification.rawAmount !== undefined && (Math.round(verification.rawAmount * 100) !== Math.round((order.grossAmount - order.discount + (order.tax || 0)) * 100) || verification.currency?.toUpperCase() !== order.currency.toUpperCase())) {
+      return { success: false, order, entitlementGranted: false, error: 'Captured payment amount or currency does not match this order.' };
+    }
+
+    // Do not publish an in-memory paid state if durable redemption fails.
+    if (order.coupon) {
+      this.couponEngine.recordCouponRedemption(order.coupon, order.userId);
+    }
     order.status = 'paid';
     order.providerPaymentId = verification.providerPaymentId;
     order.paidAt = new Date().toISOString();
-
-    if (order.coupon) {
-      couponService.recordCouponRedemption(order.coupon, order.userId);
-    }
 
     return {
       success: true,
@@ -399,6 +422,9 @@ export class PaymentService {
             Math.round(webhookResult.rawAmount! * 100) !== expectedAmount ||
             webhookResult.currency?.toUpperCase() !== targetOrder.currency.toUpperCase()) {
           return { success: false, status: 'failed', message: 'Webhook payment amount or currency does not match the stored order.' };
+        }
+        if (targetOrder.status !== 'paid' && targetOrder.coupon) {
+          this.couponEngine.recordCouponRedemption(targetOrder.coupon, targetOrder.userId);
         }
         targetOrder.status = 'paid';
         targetOrder.providerPaymentId = webhookResult.providerPaymentId || targetOrder.providerPaymentId;
@@ -485,6 +511,8 @@ export class PaymentService {
    * If a secret field is empty or contains masked bullets, leaves the existing stored secret untouched!
    */
   updateSettings(updates: Partial<PaymentGatewaySettings>): MaskedPaymentGatewaySettings {
+    if (updates.activeProvider !== undefined && !['razorpay', 'stripe', 'auto'].includes(updates.activeProvider)) throw new Error('Invalid payment provider.');
+    if (updates.taxRatePercentage !== undefined && (!Number.isFinite(Number(updates.taxRatePercentage)) || Number(updates.taxRatePercentage) < 0 || Number(updates.taxRatePercentage) > 100)) throw new Error('Tax rate must be between 0 and 100.');
     if (updates.activeProvider) this.settings.activeProvider = updates.activeProvider;
     if (updates.testMode !== undefined) this.settings.testMode = updates.testMode;
     if (updates.razorpayKeyId) this.settings.razorpayKeyId = updates.razorpayKeyId;
@@ -571,6 +599,7 @@ export class PaymentService {
     message: string;
     order?: StoredOrder;
   }> {
+    if (isProductionPaymentRuntime()) throw new Error('Webhook simulation is available only in local development.');
     const targetOrder = this.ordersStore.get(params.orderId);
     if (!targetOrder) {
       throw new Error(`Order ${params.orderId} not found`);
@@ -608,8 +637,8 @@ export class PaymentService {
 
     // Generate valid HMAC signature with the webhook secret
     const secret = params.provider === 'stripe'
-      ? (this.settings.stripeWebhookSecret || 'whsec_stripe_mayf_prod_881')
-      : (this.settings.razorpayWebhookSecret || 'rzp_whsec_mayf_prod_992');
+      ? (this.settings.stripeWebhookSecret || (isProductionPaymentRuntime() ? '' : 'whsec_stripe_mayf_prod_881'))
+      : (this.settings.razorpayWebhookSecret || (isProductionPaymentRuntime() ? '' : 'rzp_whsec_mayf_prod_992'));
 
     const rawBodyString = JSON.stringify(rawPayload);
     const timestamp = Math.floor(Date.now() / 1000);

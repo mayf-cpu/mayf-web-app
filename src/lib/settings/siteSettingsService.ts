@@ -34,16 +34,16 @@ class SiteSettingsService {
 
   constructor() {
     this.currentSettings = JSON.parse(JSON.stringify(DEFAULT_SITE_SETTINGS));
-    this.initFromFirestore();
+
   }
 
   /**
    * Initializes or hydrates settings from Firestore /siteSettings/general
    */
-  private async initFromFirestore(): Promise<void> {
+  public async initFromFirestore(): Promise<void> {
     try {
       const db = getAdminFirestore();
-      if (!db) return;
+      if (!db) { if (process.env.NODE_ENV === 'production') throw new Error('Firebase storage is not configured'); return; }
 
       const docRef = db.collection('siteSettings').doc('general');
       const snap = await docRef.get();
@@ -63,7 +63,8 @@ class SiteSettingsService {
         this.cacheTimestamp = Date.now();
       }
     } catch (e: any) {
-      console.warn('[SiteSettingsService] Firestore note, using authoritative memory cache:', e?.message || e);
+      throw new Error('Unable to read site settings from Firebase');
+      throw e;
     }
   }
 
@@ -121,6 +122,14 @@ class SiteSettingsService {
     input: Partial<SiteSettings>,
     actor: { uid: string; email: string; role: 'admin' | 'superAdmin' }
   ): Promise<SiteSettings> {
+    input = {
+      ...this.currentSettings, ...input,
+      brand: { ...this.currentSettings.brand, ...input.brand },
+      colors: { ...this.currentSettings.colors, ...input.colors },
+      social: { ...this.currentSettings.social, ...input.social },
+      contact: { ...this.currentSettings.contact, ...input.contact },
+      homepageCopy: { ...this.currentSettings.homepageCopy, ...input.homepageCopy },
+    };
     // 1. Inspect for explicit malicious script injection attempts
     const safetyCheck = inspectSecuritySafety(input);
     if (!safetyCheck.safe) {
@@ -210,26 +219,25 @@ class SiteSettingsService {
       updatedBy: actor.email,
     };
 
-    this.currentSettings = newSettings;
-    this.cacheTimestamp = Date.now();
-
     // Persist to Firestore /siteSettings/general
     try {
       const db = getAdminFirestore();
+      if (!db && process.env.NODE_ENV === 'production') throw new Error('Firebase storage is not configured');
       if (db) {
         await db.collection('siteSettings').doc('general').set(newSettings);
       }
     } catch (e: any) {
-      console.warn('[SiteSettingsService] Firestore persistence note:', e?.message || e);
+      throw e;
     }
 
+    this.currentSettings = newSettings;
+    this.cacheTimestamp = Date.now();
+
     // Keep homepage blocks synchronized with updated copy and social links
-    this.syncWithHomepageBlocks(newSettings, actor).catch((err) => {
-      console.warn('[SiteSettingsService] Homepage blocks synchronization note:', err?.message || err);
-    });
+    await this.syncWithHomepageBlocks(newSettings, actor);
 
     // Audit logging
-    auditLogService.log({
+    await auditLogService.log({
       action: 'SECURITY_CONFIG_UPDATED',
       category: 'security',
       actorUid: actor.uid,
@@ -316,7 +324,7 @@ class SiteSettingsService {
 
       await homepageLayoutService.updateLayout(updatedBlocks, actor);
     } catch (e: any) {
-      console.warn('[SiteSettingsService] syncWithHomepageBlocks note:', e?.message || e);
+      throw e;
     }
   }
 

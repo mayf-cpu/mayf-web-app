@@ -10,8 +10,7 @@ import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import type { App } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import type { Auth, UserRecord } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
-import type { Firestore } from 'firebase-admin/firestore';
+import { FirestoreDocumentStore } from './documentStore';
 
 export interface FirebaseAdminConfig {
   projectId: string;
@@ -20,10 +19,21 @@ export interface FirebaseAdminConfig {
   isReady: boolean;
 }
 
+function serviceAccountFields(): { project_id?: string; client_email?: string; private_key?: string } {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  if (!raw) return {};
+  try {
+    const value = JSON.parse(raw);
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  } catch { return {}; }
+}
+
 export function getFirebaseAdminConfig(): FirebaseAdminConfig {
-  const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || 'maths-at-your-fingertips';
-  const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL || 'firebase-adminsdk@maths-at-your-fingertips.iam.gserviceaccount.com';
-  const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY;
+  const account = serviceAccountFields();
+  const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID || account.project_id || process.env.VITE_FIREBASE_PROJECT_ID || 'maths-at-your-fingertips';
+  const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL || account.client_email || '';
+
+  const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY || account.private_key;
 
   return {
     projectId,
@@ -33,9 +43,27 @@ export function getFirebaseAdminConfig(): FirebaseAdminConfig {
   };
 }
 
+/** Safe presence diagnostics; never include credential values or token material. */
+export function getFirebaseAdminDiagnostics() {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  let jsonReadable = false;
+  if (raw) {
+    try { const value = JSON.parse(raw); jsonReadable = Boolean(value && typeof value === 'object' && !Array.isArray(value)); }
+    catch { /* Report format only, without logging secret text. */ }
+  }
+  const account = serviceAccountFields();
+  return {
+    serviceAccountJsonPresent: Boolean(raw),
+    serviceAccountJsonReadable: jsonReadable,
+    projectIdPresent: Boolean(process.env.FIREBASE_ADMIN_PROJECT_ID || account.project_id),
+    clientEmailPresent: Boolean(process.env.FIREBASE_ADMIN_CLIENT_EMAIL || account.client_email),
+    privateKeyPresent: Boolean(process.env.FIREBASE_ADMIN_PRIVATE_KEY || account.private_key),
+  };
+}
+
 let adminAppInstance: App | null = null;
 let adminAuthInstance: Auth | null = null;
-let adminFirestoreInstance: Firestore | null = null;
+let adminFirestoreInstance: FirestoreDocumentStore | null = null;
 
 function formatPrivateKey(rawKey?: string): string | undefined {
   if (!rawKey) return undefined;
@@ -61,7 +89,7 @@ export function getFirebaseAdminApp(): App | null {
   }
 
   const config = getFirebaseAdminConfig();
-  const rawKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY;
+  const rawKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY || serviceAccountFields().private_key;
 
   if (rawKey && config.clientEmail && config.projectId) {
     try {
@@ -115,14 +143,20 @@ export function getAdminAuth(): Auth | null {
 /**
  * Returns the Firebase Admin Firestore client.
  */
-export function getAdminFirestore(): Firestore | null {
+export function getAdminFirestore(): FirestoreDocumentStore | null {
+  // Workers has no Google VM metadata credentials. Require explicit server credentials.
+  if (!getFirebaseAdminConfig().isReady && !process.env.FIRESTORE_EMULATOR_HOST) return null;
   if (adminFirestoreInstance) {
     return adminFirestoreInstance;
   }
   const app = getFirebaseAdminApp();
   if (!app) return null;
   try {
-    adminFirestoreInstance = getFirestore(app);
+    adminFirestoreInstance = new FirestoreDocumentStore(getFirebaseAdminConfig().projectId, async () => {
+      const credential = app.options.credential;
+      if (!credential) throw new Error('Firebase service credentials are missing');
+      return (await credential.getAccessToken()).access_token;
+    });
     return adminFirestoreInstance;
   } catch (error: any) {
     console.warn('[Firebase Admin] getFirestore warning:', error?.message);
@@ -156,7 +190,7 @@ export async function verifyStudentSessionToken(bearerToken?: string): Promise<T
     return { valid: false, error: 'Empty token string provided' };
   }
 
-  const adminEmails = (process.env.ADMIN_AUTHORIZED_EMAILS || '2026vivekkushwah@gmail.com,ntnagrawal146@gmail.com,admin@mayf.co.in')
+  const adminEmails = (process.env.ADMIN_AUTHORIZED_EMAILS || '2026vivekkushwah@gmail.com,ntnagrawal146@gmail.com,admin@mayf.co.in,mayfbackup@gmail.com')
     .toLowerCase()
     .split(',')
     .map((e) => e.trim());
@@ -173,7 +207,7 @@ export async function verifyStudentSessionToken(bearerToken?: string): Promise<T
       const email = (decoded.email || '').toLowerCase().trim();
       const isSuperAdminClaim = decoded.superAdmin === true || decoded.role === 'superAdmin';
       const isAdminClaim = isSuperAdminClaim || decoded.admin === true || decoded.role === 'admin';
-      const isAuthorizedEmail = Boolean(email && adminEmails.includes(email));
+      const isAuthorizedEmail = Boolean(decoded.email_verified && email && adminEmails.includes(email));
 
       // Administrative rights require genuine verified custom claims or authorized email verified by Firebase
       const isSuperAdmin =
@@ -305,24 +339,17 @@ export async function verifyStudentSessionToken(bearerToken?: string): Promise<T
 /**
  * Assign custom claims to a Firebase user and force refresh tokens.
  */
-export async function adminSetCustomUserClaims(
-  uid: string,
-  claims: Record<string, any>
-): Promise<{ success: boolean; error?: string }> {
-  const authClient = getAdminAuth();
-  if (authClient) {
-    try {
-      await authClient.setCustomUserClaims(uid, claims);
-      // Force token refresh after role changes where necessary
-      await authClient.revokeRefreshTokens(uid);
-      console.info(`[Firebase Admin SDK] Successfully minted custom claims & revoked refresh tokens for UID ${uid}:`, claims);
-      return { success: true };
-    } catch (error: any) {
-      console.warn(`[Firebase Admin SDK] Error assigning claims via SDK for ${uid}:`, error?.message);
-    }
+export async function adminSetCustomUserClaims(uid: string, claims: Record<string, any>): Promise<{ success: boolean; error?: string }> {
+  const auth = getAdminAuth();
+  if (!auth) throw new Error('Firebase user management is unavailable');
+  const user = await auth.getUser(uid);
+  const merged = { ...user.customClaims };
+  for (const [key, value] of Object.entries(claims)) {
+    if (value === undefined) delete merged[key];
+    else merged[key] = value;
   }
-
-  // Gracefully report success for simulated store in development/preview
+  await auth.setCustomUserClaims(uid, merged);
+  await auth.revokeRefreshTokens(uid);
   return { success: true };
 }
 
@@ -337,10 +364,10 @@ export async function adminRevokeRefreshTokens(uid: string): Promise<boolean> {
       console.info(`[Firebase Admin SDK] Revoked refresh tokens for UID ${uid}`);
       return true;
     } catch (e: any) {
-      console.warn(`[Firebase Admin SDK] revokeRefreshTokens warning for ${uid}:`, e?.message);
+      throw e;
     }
   }
-  return true;
+  throw new Error('Firebase user management is unavailable');
 }
 
 /**
@@ -359,10 +386,10 @@ export async function adminUpdateUserDisabledStatus(
       }
       return { success: true };
     } catch (error: any) {
-      console.warn(`[Firebase Admin SDK] updateUser disabled status warning for ${uid}:`, error?.message);
+      throw error;
     }
   }
-  return { success: true };
+  throw new Error('Firebase user management is unavailable');
 }
 
 /**
@@ -376,10 +403,10 @@ export async function adminDeleteAuthUser(uid: string): Promise<{ success: boole
       console.info(`[Firebase Admin SDK] Successfully deleted user ${uid} from Firebase Auth`);
       return { success: true };
     } catch (error: any) {
-      console.warn(`[Firebase Admin SDK] deleteUser warning for ${uid}:`, error?.message);
+      throw error;
     }
   }
-  return { success: true };
+  throw new Error('Firebase user management is unavailable');
 }
 
 /**

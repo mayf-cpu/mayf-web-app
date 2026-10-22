@@ -21,6 +21,7 @@ export const FormulaCard: React.FC<FormulaCardProps> = ({
   const { savedItemIds, toggleSavedItem } = useAuth();
   const { navigate } = useNavigation();
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState('');
   const isSaved = savedItemIds.includes(formula.id);
   const targetUrl = `/formula/${formula.slug}`;
 
@@ -36,12 +37,12 @@ export const FormulaCard: React.FC<FormulaCardProps> = ({
     }
   }, [formula.latexFormula]);
 
-  const handleCopy = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    navigator.clipboard.writeText(formula.plainTextFormula);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation(); setCopied(false); setCopyError('');
+    try {
+      await navigator.clipboard.writeText(formula.plainTextFormula);
+      setCopied(true); setTimeout(() => setCopied(false), 1800);
+    } catch { setCopyError('Copy was blocked by your browser. Open the formula and select its text to copy.'); }
   };
 
   const handleBookmark = (e: React.MouseEvent) => {
@@ -137,7 +138,7 @@ export const FormulaCard: React.FC<FormulaCardProps> = ({
             onClick={handleCopy}
             title="Copy formula expression"
             className="w-9 h-9 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-sky-700 hover:bg-white hover:shadow-2xs transition-all shrink-0 cursor-pointer"
-            aria-label="Copy formula"
+            aria-label={copied ? 'Formula copied' : 'Copy formula'}
           >
             {copied ? (
               <Check className="w-4 h-4 text-emerald-600" />
@@ -147,6 +148,7 @@ export const FormulaCard: React.FC<FormulaCardProps> = ({
           </button>
         </div>
 
+        {copyError && <p role="alert" className="text-xs text-red-700 mb-2">{copyError}</p>}
         {/* Concise Concept Note */}
         <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed mb-3">
           {formula.explanation}

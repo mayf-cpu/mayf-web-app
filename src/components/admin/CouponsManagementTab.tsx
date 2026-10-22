@@ -1,3 +1,4 @@
+import { adminService } from '../../services/adminService';
 import React, { useState, useEffect } from 'react';
 import {
   Tag,
@@ -24,11 +25,7 @@ import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { CouponItem, CouponDiscountType, CouponScope } from '../../lib/coupons/types';
 
-interface CouponsManagementTabProps {
-  authHeaders: Record<string, string>;
-}
-
-export const CouponsManagementTab: React.FC<CouponsManagementTabProps> = ({ authHeaders }) => {
+export const CouponsManagementTab: React.FC = () => {
   const [coupons, setCoupons] = useState<CouponItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
@@ -67,7 +64,7 @@ export const CouponsManagementTab: React.FC<CouponsManagementTabProps> = ({ auth
     setLoading(true);
     setErrorMsg('');
     try {
-      const res = await fetch('/api/admin/coupons', { headers: authHeaders });
+      const res = await fetch('/api/admin/coupons', { headers: await adminService.getAuthHeaders() });
       const data = await res.json();
       if (data.success) {
         setCoupons(data.coupons || []);
@@ -155,7 +152,7 @@ export const CouponsManagementTab: React.FC<CouponsManagementTabProps> = ({ auth
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...authHeaders,
+          ...await adminService.getAuthHeaders(),
         },
         body: JSON.stringify(payload),
       });
@@ -180,7 +177,7 @@ export const CouponsManagementTab: React.FC<CouponsManagementTabProps> = ({ auth
     try {
       const res = await fetch(`/api/admin/coupons/${codeToDelete}`, {
         method: 'DELETE',
-        headers: authHeaders,
+        headers: await adminService.getAuthHeaders(),
       });
       const data = await res.json();
       if (data.success) {
@@ -203,7 +200,7 @@ export const CouponsManagementTab: React.FC<CouponsManagementTabProps> = ({ auth
     try {
       const res = await fetch('/api/coupons/validate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await adminService.getAuthHeaders(),
         body: JSON.stringify({
           code: testCode.trim().toUpperCase(),
           cartGrossAmount: testCartGross,

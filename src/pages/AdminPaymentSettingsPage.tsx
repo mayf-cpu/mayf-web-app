@@ -1466,12 +1466,12 @@ export const AdminPaymentSettingsPage: React.FC = () => {
 
         {/* TAB: COUPONS ENGINE */}
         {activeTab === 'coupons' && (
-          <CouponsManagementTab authHeaders={{ Authorization: `Bearer ${authToken}` }} />
+          <CouponsManagementTab />
         )}
 
         {/* TAB: PROMOTIONAL BANNERS */}
         {activeTab === 'promotions' && (
-          <PromotionsManagementTab authHeaders={{ Authorization: `Bearer ${authToken}` }} />
+          <PromotionsManagementTab />
         )}
 
         {/* TAB 1: GATEWAY SETTINGS */}

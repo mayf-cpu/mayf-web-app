@@ -1,3 +1,4 @@
+import { isProductionPaymentRuntime } from './runtime';
 /**
  * Authoritative Annual Pass & Entitlement Service
  * Maths at Your Fingertips (mayf.co.in)
@@ -66,8 +67,21 @@ export class EntitlementService {
       updatedBy: 'system_init',
     };
 
-    this.seedInitialEntitlements();
+    if (!isProductionPaymentRuntime()) this.seedInitialEntitlements();
   }
+
+  entitlementState = {
+    exportState: () => structuredClone([...this.entitlementsStore.values()]),
+    importState: (items: Record<string, any>[]) => { this.entitlementsStore = new Map(items.map(item => [item.id, item as Entitlement])); },
+  };
+  historyState = {
+    exportState: () => structuredClone(this.historyLogs),
+    importState: (items: Record<string, any>[]) => { this.historyLogs = items as EntitlementHistoryLog[]; },
+  };
+  settingsState = {
+    exportState: () => [{ id: 'annual-pass', ...this.settings }],
+    importState: (items: Record<string, any>[]) => { const config = items.find(item => item.id === 'annual-pass'); if (config) { const { id, ...settings } = config; this.settings = settings as AnnualPassSettings; } },
+  };
 
   /**
    * Seed realistic initial entitlement for demo student
@@ -116,6 +130,17 @@ export class EntitlementService {
   }
 
   updateSettings(partial: Partial<AnnualPassSettings>, adminId = 'admin'): AnnualPassSettings {
+    for (const price of [partial.regularPrice, partial.salePrice, partial.familyPrice]) {
+      if (price !== undefined && (!Number.isFinite(price) || price <= 0)) throw new Error('Membership prices must be positive numbers.');
+    }
+    if (partial.durationDays !== undefined && (!Number.isInteger(partial.durationDays) || partial.durationDays <= 0 || partial.durationDays > 3650)) throw new Error('Pass duration must be 1–3650 whole days.');
+    if (partial.enabled !== undefined && typeof partial.enabled !== 'boolean') throw new Error('Invalid membership availability.');
+    for (const date of [partial.promotionalStartDate, partial.promotionalEndDate]) {
+      if (date && !Number.isFinite(Date.parse(date))) throw new Error('Invalid promotional date.');
+    }
+    const starts = partial.promotionalStartDate === undefined ? this.settings.promotionalStartDate : partial.promotionalStartDate;
+    const ends = partial.promotionalEndDate === undefined ? this.settings.promotionalEndDate : partial.promotionalEndDate;
+    if (starts && ends && Date.parse(starts) > Date.parse(ends)) throw new Error('Promotion end date must follow its start date.');
     this.settings = {
       ...this.settings,
       ...partial,
@@ -146,6 +171,7 @@ export class EntitlementService {
     if (params.orderId) {
       for (const existing of this.entitlementsStore.values()) {
         if (existing.orderId === params.orderId) {
+          if (existing.userId !== params.userId) throw new Error('Order already belongs to a different student.');
           return existing;
         }
       }
@@ -153,7 +179,9 @@ export class EntitlementService {
 
     const duration = params.durationDays || this.settings.durationDays || 365;
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + duration * 24 * 60 * 60 * 1000);
+    if (!Number.isInteger(duration) || duration <= 0 || duration > 3650) throw new Error('Pass duration must be 1–3650 whole days.');
+    const renewalStart = Math.max(now.getTime(), ...[...this.entitlementsStore.values()].filter(item => item.userId === params.userId && item.status === 'active' && Date.parse(item.startsAt) <= now.getTime()).map(item => Date.parse(item.expiresAt)).filter(Number.isFinite));
+    const expiresAt = new Date(renewalStart + duration * 24 * 60 * 60 * 1000);
 
     const entitlementId = `ent-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
     const entitlement: Entitlement = {

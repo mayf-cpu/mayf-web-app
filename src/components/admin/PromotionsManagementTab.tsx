@@ -1,3 +1,4 @@
+import { adminService } from '../../services/adminService';
 import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
@@ -22,11 +23,7 @@ import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { PromotionalBlock } from '../../lib/coupons/types';
 
-interface PromotionsManagementTabProps {
-  authHeaders: Record<string, string>;
-}
-
-export const PromotionsManagementTab: React.FC<PromotionsManagementTabProps> = ({ authHeaders }) => {
+export const PromotionsManagementTab: React.FC = () => {
   const [promotions, setPromotions] = useState<PromotionalBlock[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
@@ -56,7 +53,7 @@ export const PromotionsManagementTab: React.FC<PromotionsManagementTabProps> = (
     setLoading(true);
     setErrorMsg('');
     try {
-      const res = await fetch('/api/admin/promotions', { headers: authHeaders });
+      const res = await fetch('/api/admin/promotions', { headers: await adminService.getAuthHeaders() });
       const data = await res.json();
       if (data.success) {
         setPromotions(data.promotions || []);
@@ -134,7 +131,7 @@ export const PromotionsManagementTab: React.FC<PromotionsManagementTabProps> = (
         title: title.trim(),
         subtitle: subtitle.trim(),
         badgeText: badgeText.trim(),
-        couponCode: couponCode ? couponCode.trim().toUpperCase() : undefined,
+        couponCode: couponCode.trim().toUpperCase(),
         targetPlacements: placements,
         ctaText: ctaText.trim(),
         ctaLink: ctaLink.trim(),
@@ -148,7 +145,7 @@ export const PromotionsManagementTab: React.FC<PromotionsManagementTabProps> = (
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...authHeaders,
+          ...await adminService.getAuthHeaders(),
         },
         body: JSON.stringify(payload),
       });
@@ -173,7 +170,7 @@ export const PromotionsManagementTab: React.FC<PromotionsManagementTabProps> = (
     try {
       const res = await fetch(`/api/admin/promotions/${id}`, {
         method: 'DELETE',
-        headers: authHeaders,
+        headers: await adminService.getAuthHeaders(),
       });
       const data = await res.json();
       if (data.success) {
@@ -706,7 +703,7 @@ export const PromotionsManagementTab: React.FC<PromotionsManagementTabProps> = (
                   disabled={saving}
                   className="text-xs font-bold cursor-pointer"
                 >
-                  {saving ? 'Saving...' : isEditing ? 'Update Block' : 'Publish Block'}
+                  {saving ? 'Saving...' : isEditing ? 'Update Block' : enabled ? 'Publish Block' : 'Save Draft'}
                 </Button>
               </div>
             </form>

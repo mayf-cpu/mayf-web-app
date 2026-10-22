@@ -25,15 +25,17 @@ interface AdminDashboardSectionProps {
 }
 
 export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({ onNavigateSection }) => {
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
-    const data = await adminService.getMetrics();
-    setMetrics(data);
-    setLoading(false);
+    setLoadError(null);
+    try { setMetrics(await adminService.getMetrics()); }
+    catch (error: any) { setMetrics(null); setLoadError(error?.message || 'Unable to load metrics'); }
+    finally { setLoading(false); }
   };
 
   useEffect(() => {
@@ -43,11 +45,12 @@ export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({ on
   const handleRefresh = async () => {
     setRefreshing(true);
     await loadData();
-    setTimeout(() => setRefreshing(false), 500);
+    setRefreshing(false);
   };
 
   return (
     <div className="space-y-6">
+      {loadError && <p role="alert" className="p-3 bg-rose-50 text-rose-700 rounded-lg">{loadError}</p>}
       {/* Top Banner: Defense in Depth & Cloudflare Edge Status */}
       <div className="bg-linear-to-r from-slate-900 via-blue-950 to-slate-900 border border-slate-800 rounded-xl p-5 text-white shadow-lg">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -101,7 +104,7 @@ export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({ on
               {metrics ? metrics.totalStudents.toLocaleString() : '...'}
             </span>
             <span className="text-xs font-semibold text-emerald-600 flex items-center">
-              +14% mo/mo
+
             </span>
           </div>
           <p className="text-[11px] text-slate-500 mt-1">Classes 5 to 10 (CBSE & ICSE)</p>
@@ -119,13 +122,10 @@ export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({ on
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-heading font-extrabold text-slate-900">
-              {metrics ? metrics.activeAnnualPasses.toLocaleString() : '...'}
-            </span>
-            <span className="text-xs font-semibold text-emerald-600">
-              27.3% conversion
+              {metrics?.activeAnnualPasses == null ? 'Unavailable' : metrics.activeAnnualPasses.toLocaleString()}
             </span>
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">Single Child & Family Passes</p>
+          <p className="text-[11px] text-slate-500 mt-1">Current unexpired memberships</p>
         </div>
 
         {/* Card 3: AI Doubt Queries */}
@@ -140,20 +140,17 @@ export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({ on
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-heading font-extrabold text-slate-900">
-              {metrics ? metrics.aiDoubtsSolved.toLocaleString() : '...'}
-            </span>
-            <span className="text-xs font-semibold text-purple-600">
-              99.4% success
+              {metrics?.aiDoubtsSolved == null ? 'Not connected' : metrics.aiDoubtsSolved.toLocaleString()}
             </span>
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">Model: gemini-3.1-flash-lite</p>
+          <p className="text-[11px] text-slate-500 mt-1">{metrics?.aiTeacherConfigured ? 'AI service key configured' : 'AI service key not configured'}</p>
         </div>
 
         {/* Card 4: Gross Platform Revenue */}
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">
             <span className="text-xs font-heading font-bold text-slate-500 uppercase tracking-wider">
-              Gross Revenue
+              Paid INR Revenue
             </span>
             <div className="p-2 rounded-lg bg-amber-50 text-amber-600">
               <TrendingUp className="w-4 h-4" />
@@ -161,13 +158,13 @@ export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({ on
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-heading font-extrabold text-slate-900">
-              {metrics ? `₹${(metrics.totalRevenue / 100000).toFixed(2)}L` : '...'}
+              {metrics?.totalRevenue == null ? 'Not connected' : `₹${metrics.totalRevenue.toLocaleString('en-IN')}`}
             </span>
             <span className="text-xs font-semibold text-emerald-600">
               Razorpay & Stripe
             </span>
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">Live webhook ledger verified</p>
+          <p className="text-[11px] text-slate-500 mt-1">Verified paid orders, after discounts plus tax</p>
         </div>
       </div>
 
@@ -180,13 +177,13 @@ export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({ on
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
           {[
-            { id: 'content' as AdminSection, label: 'Content', icon: BookOpen, desc: '64 Chapters & PDFs' },
-            { id: 'categories' as AdminSection, label: 'Categories', icon: Layers, desc: '9 Topics mapped' },
-            { id: 'students' as AdminSection, label: 'Students', icon: Users, desc: '12.4K Profiles' },
+            { id: 'content' as AdminSection, label: 'Content', icon: BookOpen, desc: 'Curriculum resources' },
+            { id: 'categories' as AdminSection, label: 'Categories', icon: Layers, desc: 'Topics and categories' },
+            { id: 'students' as AdminSection, label: 'Students', icon: Users, desc: metrics ? `${metrics.totalStudents} registered students` : 'Student directory' },
             { id: 'admins' as AdminSection, label: 'Admins', icon: ShieldCheck, desc: 'Claims & RBAC' },
             { id: 'ai-activity' as AdminSection, label: 'AI Activity', icon: Sparkles, desc: 'Doubt telemetry' },
             { id: 'orders' as AdminSection, label: 'Orders', icon: CreditCard, desc: 'Payment ledger' },
-            { id: 'annual-pass' as AdminSection, label: 'Annual Pass', icon: Activity, desc: '₹1,999 / ₹2,999' },
+            { id: 'annual-pass' as AdminSection, label: 'Annual Pass', icon: Activity, desc: 'Pricing and memberships' },
             { id: 'coupons' as AdminSection, label: 'Coupons', icon: TrendingUp, desc: 'Active campaigns' },
             { id: 'notifications' as AdminSection, label: 'Broadcast', icon: Bell, desc: 'In-app alerts' },
             { id: 'payments' as AdminSection, label: 'Gateways', icon: Server, desc: 'Stripe & Razorpay' },
@@ -268,32 +265,32 @@ export const AdminDashboardSection: React.FC<AdminDashboardSectionProps> = ({ on
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-2xs space-y-3">
           <h3 className="font-heading font-bold text-sm text-slate-900 flex items-center gap-2">
             <Server className="w-4 h-4 text-blue-600" />
-            <span>Infrastructure Health Status</span>
+            <span>Backend Configuration</span>
           </h3>
 
           <div className="space-y-2.5 text-xs">
             <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50">
               <span className="font-medium text-slate-700">App Environment:</span>
               <span className="font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                production-ready
+                {metrics ? 'API responding' : 'Unknown'}
               </span>
             </div>
             <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50">
               <span className="font-medium text-slate-700">Firebase Firestore:</span>
               <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                21 Collections Active
+                {metrics?.firebaseConfigured ? 'Configured' : 'Not configured'}
               </span>
             </div>
             <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50">
-              <span className="font-medium text-slate-700">Gemini AI Teacher Model:</span>
+              <span className="font-medium text-slate-700">Gemini AI Teacher:</span>
               <span className="font-mono font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
-                gemini-3.1-flash-lite
+                {metrics?.aiTeacherConfigured ? 'Key configured' : 'Not configured'}
               </span>
             </div>
             <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50">
               <span className="font-medium text-slate-700">Server Uptime:</span>
               <span className="font-mono text-slate-800">
-                {metrics ? `${metrics.uptimeHours} hrs (99.98%)` : 'Active'}
+                {metrics ? `${metrics.uptimeHours} hrs` : 'Unknown'}
               </span>
             </div>
           </div>

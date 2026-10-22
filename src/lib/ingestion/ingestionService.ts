@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 /**
  * Server-Side Ingestion Pipeline Service for Maths at Your Fingertips.
  * 
@@ -14,7 +15,7 @@ import { copyDriveFileToProductionStorage } from './driveStorageAdapter';
 import { ContentItem, StudentClass, ContentType } from '../firebase/types';
 
 // In-memory persistent job store (synced with Firestore /importJobs in live environment)
-export let INGESTION_JOBS_STORE: IngestionJobRecord[] = [
+export let INGESTION_JOBS_STORE: IngestionJobRecord[] = (process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'production') ? [] : [
   // 1. IMPORTED - Class 10 Real Numbers
   {
     id: 'job-ingest-001',
@@ -233,198 +234,61 @@ export let INGESTION_JOBS_STORE: IngestionJobRecord[] = [
   },
 ];
 
+export const ingestionState = {
+  exportState: () => structuredClone(INGESTION_JOBS_STORE),
+  importState: (items: Record<string, any>[]) => { INGESTION_JOBS_STORE = items as IngestionJobRecord[]; },
+};
+
 /**
  * Validates the Webhook Secret from Google Apps Script.
  */
 export function verifyWebhookSecret(authHeader: string | undefined): boolean {
-  const configuredSecret = process.env.INGESTION_WEBHOOK_SECRET || 'mayf_ingest_secret_change_in_production_2026';
-  if (!authHeader) return false;
-  
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-  return token === configuredSecret;
+  const secret = process.env.INGESTION_WEBHOOK_SECRET;
+  if (!secret || !authHeader || !/^Bearer\s+/i.test(authHeader)) return false;
+  const supplied = Buffer.from(authHeader.replace(/^Bearer\s+/i, '').trim());
+  const expected = Buffer.from(secret);
+  return supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
 }
 
 /**
  * Ingests a single Content Registry row from Google Sheet.
  * Idempotently creates or updates the target Firestore document.
  */
-export async function processRegistryRow(
-  row: ContentRegistryRow,
-  triggeredBy: IngestionJobRecord['triggeredBy'] = 'apps_script_webhook'
-): Promise<{ success: boolean; firestore_id?: string; error?: string; job: IngestionJobRecord }> {
-  const timestamp = new Date().toISOString();
+export async function processRegistryRow(row: ContentRegistryRow, triggeredBy: IngestionJobRecord['triggeredBy'] = 'apps_script_webhook'): Promise<{ success: boolean; firestore_id?: string; error?: string; job: IngestionJobRecord }> {
   const contentId = row.content_id?.trim();
-
-  if (!contentId) {
-    throw new Error('content_id column is required in Content Registry row');
+  if (!contentId || contentId.length > 200 || !row.title?.trim()) throw new Error('Registry content_id and title are required.');
+  const { catalogueRepository } = await import('../cms/catalogueRepository');
+  const { contentCmsManager } = await import('../cms/contentManager');
+  const timestamp = new Date().toISOString();
+  const existing = await catalogueRepository.run(() => structuredClone(INGESTION_JOBS_STORE.find(job => job.content_id === contentId)));
+  const jobId = existing?.id || `job-${crypto.createHash('sha256').update(contentId).digest('hex').slice(0, 24)}`;
+  const base: IngestionJobRecord = { id: jobId, content_id: contentId, title: row.title.trim(), classLevel: row.class, category: row.category, contentType: row.content_type, accessType: row.access_type, sourceDriveFileId: row.drive_file_id, sourceThumbnailDriveFileId: row.thumbnail_drive_file_id, status: 'pending', visibility: row.visibility || 'Hidden', triggeredBy, sourceRowMetadata: structuredClone(row), createdAt: existing?.createdAt || timestamp, updatedAt: timestamp };
+  const recordJob = (job: IngestionJobRecord) => { const index = INGESTION_JOBS_STORE.findIndex(item => item.content_id === contentId); if (index >= 0) INGESTION_JOBS_STORE[index] = job; else INGESTION_JOBS_STORE.unshift(job); };
+  try {
+    if (!['Approved', 'Imported'].includes(row.status)) throw new Error('Only an Approved registry row can be imported.');
+    const slug = row.slug || row.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    if (!/^[a-z0-9-]{1,160}$/.test(slug)) throw new Error('Registry slug must contain letters, numbers and hyphens.');
+    if (!['pdf', 'course', 'testPaper', 'worksheet', 'formulaSheet', 'video', 'reel', 'youtube', 'facebook', 'singleImage', 'multiImage', 'other'].includes(row.content_type)) throw new Error('Unsupported registry content type.');
+    if (!['free', 'paid'].includes(row.access_type)) throw new Error('Invalid content access type.');
+    const embedded = ['youtube', 'facebook', 'course', 'other'].includes(row.content_type) && !row.drive_file_id;
+    if (embedded && (!row.embed_url || !row.embed_url.startsWith('https://'))) throw new Error('Embedded content requires an HTTPS source URL.');
+    const storage = embedded ? null : await copyDriveFileToProductionStorage(row.drive_file_id, row.thumbnail_drive_file_id, slug, row.content_type, row.access_type);
+    const firestoreId = existing?.firestoreDocId || row.firestore_id || `cnt-${crypto.createHash('sha256').update(contentId).digest('hex').slice(0, 24)}`;
+    const visible = row.visibility === 'Visible';
+    const extension = storage?.mimeType === 'video/mp4' ? 'mp4' : storage?.mimeType === 'image/png' ? 'png' : storage?.mimeType === 'image/jpeg' ? 'jpg' : storage?.mimeType === 'image/webp' ? 'webp' : 'pdf';
+    const payload: any = { id: firestoreId, title: row.title.trim(), slug, shortDescription: row.short_description || '', description: row.description || '', classLevels: (row.class || 'Class 10').split(',').map(value => value.trim()), categoryId: row.category, subcategoryId: row.subcategory, topic: row.topic, contentType: row.content_type, accessType: row.access_type, price: Number(row.price || 0), currency: row.currency || 'INR', annualPassIncluded: row.annual_pass_included !== false, downloadAllowed: row.download_allowed !== false && Boolean(storage), visible, status: visible ? 'published' : 'draft', featured: Boolean(row.featured), files: storage ? [{ name: `${slug}.${extension}`, url: storage.productionFileUrl, sizeBytes: storage.fileSizeBytes, mimeType: storage.mimeType }] : [], thumbnail: storage?.productionThumbnailUrl || '', embedUrl: row.embed_url || '', sourceDriveId: row.drive_file_id || '', importStatus: 'imported', lastSync: timestamp, tags: (row.tags || '').split(',').map(value => value.trim()).filter(Boolean), seoTitle: row.seo_title || row.title, seoDescription: row.seo_description || row.short_description || '' };
+    const job: IngestionJobRecord = { ...base, status: 'imported', firestoreDocId: firestoreId, productionFileUrl: storage?.productionFileUrl, productionThumbnailUrl: storage?.productionThumbnailUrl, completedAt: timestamp, sourceRowMetadata: { ...row, status: 'Imported', firestore_id: firestoreId, import_status: 'SUCCESS', import_error: '', last_imported_at: timestamp } };
+    await catalogueRepository.run(() => {
+      const actor = { uid: 'drive-ingestion', email: 'system@mayf.co.in', role: 'admin' as const };
+      if (contentCmsManager.getItem(firestoreId)) contentCmsManager.updateItem(firestoreId, payload, actor); else contentCmsManager.createItem(payload, actor);
+      recordJob(job);
+    }, true);
+    return { success: true, firestore_id: firestoreId, job };
+  } catch (error: any) {
+    const job: IngestionJobRecord = { ...base, status: 'failed', errorMessage: error.message || 'Import failed.' };
+    await catalogueRepository.run(() => recordJob(job), true);
+    return { success: false, error: job.errorMessage, job };
   }
-
-  // Find existing job or create new one
-  let existingJobIndex = INGESTION_JOBS_STORE.findIndex((j) => j.content_id === contentId);
-  const jobId = existingJobIndex !== -1 ? INGESTION_JOBS_STORE[existingJobIndex].id : `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-
-  // Handle intentional rejection
-  if (row.status === 'Rejected') {
-    const rejectedJob: IngestionJobRecord = {
-      id: jobId,
-      content_id: contentId,
-      title: row.title || 'Untitled',
-      classLevel: row.class || 'Class 10',
-      category: row.category || 'Mathematics',
-      contentType: row.content_type || 'pdf',
-      accessType: row.access_type || 'free',
-      sourceDriveFileId: row.drive_file_id,
-      status: 'failed',
-      visibility: row.visibility || 'Hidden',
-      errorMessage: 'Content marked as Rejected by editor in Google Sheet.',
-      triggeredBy,
-      sourceRowMetadata: row,
-      createdAt: existingJobIndex !== -1 ? INGESTION_JOBS_STORE[existingJobIndex].createdAt : timestamp,
-      updatedAt: timestamp,
-    };
-    if (existingJobIndex !== -1) {
-      INGESTION_JOBS_STORE[existingJobIndex] = rejectedJob;
-    } else {
-      INGESTION_JOBS_STORE.unshift(rejectedJob);
-    }
-    return { success: false, error: 'Marked as Rejected', job: rejectedJob };
-  }
-
-  // Check for test simulated error string
-  if (row.drive_file_id && row.drive_file_id.includes('INVALID_PERMS')) {
-    const failedJob: IngestionJobRecord = {
-      id: jobId,
-      content_id: contentId,
-      title: row.title,
-      classLevel: row.class,
-      category: row.category,
-      contentType: row.content_type,
-      accessType: row.access_type,
-      sourceDriveFileId: row.drive_file_id,
-      status: 'failed',
-      visibility: row.visibility,
-      errorMessage: `Google Drive API Error 403: Insufficient permissions to fetch drive_file_id: ${row.drive_file_id}. Grant Viewer permission to service account.`,
-      errorStack: 'DriveApiError: [403 Forbidden] The caller does not have permission\n  at GoogleDriveClient.getFile (driveStorageAdapter.ts)',
-      triggeredBy,
-      sourceRowMetadata: row,
-      createdAt: existingJobIndex !== -1 ? INGESTION_JOBS_STORE[existingJobIndex].createdAt : timestamp,
-      updatedAt: timestamp,
-    };
-
-    if (existingJobIndex !== -1) {
-      INGESTION_JOBS_STORE[existingJobIndex] = failedJob;
-    } else {
-      INGESTION_JOBS_STORE.unshift(failedJob);
-    }
-    return { success: false, error: failedJob.errorMessage, job: failedJob };
-  }
-
-  // 1. Copy Google Drive file to Production Cloud Storage
-  // (Ensuring Google Drive is NEVER the permanent delivery source)
-  const slug = row.slug || row.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-  const storageResult = await copyDriveFileToProductionStorage(
-    row.drive_file_id,
-    row.thumbnail_drive_file_id,
-    slug,
-    row.content_type,
-    row.access_type
-  );
-
-  // 2. Generate or preserve Firestore document ID (Idempotency)
-  const firestoreId = row.firestore_id || `cnt-${row.content_type}-${slug}`;
-
-  // 3. Construct Firestore ContentItem payload
-  // CRITICAL: Respect visibility (Visible = true, Hidden = false)
-  const isPubliclyVisible = row.visibility === 'Visible';
-
-  const contentDoc: Partial<ContentItem> & { sourceDriveFileId?: string } = {
-    id: firestoreId,
-    title: row.title,
-    slug,
-    shortDescription: row.short_description,
-    description: row.description,
-    classLevels: (row.class ? row.class.split(',').map((c) => c.trim()) : ['Class 10']) as StudentClass[],
-    categoryId: row.category,
-    subcategoryId: row.subcategory,
-    topic: row.topic,
-    contentType: (row.content_type as ContentType) || 'pdf',
-    thumbnail: storageResult.productionThumbnailUrl,
-    files: [
-      {
-        name: `${slug}.${row.content_type === 'video' ? 'mp4' : 'pdf'}`,
-        url: storageResult.productionFileUrl, // PRODUCTION STORAGE URL (Not Google Drive)
-        sizeBytes: storageResult.fileSizeBytes,
-        mimeType: storageResult.mimeType,
-      },
-    ],
-    embedUrl: row.embed_url,
-    accessType: row.access_type,
-    price: row.price ? Number(row.price) : 0,
-    currency: row.currency || 'INR',
-    annualPassIncluded: row.annual_pass_included !== false,
-    downloadAllowed: row.download_allowed !== false,
-    visible: isPubliclyVisible, // Visibility control!
-    featured: Boolean(row.featured),
-    tags: row.tags ? row.tags.split(',').map((t) => t.trim()) : [],
-    searchTerms: [
-      row.title.toLowerCase(),
-      row.category.toLowerCase(),
-      row.topic ? row.topic.toLowerCase() : '',
-      ...(row.tags ? row.tags.toLowerCase().split(',').map((t) => t.trim()) : []),
-    ].filter(Boolean),
-    seoTitle: row.seo_title || `${row.title} | Maths at Your Fingertips`,
-    seoDescription: row.seo_description || row.short_description,
-    sortOrder: row.sort_order ? Number(row.sort_order) : 100,
-    sourceDriveFileId: row.drive_file_id, // Maintained privately for traceability
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    publishedAt: row.publish_date || timestamp,
-    viewCount: 0,
-    downloadCount: 0,
-  };
-
-  // 4. Record successful Ingestion Job
-  const successfulJob: IngestionJobRecord = {
-    id: jobId,
-    content_id: contentId,
-    title: row.title,
-    classLevel: row.class,
-    category: row.category,
-    contentType: row.content_type,
-    accessType: row.access_type,
-    sourceDriveFileId: row.drive_file_id,
-    sourceThumbnailDriveFileId: row.thumbnail_drive_file_id,
-    status: 'imported',
-    visibility: row.visibility,
-    productionFileUrl: storageResult.productionFileUrl,
-    productionThumbnailUrl: storageResult.productionThumbnailUrl,
-    firestoreDocId: firestoreId,
-    errorMessage: undefined,
-    triggeredBy,
-    sourceRowMetadata: {
-      ...row,
-      status: 'Imported',
-      firestore_id: firestoreId,
-      import_status: 'SUCCESS',
-      import_error: '',
-      last_imported_at: timestamp,
-    },
-    createdAt: existingJobIndex !== -1 ? INGESTION_JOBS_STORE[existingJobIndex].createdAt : timestamp,
-    updatedAt: timestamp,
-    completedAt: timestamp,
-  };
-
-  if (existingJobIndex !== -1) {
-    INGESTION_JOBS_STORE[existingJobIndex] = successfulJob;
-  } else {
-    INGESTION_JOBS_STORE.unshift(successfulJob);
-  }
-
-  return {
-    success: true,
-    firestore_id: firestoreId,
-    job: successfulJob,
-  };
 }
 
 /**
@@ -482,41 +346,29 @@ export async function processBatchIngestion(
  * Retries a failed or pending import job by ID.
  */
 export async function retryIngestionJob(jobId: string): Promise<IngestionJobRecord> {
-  const job = INGESTION_JOBS_STORE.find((j) => j.id === jobId);
-  if (!job) {
-    throw new Error(`Ingestion job with ID ${jobId} not found`);
-  }
-
-  // Transition to importing state
-  job.status = 'importing';
-  job.updatedAt = new Date().toISOString();
-
-  // If previous error was mock perm issue, replace with clean ID on retry
-  if (job.sourceRowMetadata.drive_file_id?.includes('INVALID_PERMS')) {
-    job.sourceRowMetadata.drive_file_id = '1dr_RECOVERED_VALID_FILE_' + Date.now();
-  }
-
-  job.sourceRowMetadata.status = 'Approved';
+  const { catalogueRepository } = await import('../cms/catalogueRepository');
+  const job = await catalogueRepository.run(() => structuredClone(INGESTION_JOBS_STORE.find(job => job.id === jobId)));
+  if (!job) throw new Error('Import job not found.');
   const outcome = await processRegistryRow(job.sourceRowMetadata, 'admin_retry');
-
+  if (!outcome.success) throw new Error(outcome.error || 'Import retry failed.');
   return outcome.job;
 }
 
 /**
  * Triggers full sync with Google Sheet staging registry.
  */
-export async function syncRegistryNow(): Promise<{ syncedJobs: IngestionJobRecord[]; totalProcessed: number }> {
-  // Finds any approved rows in the registry and imports them
-  const approvedRows = INGESTION_JOBS_STORE.filter((j) => j.status === 'approved' || j.status === 'pending');
-  const processed: IngestionJobRecord[] = [];
-
-  for (const item of approvedRows) {
-    const outcome = await processRegistryRow(item.sourceRowMetadata, 'admin_manual_sync');
-    processed.push(outcome.job);
+export async function syncRegistryNow(): Promise<{ syncedJobs: IngestionJobRecord[]; totalProcessed: number; failedCount: number }> {
+  const { registrySource, readRegistrySheet, writeRegistryResult } = await import('./registrySource');
+  const { catalogueRepository } = await import('../cms/catalogueRepository');
+  const source = await registrySource.read();
+  const registry = await readRegistrySheet(source);
+  const approved = registry.rows.filter(item => item.row.status === 'Approved').slice(0, 5);
+  let failedCount = 0;
+  for (const item of approved) {
+    const outcome = await processRegistryRow(item.row, 'admin_manual_sync');
+    if (!outcome.success) failedCount++;
+    await writeRegistryResult(source, item.sheetRow, registry.headers, outcome, registry.token);
   }
-
-  return {
-    syncedJobs: INGESTION_JOBS_STORE,
-    totalProcessed: processed.length,
-  };
+  const jobs = await catalogueRepository.run(() => structuredClone(INGESTION_JOBS_STORE));
+  return { syncedJobs: jobs, totalProcessed: approved.length, failedCount };
 }

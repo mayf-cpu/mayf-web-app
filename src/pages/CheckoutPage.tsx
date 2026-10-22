@@ -10,7 +10,7 @@
  * - Real-time coupon calculation (BOARD2026, etc.)
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   ShieldCheck,
   Lock,
@@ -53,9 +53,9 @@ export const CheckoutPage: React.FC = () => {
   const [selectedProvider, setSelectedProvider] = useState<PaymentProvider>('razorpay');
 
   // Form State
-  const [studentName, setStudentName] = useState(user?.displayName || 'Arjun Sharma');
-  const [email, setEmail] = useState(user?.email || 'parent.sharma@gmail.com');
-  const [phone, setPhone] = useState(user?.phoneNumber || '+91 98765 43210');
+  const [studentName, setStudentName] = useState(user?.displayName || '');
+  const [email, setEmail] = useState(user?.email || '');
+  const [phone, setPhone] = useState(user?.phoneNumber || '');
   const [studentClass, setStudentClass] = useState(user?.studentClass || 'Class 10');
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState('');
@@ -90,6 +90,9 @@ export const CheckoutPage: React.FC = () => {
   }, []);
 
   // Pricing calculations
+  const [pricingReady, setPricingReady] = useState(false);
+  const [passEnabled, setPassEnabled] = useState(false);
+  const [configuredTaxRate, setConfiguredTaxRate] = useState(0);
   const [configuredPriceINR, setConfiguredPriceINR] = useState(999);
   const [configuredPassName, setConfiguredPassName] = useState('Maths at Your Fingertips Annual Pass (Class 5–10)');
 
@@ -184,10 +187,13 @@ export const CheckoutPage: React.FC = () => {
         if (res.ok) {
           const data = await res.json();
           if (data.success && data.settings) {
-            if (data.settings.salePrice) {
-              setConfiguredPriceINR(data.settings.salePrice);
-              initialGross = data.settings.salePrice;
+            if (Number.isFinite(data.settings.effectivePrice)) {
+              setConfiguredPriceINR(data.settings.effectivePrice);
+              initialGross = data.settings.effectivePrice;
             }
+            if (Number.isFinite(data.taxRatePercentage)) setConfiguredTaxRate(data.taxRatePercentage);
+            setPassEnabled(Boolean(data.settings.enabled));
+            setPricingReady(true);
             if (data.settings.name) setConfiguredPassName(data.settings.name);
           }
         }
@@ -198,7 +204,7 @@ export const CheckoutPage: React.FC = () => {
       // Check URL query parameters for coupon
       try {
         const params = new URLSearchParams(window.location.search);
-        const urlCoupon = params.get('coupon') || 'BOARD2026';
+        const urlCoupon = params.get('coupon') || '';
         if (urlCoupon) {
           const upper = urlCoupon.trim().toUpperCase();
           setCouponCode(upper);
@@ -221,9 +227,11 @@ export const CheckoutPage: React.FC = () => {
 
   const isINR = selectedProvider === 'razorpay';
   const grossPrice = isINR ? configuredPriceINR : 29;
-  const isDiscountActive = Boolean(couponValidation && couponValidation.valid && couponValidation.discountAmount > 0);
+  const isDiscountActive = Boolean(isINR && couponValidation && couponValidation.valid && couponValidation.discountAmount > 0);
   const discountAmount = isDiscountActive ? couponValidation!.discountAmount : 0;
-  const netAmount = isDiscountActive ? couponValidation!.netAmount : grossPrice;
+  const discountedSubtotal = isDiscountActive ? couponValidation!.netAmount : grossPrice;
+  const taxAmount = Math.round(discountedSubtotal * configuredTaxRate) / 100;
+  const netAmount = Math.round((discountedSubtotal + taxAmount) * 100) / 100;
 
   const handleApplyCoupon = (e: React.FormEvent) => {
     e.preventDefault();
@@ -241,22 +249,13 @@ export const CheckoutPage: React.FC = () => {
    */
   const handleInitiateOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!pricingReady || !passEnabled) { setErrorMsg('Payment pricing is unavailable or Annual Pass sales are paused. Please try again later.'); return; }
+    if (import.meta.env.PROD && !firebaseUser) { setErrorMsg('Please sign in before starting checkout.'); return; }
     setIsProcessing(true);
     setErrorMsg('');
     setVerificationSuccess(null);
 
     try {
-      // 1. Verify Bot Challenge (Cloudflare Turnstile)
-      try {
-        await fetch('/api/turnstile/verify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: 'cf-test-valid-checkout-token' }),
-        });
-      } catch (err) {
-        console.warn('Turnstile check non-blocking warning:', err);
-      }
-
       // 2. Obtain verified session token
       const token = firebaseUser
         ? await firebaseUser.getIdToken()
@@ -340,10 +339,16 @@ export const CheckoutPage: React.FC = () => {
           const rzp = new window.Razorpay(options);
           rzp.open();
         } catch (rzpErr) {
+          if (import.meta.env.PROD) throw new Error('The payment window could not open. Please allow popups and try again.');
           console.warn('[Razorpay] Script pop-up prevented, displaying sandbox verification portal:', rzpErr);
           setShowSandboxModal(true);
         }
+      } else if (selectedProvider === 'stripe' && orderData.checkoutData.clientPayload?.checkoutUrl) {
+        const checkoutUrl = new URL(orderData.checkoutData.clientPayload.checkoutUrl);
+        if (checkoutUrl.protocol !== 'https:' || checkoutUrl.hostname !== 'checkout.stripe.com') throw new Error('Invalid payment provider destination.');
+        window.location.assign(checkoutUrl.href);
       } else {
+        if (import.meta.env.PROD) throw new Error('The selected payment gateway is unavailable. Please try again later.');
         // In iframe preview or test mode where external popup is restricted
         setShowSandboxModal(true);
       }
@@ -363,6 +368,7 @@ export const CheckoutPage: React.FC = () => {
     providerOrderId: string;
     providerPaymentId: string;
     signature?: string;
+    stripeSessionId?: string;
   }) => {
     setIsProcessing(true);
     setShowSandboxModal(false);
@@ -430,6 +436,18 @@ export const CheckoutPage: React.FC = () => {
       setIsProcessing(false);
     }
   };
+
+  const verifiedStripeReturn = useRef(false);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('cancelled')) setErrorMsg('Payment was cancelled. You can try again.');
+    const orderId = params.get('orderId');
+    const sessionId = params.get('stripeSessionId');
+    if (!orderId || !sessionId || !firebaseUser || verifiedStripeReturn.current) return;
+    verifiedStripeReturn.current = true;
+    setSelectedProvider('stripe');
+    void executeServerVerification({ orderId, provider: 'stripe', providerOrderId: sessionId, providerPaymentId: '', stripeSessionId: sessionId });
+  }, [firebaseUser]);
 
   /**
    * Sandbox simulation confirmation (Generates valid mock HMAC token)
@@ -723,16 +741,16 @@ export const CheckoutPage: React.FC = () => {
                 )}
 
                 <div className="flex justify-between text-[#475569]">
-                  <span>Taxes & GST (Included)</span>
+                  <span>Tax ({configuredTaxRate}%)</span>
                   <span className="font-mono tabular-nums text-[#059669]">
-                    Included
+                    {isINR ? `₹${taxAmount.toFixed(2)}` : `$${taxAmount.toFixed(2)}`}
                   </span>
                 </div>
 
                 <div className="pt-3 border-t border-[#E2E8F0] flex justify-between text-sm font-bold text-[#0F172A]">
                   <span>Total Payable</span>
                   <span className="font-mono tabular-nums text-lg text-[#00687A]">
-                    {isINR ? `₹${netAmount}.00` : `$${netAmount}.00`}
+                    {isINR ? `₹${netAmount.toFixed(2)}` : `$${netAmount.toFixed(2)}`}
                   </span>
                 </div>
               </div>
@@ -755,6 +773,7 @@ export const CheckoutPage: React.FC = () => {
                 fullWidth
                 size="lg"
                 isLoading={isProcessing}
+                disabled={!pricingReady || !passEnabled}
                 className="font-bold text-sm shadow-md"
               >
                 <span>

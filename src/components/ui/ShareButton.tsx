@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Share2,
   Copy,
@@ -34,6 +35,9 @@ export const ShareButton: React.FC<ShareProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState('');
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPosition, setMenuPosition] = useState({ left: 8, top: 8, width: 288, maxHeight: 400 });
   const [hasNativeShare, setHasNativeShare] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -66,10 +70,30 @@ export const ShareButton: React.FC<ShareProps> = ({
       ? document.querySelector('meta[name="description"]')?.getAttribute('content') || ''
       : '');
 
+  useLayoutEffect(() => {
+    if (!isOpen || variant === 'inline') return;
+    const place = () => {
+      const trigger = dropdownRef.current?.getBoundingClientRect();
+      if (!trigger) return;
+      if (trigger.bottom < 0 || trigger.top > window.innerHeight) { setIsOpen(false); return; }
+      const width = Math.min(320, window.innerWidth - 16);
+      const height = Math.min(menuRef.current?.scrollHeight || 420, window.innerHeight - 16);
+      const below = window.innerHeight - trigger.bottom - 16;
+      const above = trigger.top - 16;
+      const openAbove = below < height && above > below;
+      const maxHeight = Math.max(80, openAbove ? above : below);
+      setMenuPosition({ width, maxHeight, left: Math.max(8, Math.min(align === 'right' ? trigger.right - width : trigger.left, window.innerWidth - width - 8)), top: openAbove ? Math.max(8, trigger.top - Math.min(height, maxHeight) - 8) : trigger.bottom + 8 });
+    };
+    place();
+    const onScroll = (event: Event) => { if (!menuRef.current?.contains(event.target as Node)) place(); };
+    window.addEventListener('resize', place); window.addEventListener('scroll', onScroll, true);
+    return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', onScroll, true); };
+  }, [isOpen, align, variant]);
+
   // Close on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node) && !menuRef.current?.contains(e.target as Node)) {
         setIsOpen(false);
       }
     };
@@ -98,6 +122,7 @@ export const ShareButton: React.FC<ShareProps> = ({
 
   const handleCopyLink = async (e?: React.MouseEvent) => {
     if (e) e.preventDefault();
+    setCopied(false); setCopyError('');
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(shareUrl);
@@ -107,8 +132,9 @@ export const ShareButton: React.FC<ShareProps> = ({
         input.value = shareUrl;
         document.body.appendChild(input);
         input.select();
-        document.execCommand('copy');
-        document.body.removeChild(input);
+        let didCopy = false;
+        try { didCopy = document.execCommand('copy'); } finally { document.body.removeChild(input); }
+        if (!didCopy) throw new Error('Clipboard blocked');
       }
       setCopied(true);
       trackShare({
@@ -118,7 +144,7 @@ export const ShareButton: React.FC<ShareProps> = ({
       });
       setTimeout(() => setCopied(false), 2200);
     } catch (err) {
-      console.warn('Clipboard write failed:', err);
+      setCopyError('Copy was blocked. Select and copy the link shown above.');
     }
   };
 
@@ -233,6 +259,7 @@ export const ShareButton: React.FC<ShareProps> = ({
           <span>{copied ? 'Copied!' : 'Copy Link'}</span>
         </button>
 
+        {copyError && <p role="alert" className="text-xs text-red-700">{copyError}</p>}
         {/* Web Share API if supported */}
         {hasNativeShare && (
           <button
@@ -306,13 +333,13 @@ export const ShareButton: React.FC<ShareProps> = ({
       )}
 
       {/* Share Popover / Dropdown Menu */}
-      {isOpen && (
+      {isOpen && createPortal(
         <div
+          ref={menuRef}
+          style={{ ...menuPosition, position: 'fixed', overflowY: 'auto' }}
           role="dialog"
           aria-label="Share Options"
-          className={`absolute z-50 mt-2 w-72 sm:w-80 bg-white rounded-xl shadow-2xl border border-[#CBD5E1] p-3 text-xs space-y-2.5 animate-in fade-in zoom-in-95 duration-150 ${
-            align === 'right' ? 'right-0' : 'left-0'
-          }`}
+          className="z-[100] bg-white rounded-xl shadow-2xl border border-[#CBD5E1] p-3 text-xs space-y-2.5"
         >
           {/* Header */}
           <div className="flex items-center justify-between pb-2 border-b border-[#F1F5F9]">
@@ -408,11 +435,12 @@ export const ShareButton: React.FC<ShareProps> = ({
             </div>
           </div>
 
+          {copyError && <p role="alert" className="text-red-700">{copyError}</p>}
           {/* Footer note */}
           <div className="text-[10px] text-[#94A3B8] text-center pt-1 border-t border-[#F1F5F9]">
             Direct canonical link with OpenGraph preview
           </div>
-        </div>
+        </div>, document.body
       )}
     </div>
   );

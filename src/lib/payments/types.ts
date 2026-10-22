@@ -147,6 +147,7 @@ export interface AnnualPassSettings {
   enabled: boolean;
   name: string;
   regularPrice: number;
+  familyPrice?: number;
   salePrice: number;
   currency: string;
   durationDays: number; // default: 365

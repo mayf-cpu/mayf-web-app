@@ -9,16 +9,7 @@
  * - Implements the pluggable SearchService interface
  */
 
-import {
-  collection,
-  query,
-  where,
-  limit,
-  getDocs,
-} from 'firebase/firestore';
-import { db } from '../firebase/client';
 import { SearchService, SearchQuery, SearchResultItem } from './searchInterface';
-import { SEED_CONTENT_ITEMS } from '../catalogue/catalogueService';
 import { INITIAL_FORMULAS, INITIAL_CHAPTERS } from '../../data/curriculumData';
 
 /**
@@ -44,37 +35,12 @@ export class LightweightSearchService implements SearchService {
     const tokens = normalized.split(' ').filter((t) => t.length > 1);
     const maxLimit = params.limit || 15;
 
-    // 1. Try Firestore `searchTerms` array-contains query if live
-    try {
-      const q = query(
-        collection(db, 'contentItems'),
-        where('visible', '==', true),
-        where('searchTerms', 'array-contains', normalized),
-        limit(maxLimit)
-      );
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        return snap.docs.map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
-            title: data.title,
-            slug: data.slug,
-            type: data.contentType === 'formulaSheet' ? 'formula' : 'chapter',
-            snippet: data.shortDescription || data.description || '',
-            classLevel: data.classLevels?.[0],
-            category: data.categoryId,
-            accessType: data.accessType || 'free',
-            url: data.contentType === 'formulaSheet' ? `/formula/${data.slug}` : `/study/${data.slug}`,
-          };
-        });
-      }
-    } catch {
-      // Degrade to indexed local token matching
-    }
-
-    // 2. Comprehensive in-memory matching with weighted ranking
-    const results: { item: SearchResultItem; score: number }[] = [];
+    const response = await fetch(`/api/catalogue?${new URLSearchParams({ search: rawQuery, classLevel: params.classLevel || 'All', categoryId: params.categoryId || 'All', pageSize: String(Math.min(20, maxLimit)) })}`);
+    const catalogue = await response.json();
+    if (!response.ok) throw new Error(catalogue.error || 'Search unavailable');
+    const results: { item: SearchResultItem; score: number }[] = catalogue.items.map((item: any) => ({
+      score: 15, item: { id: item.id, title: item.title, slug: item.slug, type: 'chapter', snippet: item.shortDescription || '', classLevel: item.classLevels?.[0], category: item.categoryId, accessType: item.accessType, url: `/study/${item.slug}` },
+    }));
 
     // Search formulas
     for (const f of INITIAL_FORMULAS) {
@@ -172,9 +138,13 @@ export class LightweightSearchService implements SearchService {
     const clean = prefix.toLowerCase().trim();
     if (clean.length < 2) return [];
 
+    const response = await fetch(`/api/catalogue?search=${encodeURIComponent(clean)}&pageSize=20`);
+    const data = await response.json();
+    if (!response.ok) return [];
+    const items = data.items || [];
     const suggestions = new Set<string>();
 
-    for (const item of SEED_CONTENT_ITEMS) {
+    for (const item of items) {
       if (item.title.toLowerCase().startsWith(clean)) {
         suggestions.add(item.title);
       }
@@ -188,7 +158,7 @@ export class LightweightSearchService implements SearchService {
 
     // Fallback to substring if prefix matches are fewer than 3
     if (suggestions.size < 3) {
-      for (const item of SEED_CONTENT_ITEMS) {
+      for (const item of items) {
         if (item.title.toLowerCase().includes(clean)) {
           suggestions.add(item.title);
         }
