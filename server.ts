@@ -12,6 +12,7 @@ import { firebaseAuthOrigin } from './src/lib/security/firebaseAuthOrigin';
 import publicFirebaseConfig from './src/config/firebasePublicConfig.json';
 import express, { Request, Response, NextFunction } from 'express';
 import { AiQuota } from './src/lib/ai/aiQuota';
+import { generateWithModelFallback } from './src/lib/ai/modelFallback';
 import { getAppCheck } from 'firebase-admin/app-check';
 import { GoogleGenAI } from '@google/genai';
 import { getFirebaseAdminApp, getAdminAuth, getAdminFirestore, adminSetCustomUserClaims, getFirebaseAdminConfig, getFirebaseAdminDiagnostics, verifyStudentSessionToken } from './src/lib/firebase/admin';
@@ -3666,54 +3667,34 @@ CRITICAL PEDAGOGICAL RULES:
       new Set([getAiTeacherModel(), 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'])
     ).filter(Boolean);
 
-    let successfullyGenerated = false;
+    const generated = await generateWithModelFallback(candidateModels, model => aiClient!.models.generateContent({
+      model,
+      contents: { parts },
+      config: { systemInstruction, temperature: 0.2 },
+    }), failure => console.warn('[MAYF AI Teacher] Provider attempt failed:', failure));
+    const successfullyGenerated = generated.success;
     let selectedModel = getAiTeacherModel();
 
-    if (aiClient && geminiApiKey) {
-      for (const modelToTry of candidateModels) {
-        try {
-          const timeoutPromise = new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error(`Timeout after 12s on model ${modelToTry}`)), 12000)
-          );
-
-          const generatePromise = aiClient.models.generateContent({
-            model: modelToTry,
-            contents: { parts },
-            config: {
-              systemInstruction,
-              temperature: 0.2,
-            },
-          });
-
-          const response = await Promise.race([generatePromise, timeoutPromise]);
-
-          if (response && response.text) {
-            replyText = response.text;
-            selectedModel = modelToTry;
-            successfullyGenerated = true;
-
-            if (replyText.toLowerCase().includes('blurry') || replyText.toLowerCase().includes('unclear')) {
-              responseStatus = 'clarification_needed';
-            }
-
-            if (response.usageMetadata) {
-              tokenMetadata = {
-                model: selectedModel,
-                promptTokens: response.usageMetadata.promptTokenCount,
-                candidateTokens: response.usageMetadata.candidatesTokenCount,
-                totalTokens: response.usageMetadata.totalTokenCount,
-              };
-            }
-            break; // Successfully got answer from AI
-          }
-        } catch (modelErr: any) {
-          console.warn(`[MAYF Server] Model ${modelToTry} attempt unavailable (${modelErr?.status || modelErr?.message}). Trying next candidate...`);
-        }
+    if (generated.success) {
+      const response = generated.response;
+      replyText = response.text!;
+      selectedModel = generated.model;
+      if (replyText.toLowerCase().includes('blurry') || replyText.toLowerCase().includes('unclear')) {
+        responseStatus = 'clarification_needed';
+      }
+      if (response.usageMetadata) {
+        tokenMetadata = {
+          model: selectedModel,
+          promptTokens: response.usageMetadata.promptTokenCount,
+          candidateTokens: response.usageMetadata.candidatesTokenCount,
+          totalTokens: response.usageMetadata.totalTokenCount,
+        };
       }
     }
 
     if (!successfullyGenerated) {
-      return res.status(503).json({ success: false, error: 'AI Teacher is temporarily unavailable. No answer was generated.' });
+      return res.status(503).json({ success: false, error: 'AI Teacher is temporarily unavailable. No answer was generated.',
+        code: generated.success === false ? generated.code : 'AI_PROVIDER_ERROR' });
     }
 
     const doubtId = `doubt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;

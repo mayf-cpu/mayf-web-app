@@ -8,6 +8,7 @@ import { useNavigation, Link } from '../context/NavigationContext';
 import { trackLogin } from '../lib/analytics/analyticsService';
 
 export const LoginPage: React.FC = () => {
+  const alternativesUnavailable = import.meta.env.PROD;
   const { user, entitlements, signInWithGoogle, loginWithEmail, logout } = useAuth();
   const { navigate } = useNavigation();
 
@@ -83,6 +84,10 @@ export const LoginPage: React.FC = () => {
 
   const handleSendOtp = (e: React.FormEvent) => {
     e.preventDefault();
+    if (alternativesUnavailable) {
+      setLoginError('Mobile sign-in is not configured. Please use Continue with Google.');
+      return;
+    }
     if (!phoneNumber) return;
     setIsLoading(true);
     setTimeout(() => {
@@ -250,6 +255,12 @@ export const LoginPage: React.FC = () => {
             </button>
           </div>
 
+          {alternativesUnavailable && (
+            <p role="status" className="text-xs text-[#475569] bg-[#F8FAFC] rounded-lg p-3">
+              Use Continue with Google to sign in. Email, mobile OTP, and demo sign-in are not available on this site yet.
+            </p>
+          )}
+
           {method === 'otp' ? (
             !otpSent ? (
               <form onSubmit={handleSendOtp} className="space-y-4">
@@ -259,6 +270,7 @@ export const LoginPage: React.FC = () => {
                   </label>
                   <input
                     type="tel"
+                    disabled={alternativesUnavailable}
                     required
                     placeholder="98765 43210"
                     value={phoneNumber}
@@ -272,6 +284,7 @@ export const LoginPage: React.FC = () => {
                   fullWidth
                   size="md"
                   isLoading={isLoading}
+                  disabled={alternativesUnavailable}
                   className="font-bold"
                 >
                   Send OTP
@@ -322,6 +335,7 @@ export const LoginPage: React.FC = () => {
                 </label>
                 <input
                   type="email"
+                  disabled={alternativesUnavailable}
                   required
                   placeholder="student@example.com"
                   value={email}
@@ -335,6 +349,7 @@ export const LoginPage: React.FC = () => {
                 fullWidth
                 size="md"
                 isLoading={isLoading}
+                disabled={alternativesUnavailable}
                 className="font-bold"
               >
                 Log In
@@ -345,6 +360,7 @@ export const LoginPage: React.FC = () => {
           {/* Quick Demo Student Switcher */}
           <div className="pt-2 border-t border-[#F1F5F9] text-center">
             <button
+              disabled={alternativesUnavailable}
               onClick={() => {
                 loginWithEmail('arjun.sharma@mayf.co.in');
                 navigate('/dashboard');
@@ -357,7 +373,7 @@ export const LoginPage: React.FC = () => {
 
           <div className="flex items-center justify-center gap-1.5 text-[11px] text-[#64748B]">
             <ShieldCheck className="w-3.5 h-3.5 text-[#10B981]" />
-            <span>Firebase Authentication & App Check Protected</span>
+            <span>Firebase Authentication</span>
           </div>
 
         </div>
