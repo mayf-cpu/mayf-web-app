@@ -3,6 +3,19 @@ import type { DownloadableItem } from './downloadRegistry';
 import { allowedPdfKey } from './pdfObjectStorage';
 import { getDownloadableItem } from './downloadRegistry';
 
+/** Shared eligibility for the public download button and authorization lookup. */
+export function downloadableCmsPdfFile(item: Record<string, any>): Record<string, any> | null {
+  if (item.isDeleted || item.visible !== true || item.downloadAllowed !== true ||
+      item.status !== 'published' || item.contentType !== 'pdf' ||
+      (item.accessType !== 'paid' && item.accessType !== 'free')) return null;
+  const prefix = 'r2://mayf-study-materials/';
+  return Array.isArray(item.files) ? item.files.find((file: any) => {
+    if (typeof file?.url !== 'string' || !file.url.startsWith(prefix)) return false;
+    try { allowedPdfKey(item.id, file.url.slice(prefix.length)); return true; }
+    catch { return false; }
+  }) || null : null;
+}
+
 /** Resolve published CMS PDFs with a private R2 object, not an external URL. */
 export async function resolveDownloadableItem(
   db: Pick<FirestoreDocumentStore, 'collection' | 'queryEqual'> | null,
@@ -18,15 +31,8 @@ export async function resolveDownloadableItem(
   }
   if (item) {
     const expectedPrefix = 'r2://mayf-study-materials/';
-    const activeFile = Array.isArray(item.files) ? item.files.find((file: any) => {
-      if (typeof file?.url !== 'string' || !file.url.startsWith(expectedPrefix)) return false;
-      try { allowedPdfKey(item.id, file.url.slice(expectedPrefix.length)); return true; }
-      catch { return false; }
-    }) : null;
-    if (item.isDeleted || item.visible !== true || item.downloadAllowed !== true ||
-        item.status !== 'published' || item.contentType !== 'pdf' ||
-        (item.accessType !== 'paid' && item.accessType !== 'free') ||
-        !activeFile) return null;
+    const activeFile = downloadableCmsPdfFile(item);
+    if (!activeFile) return null;
     return {
       id: item.id,
       objectKey: activeFile.url.slice(expectedPrefix.length),

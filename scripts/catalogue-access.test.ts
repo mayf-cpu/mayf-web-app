@@ -1,6 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { canReadPremiumContent, publicContent } from '../src/lib/catalogue/catalogueAccess';
+test('catalogue download controls agree with private CMS PDF eligibility', () => {
+  const pdf = { id: 'real-pdf', title: 'Real PDF', accessType: 'free', contentType: 'pdf',
+    visible: true, status: 'published', downloadAllowed: true,
+    files: [{ url: 'r2://mayf-study-materials/pdf/real-pdf.pdf' }] };
+  assert.equal(publicContent(pdf).downloadAllowed, true);
+  assert.equal(publicContent({ ...pdf, accessType: 'paid' }).downloadAllowed, true);
+  for (const patch of [{ files: [{ url: 'https://example.test/sample.pdf' }] },
+    { files: [{ url: 'r2://mayf-study-materials/pdf/other-item.pdf' }] },
+    { files: [] }, { visible: false }, { status: 'draft' }, { isDeleted: true },
+    { contentType: 'video' }, { downloadAllowed: false }]) {
+    assert.equal(publicContent({ ...pdf, ...patch }).downloadAllowed, false);
+  }
+});
 const item = { id: 'paid', accessType: 'paid', files: [{ url: 'https://example.test/private.pdf' }], embedUrl: 'https://example.test/private.mp4', galleryImages: ['private-image'], sourceDriveId: 'private-drive', sales: { revenue: 1 } };
 test('anonymous and expired members do not receive premium file locations', () => {
   assert.equal(canReadPremiumContent(null, true), false);

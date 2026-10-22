@@ -10,10 +10,7 @@ type State = { exportState(): Record<string, any>[]; importState(items: Record<s
 /** Each operation reads durable data. Conditional atomic writes reject concurrent edits. */
 export class CatalogueRepository {
   private queue: Promise<unknown> = Promise.resolve();
-  private defaults: Record<string, any>[][];
-  constructor(private states: { collection: string; state: State }[], private getStore: () => FirestoreDocumentStore | null) {
-    this.defaults = states.map(({ state }) => state.exportState());
-  }
+  constructor(private states: { collection: string; state: State }[], private getStore: () => FirestoreDocumentStore | null) {}
   run<T>(operation: () => T | Promise<T>, write = false): Promise<T> {
     const task = this.queue.then(async () => {
       const db = this.getStore();
@@ -21,7 +18,9 @@ export class CatalogueRepository {
       const marker = db ? await db.collection('catalogueState').doc('initialized').get() : null;
       const loaded = db ? await Promise.all(this.states.map(({ collection }) => db.list(collection))) : null;
       const before = this.states.map(({ state }, i) => loaded ? loaded[i].map(doc => ({ ...doc.data, id: doc.id })) : state.exportState());
-      this.states.forEach(({ state }, i) => state.importState(structuredClone(loaded && !marker?.exists && !loaded[i].length ? this.defaults[i] : before[i])));
+      // Configured Firestore is authoritative, including before the first write.
+      // Never advertise or persist bundled demo records when a collection is empty.
+      this.states.forEach(({ state }, i) => state.importState(structuredClone(before[i])));
       try {
         const result = await operation();
         if (write && db && !(result as any)?.failed) {

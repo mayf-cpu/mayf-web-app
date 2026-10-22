@@ -1,6 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CatalogueRepository } from '../src/lib/cms/catalogueRepository';
+test('fresh Firestore catalogue never exposes or persists bundled demo records', async () => {
+  let memory = [{ id: 'bundled-demo', title: 'Not a saved record' }];
+  let documents: any[] = [];
+  const commits: any[][] = [];
+  const state = { exportState: () => structuredClone(memory), importState: (items: any[]) => { memory = items; } };
+  const store = {
+    collection: () => ({ doc: () => ({ get: async () => ({ exists: false }) }) }),
+    list: async () => structuredClone(documents),
+    commit: async (changes: any[]) => { commits.push(changes); },
+  };
+  const repository = new CatalogueRepository([{ collection: 'contentItems', state }], () => store as any);
+  assert.deepEqual(await repository.run(() => state.exportState()), []);
+  assert.equal(commits.length, 0);
+  await repository.run(() => state.importState([{ id: 'real', title: 'Created by admin' }]), true);
+  assert.deepEqual(commits[0].filter(change => change.collection === 'contentItems').map(change => change.id), ['real']);
+  documents = [{ id: 'saved', data: { title: 'Imported PDF' } }];
+  assert.deepEqual(await repository.run(() => state.exportState()), [{ id: 'saved', title: 'Imported PDF' }]);
+});
 function fixture() {
   let memory: any[] = [{ id: 'existing', title: 'Original', visible: true }];
   let documents = new Map(memory.map(data => [data.id, { id: data.id, data: structuredClone(data), updateTime: 'v1' }]));
