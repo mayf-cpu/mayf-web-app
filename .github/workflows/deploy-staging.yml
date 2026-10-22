@@ -50,6 +50,8 @@ jobs:
         run: node scripts/check-staging-frontend-env.mjs
       - name: Build frontend with isolated staging Firebase configuration
         env:
+          # Public widget key must be compiled into Vite assets; the paired secret stays in the Worker.
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.MAYF_STAGING_TURNSTILE_SITE_KEY }}
           MAYF_ALLOW_SHARED_DEVELOPMENT_FIREBASE: 'true'
           VITE_APP_ENV: staging
           MAYF_STAGING_FIREBASE_PROJECT_ID: ${{ vars.MAYF_STAGING_FIREBASE_PROJECT_ID }}
