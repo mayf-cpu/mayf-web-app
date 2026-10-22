@@ -1,14 +1,16 @@
+import { downloadCards, type DownloadCard as DownloadResource } from '../lib/download/downloadCatalogue';
+import { orderReceipt } from '../lib/payments/orderReceipt';
 /**
  * Comprehensive Student Dashboard for Maths at Your Fingertips (mayf.co.in)
  *
  * All 11 Core Student Sections:
  * 1. Profile (Google Auth credentials, Grade/Board selectors, Account metadata, Privacy pledge)
  * 2. Membership (Free vs Annual Pass status & comparison)
- * 3. Annual Pass (Active digital pass card, benefits, validity until 2027)
+ * 3. Annual Pass (Active digital pass card, benefits, verified expiry)
  * 4. Recent Activity (Product events: content_view, download, save, unsave, ai_question, purchase, course_open, formula_view with 50-event/30-day retention)
  * 5. Recently Viewed (Quick-access cards of recently browsed formulas & chapters)
  * 6. Saved Resources (Bookmarked formulas with KaTeX rendering, quick copy, unsave)
- * 7. Purchases (Order records, GST invoice downloads, 7-day guarantee)
+ * 7. Purchases (Order records, recorded payment receipts)
  * 8. Downloads (High-res syllabus PDF cheatsheets with secure download tokens)
  * 9. AI Teacher History (Professor Sigma doubts, KaTeX math solutions, ratings)
  * 10. Courses (Grade-aligned courses, progress tracking, resume learning)
@@ -100,64 +102,6 @@ export type DashboardTab =
   | 'courses'
   | 'notifications';
 
-interface DownloadResource {
-  id: string;
-  title: string;
-  classLevel: StudentClass;
-  fileSize: string;
-  pages: number;
-  category: string;
-  description: string;
-}
-
-const DOWNLOAD_RESOURCES: DownloadResource[] = [
-  {
-    id: 'dl-10-cheatsheet',
-    title: 'Class 10 Board Exam Complete Formula Cheatsheet',
-    classLevel: 'Class 10',
-    fileSize: '2.4 MB',
-    pages: 14,
-    category: 'Formula Flashcards',
-    description: 'Every formula in Real Numbers, Polynomials, Linear Systems, Quadratics, AP, Triangles, Trig, Circles, and Surface Areas in printable high-resolution PDF format.',
-  },
-  {
-    id: 'dl-10-theorems',
-    title: 'Class 10 Essential Geometry Proofs & Theorems Reference',
-    classLevel: 'Class 10',
-    fileSize: '1.8 MB',
-    pages: 8,
-    category: 'Theorems & Axioms',
-    description: 'Complete step-by-step proofs for Basic Proportionality Theorem (BPT), Tangent Theorem, and cyclic properties with diagrams.',
-  },
-  {
-    id: 'dl-9-circles',
-    title: 'Class 9 Geometry & Mensuration Formula Handbook',
-    classLevel: 'Class 9',
-    fileSize: '1.5 MB',
-    pages: 10,
-    category: 'Formula Flashcards',
-    description: 'Quick reference for Herons formula, Surface Areas & Volumes of cylinders/cones, and Circle chord angle properties.',
-  },
-  {
-    id: 'dl-8-algebra',
-    title: 'Class 8 Linear Equations & Factorisation Workbook',
-    classLevel: 'Class 8',
-    fileSize: '1.2 MB',
-    pages: 12,
-    category: 'Practice Sheet',
-    description: 'Rational numbers, Linear Equations in one variable, Quadrilateral properties, Algebraic expressions and identities, and Factorisation.',
-  },
-  {
-    id: 'dl-7-integers',
-    title: 'Class 7 Integers & Decimals Quick Reference',
-    classLevel: 'Class 7',
-    fileSize: '1.1 MB',
-    pages: 8,
-    category: 'Foundations',
-    description: 'Sign operations on Integers, Fractions & Decimals, Simple Equations, and Comparing Quantities (Percentages, Profit & Loss).',
-  },
-];
-
 export const StudentDashboard: React.FC = () => {
   const { user, firebaseUser, entitlements, updateClass, logout, savedItemIds, toggleSavedItem, isAnnualPassActive } = useAuth();
   const { currentRoute, navigate } = useNavigation();
@@ -240,71 +184,75 @@ export const StudentDashboard: React.FC = () => {
     settings?: any;
   } | null>(null);
 
-  // Student orders from server
-  const [studentOrders, setStudentOrders] = useState<any[]>([]);
-
+  const [downloadResources, setDownloadResources] = useState<DownloadResource[]>([]);
+  const [downloadsLoading, setDownloadsLoading] = useState(false);
+  const [downloadsError, setDownloadsError] = useState('');
+  const [downloadsNext, setDownloadsNext] = useState<number | null>(null);
+  const downloadsRun = useRef(0);
+  const loadDownloadCatalogue = async (offset = 0) => {
+    const run = ++downloadsRun.current; setDownloadsLoading(true); setDownloadsError('');
+    try {
+      const params = new URLSearchParams({ contentType: 'pdf', pageSize: '20', offset: String(offset) });
+      if (user?.studentClass) params.set('classLevel', user.studentClass);
+      const response = await fetch('/api/catalogue?' + params);
+      if (!response.ok) throw new Error('Download catalogue could not be loaded. Please retry.');
+      const data = await response.json(); const cards = downloadCards(data.items);
+      if (run !== downloadsRun.current) return;
+      setDownloadResources(previous => offset ? [...previous, ...cards.filter(card => !previous.some(old => old.id === card.id))] : cards);
+      const next = data.nextCursor?.offset;
+      setDownloadsNext(data.hasMore && Number.isSafeInteger(next) && next > offset ? next : null);
+    } catch (error: any) { if (run === downloadsRun.current) setDownloadsError(error.message || 'Download catalogue unavailable.'); }
+    finally { if (run === downloadsRun.current) setDownloadsLoading(false); }
+  };
   useEffect(() => {
+    setDownloadResources([]); setDownloadsNext(null);
+    if (activeTab === 'downloads') loadDownloadCatalogue();
+    return () => { downloadsRun.current++; };
+  }, [activeTab, user?.uid, user?.studentClass]);
+
+  // Account-scoped orders: an empty list and a failed request have distinct UI states.
+  const [studentOrders, setStudentOrders] = useState<any[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState('');
+  useEffect(() => {
+    let current = true; const controller = new AbortController();
+    setStudentOrders([]); setServerEntitlement(null); setOrdersError(''); setOrdersLoading(true);
     async function loadEntitlement() {
       try {
-        const token = firebaseUser
-          ? await firebaseUser.getIdToken()
-          : user?.uid
-          ? `dev-student-${user.uid}`
-          : 'dev-student-mayf-student-1001';
-        const res = await fetch('/api/student/entitlement', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success) {
-            setServerEntitlement(data);
-          }
+        if (import.meta.env.PROD && !firebaseUser) return;
+        const token = firebaseUser ? await firebaseUser.getIdToken() : `dev-student-${user?.uid || 'mayf-student-1001'}`;
+        const headers = { Authorization: `Bearer ${token}` };
+        const results = await Promise.allSettled([
+          fetch('/api/student/entitlement', { headers, signal: controller.signal }).then(async response => {
+            const data = await response.json();
+            if (!response.ok || !data.success) throw new Error('Membership status could not be verified.');
+            if (current) setServerEntitlement(data);
+          }),
+          fetch('/api/student/orders', { headers, signal: controller.signal }).then(async response => {
+            const data = await response.json();
+            if (!response.ok || !data.success || !Array.isArray(data.orders)) throw new Error('Purchase history could not be loaded. Please retry later.');
+            if (current) setStudentOrders(data.orders.filter((order: any) => order.userId === (firebaseUser?.uid || user?.uid)));
+          }),
+        ]);
+        if (current) {
+          const failure = results.find(result => result.status === 'rejected');
+          if (failure?.status === 'rejected') setOrdersError(failure.reason?.message || 'Account records are unavailable.');
         }
-
-        // Also load student orders from authoritative API
-        const ordersRes = await fetch('/api/student/orders', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (ordersRes.ok) {
-          const ordersData = await ordersRes.json();
-          if (ordersData.success && Array.isArray(ordersData.orders)) {
-            setStudentOrders(ordersData.orders);
-          }
-        }
-      } catch (err) {
-        console.warn('Could not fetch server entitlement or orders:', err);
-      }
+      } catch (error: any) { if (current) setOrdersError(error.message || 'Account records are unavailable.'); }
+      finally { if (current) setOrdersLoading(false); }
     }
     loadEntitlement();
-  }, [user, firebaseUser]);
+    return () => { current = false; controller.abort(); };
+  }, [user?.uid, firebaseUser]);
 
-  const handleDownloadInvoice = (orderId: string, amount: string | number = '899.00') => {
-    const invoiceText =
-      `=======================================================\n` +
-      `  TAX INVOICE / RECEIPT - MATHS AT YOUR FINGERTIPS\n` +
-      `  Website: https://mayf.co.in | GSTIN: 27AABCM8921P1Z5\n` +
-      `=======================================================\n` +
-      `Invoice / Order ID: ${orderId}\n` +
-      `Date: ${new Date().toLocaleDateString()}\n` +
-      `Student: ${user?.displayName || 'Arjun Sharma'}\n` +
-      `Class/Board: ${user?.studentClass || 'Class 10'} (${user?.board || 'CBSE'})\n` +
-      `Item: Maths at Your Fingertips Annual Pass (Class 5–10)\n` +
-      `Gross Amount: ₹999.00\n` +
-      `Discount (BOARD2026): -₹100.00\n` +
-      `Net Amount Paid: ₹${amount}\n` +
-      `Payment Status: PAID (Verified 256-Bit SSL Transaction)\n` +
-      `7-Day Money-Back Guarantee Active\n` +
-      `=======================================================\n` +
-      `Thank you for learning with Maths at Your Fingertips!\n`;
-    const blob = new Blob([invoiceText], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `MAYF_Invoice_${orderId}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const handleDownloadInvoice = (order: any) => {
+    try {
+      const text = orderReceipt(order, firebaseUser?.uid || user?.uid || '');
+      const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+      const anchor = document.createElement('a'); anchor.href = url;
+      anchor.download = `MAYF_Receipt_${String(order.orderId).replace(/[^A-Za-z0-9_-]/g, '_')}.txt`;
+      document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url);
+    } catch (error: any) { setOrdersError(error.message || 'Receipt could not be generated.'); }
   };
 
   const isPassActive = serverEntitlement !== null ? serverEntitlement.active : isAnnualPassActive;
@@ -800,7 +748,7 @@ export const StudentDashboard: React.FC = () => {
                     </div>
                     <p className="text-xs text-[#64748B] mt-1">
                       {isAnnualPassActive
-                        ? 'Unlimited access to all Class 5–10 resources, AI Doubt Solver, and printable PDFs.'
+                        ? 'Access to included Class 5–10 resources, printable PDFs and your plan’s AI allowance.'
                         : 'Free access to public formulas and chapter study modules.'}
                     </p>
                   </div>
@@ -808,7 +756,7 @@ export const StudentDashboard: React.FC = () => {
                   {!isAnnualPassActive && (
                     <Link href="/annual-pass">
                       <Button variant="primary" size="md">
-                        Upgrade to Annual Pass (₹999/yr)
+                        View Annual Pass pricing
                       </Button>
                     </Link>
                   )}
@@ -843,7 +791,7 @@ export const StudentDashboard: React.FC = () => {
                   <div className="p-4 rounded-lg border border-[#BFDBFE] bg-gradient-to-br from-[#EFF6FF] to-[#DBEAFE] space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="font-heading font-bold text-sm text-[#1E3A8A]">
-                        Annual Pass Tier (₹999/yr)
+                        Annual Pass tier
                       </div>
                       <Badge variant="pro">ALL ACCESS</Badge>
                     </div>
@@ -927,7 +875,7 @@ export const StudentDashboard: React.FC = () => {
                               month: 'long',
                               day: 'numeric',
                             })
-                          : 'March 31, 2027'}
+                          : 'Expiry not available'}
                       </span>
                     </div>
                     <div>
@@ -1275,7 +1223,7 @@ export const StudentDashboard: React.FC = () => {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#F1F5F9]">
                   <div>
                     <h3 className="font-heading font-bold text-base text-[#0F172A]">
-                      Orders & GST Tax Invoices
+                      Orders & Payment Receipts
                     </h3>
                     <p className="text-xs text-[#64748B]">
                       Verified records of your learning subscriptions and payments.
@@ -1283,10 +1231,11 @@ export const StudentDashboard: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-2 text-xs text-[#059669] font-medium bg-[#ECFDF5] px-3 py-1.5 rounded-lg border border-[#A7F3D0]">
                     <Shield className="w-4 h-4" />
-                    <span>Protected under 7-Day Money-Back Guarantee</span>
+                    <span>Refunds follow the published refund policy</span>
                   </div>
                 </div>
 
+                {ordersError && <p role="alert" className="text-sm text-amber-800">{ordersError}</p>}
                 {/* Purchases Table */}
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
@@ -1298,7 +1247,7 @@ export const StudentDashboard: React.FC = () => {
                         <th className="py-2.5 px-4">Amount</th>
                         <th className="py-2.5 px-4">Status</th>
                         <th className="py-2.5 px-4">Date</th>
-                        <th className="py-2.5 px-4 text-right">Invoice</th>
+                        <th className="py-2.5 px-4 text-right">Receipt</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#F1F5F9]">
@@ -1322,7 +1271,7 @@ export const StudentDashboard: React.FC = () => {
                               </span>
                             </td>
                             <td className="py-3 px-4 font-mono font-bold text-[#0F172A]">
-                              ₹{(ord.grossAmount - (ord.discount || 0) + (ord.tax || 0)).toFixed(2)}
+                              {new Intl.NumberFormat('en-IN', { style: 'currency', currency: ord.currency }).format(ord.grossAmount - (ord.discount || 0) + (ord.tax || 0))}
                             </td>
                             <td className="py-3 px-4">
                               <span className={`text-[11px] font-semibold px-2 py-0.5 rounded uppercase ${
@@ -1342,52 +1291,20 @@ export const StudentDashboard: React.FC = () => {
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                onClick={() => handleDownloadInvoice(ord.orderId, ord.grossAmount - (ord.discount || 0))}
+                                onClick={() => handleDownloadInvoice(ord)}
+                                disabled={!['paid', 'refunded'].includes(ord.status)}
                                 className="text-xs text-[#00687A]"
                               >
                                 <Download className="w-3 h-3 mr-1" />
-                                <span>PDF</span>
+                                <span>Receipt</span>
                               </Button>
                             </td>
                           </tr>
                         ))
                       ) : (
-                        <tr className="hover:bg-[#F8FAFC]">
-                          <td className="py-3 px-4 font-mono font-bold text-[#0F172A]">
-                            MAYF-ORD-2026-1001
-                          </td>
-                          <td className="py-3 px-4 font-heading font-semibold text-[#0F172A]">
-                            Maths at Your Fingertips Annual Pass (Class 5–10)
-                            <span className="text-[10px] text-[#059669] block font-normal">Coupon: BOARD2026 (-₹100)</span>
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-[#E0F2FE] text-[#0284C7]">
-                              Razorpay
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 font-mono font-bold text-[#0F172A]">
-                            ₹899.00
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className="text-[11px] bg-[#ECFDF5] text-[#059669] font-semibold px-2 py-0.5 rounded uppercase">
-                              Paid
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-[#64748B]">
-                            Oct 5, 2026
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleDownloadInvoice('MAYF-ORD-2026-1001', '899.00')}
-                              className="text-xs text-[#00687A]"
-                            >
-                              <Download className="w-3 h-3 mr-1" />
-                              <span>PDF</span>
-                            </Button>
-                          </td>
-                        </tr>
+                        <tr><td colSpan={7} className="py-6 px-4 text-center text-slate-500">
+                          {ordersLoading ? 'Loading purchase history…' : ordersError || 'No recorded purchases for this account.'}
+                        </td></tr>
                       )}
                     </tbody>
                   </table>
@@ -1407,13 +1324,16 @@ export const StudentDashboard: React.FC = () => {
                     Printable High-Resolution Downloads
                   </h3>
                   <p className="text-xs text-[#64748B]">
-                    Verified PDF sheets, exam cheat notes, and theorem proofs protected by Cloudflare Turnstile single-use tokens.
+                    Published PDF study materials. Access and file availability are checked when you download.
                   </p>
                 </div>
               </div>
 
+              {downloadsError && <p role="alert" className="text-sm text-amber-800">{downloadsError}</p>}
+              {!downloadsLoading && !downloadsError && !downloadResources.length && <p className="text-sm text-slate-500">No published PDFs available for your class yet.</p>}
+              {downloadsLoading && <p role="status">Loading PDF catalogue…</p>}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {DOWNLOAD_RESOURCES.map((item) => (
+                {downloadResources.map((item) => (
                   <div
                     key={item.id}
                     className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-xs space-y-3 flex flex-col justify-between"
@@ -1424,7 +1344,7 @@ export const StudentDashboard: React.FC = () => {
                           {item.category}
                         </span>
                         <span className="font-mono text-[#64748B] text-[11px]">
-                          {item.fileSize} · {item.pages} Pages
+                          {item.fileSize}{item.pages ? ` · ${item.pages} pages` : ''}
                         </span>
                       </div>
 
@@ -1439,7 +1359,7 @@ export const StudentDashboard: React.FC = () => {
 
                     <div className="pt-3 border-t border-[#F1F5F9] flex items-center justify-between">
                       <span className="text-xs font-semibold text-[#059669]">
-                        Verified PDF (Clean Print Format)
+                        PDF study material
                       </span>
                       <Button
                         size="sm"
@@ -1454,6 +1374,8 @@ export const StudentDashboard: React.FC = () => {
                   </div>
                 ))}
               </div>
+              {(downloadsNext !== null || downloadsError) && <Button variant="outline" disabled={downloadsLoading}
+                onClick={() => loadDownloadCatalogue(downloadsNext || 0)}>{downloadsError ? 'Retry catalogue' : 'Load more PDFs'}</Button>}
             </div>
           )}
 

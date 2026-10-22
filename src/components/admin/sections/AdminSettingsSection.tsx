@@ -28,20 +28,21 @@ export const AdminSettingsSection: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'security' | 'audit'>('security');
   const [config, setConfig] = useState<SecurityConfigRecord>({
-    cloudflareAccessAud: '566895799712-cfaccess-aud-mayf-2026',
-    cloudflareTeamDomain: 'mayf.cloudflareaccess.com',
+    cloudflareAccessAud: '',
+    cloudflareTeamDomain: '',
     requireCloudflareAccess: false,
-    authorizedAdminEmails: ['2026vivekkushwah@gmail.com', 'ntnagrawal146@gmail.com', 'admin@mayf.co.in'],
+    authorizedAdminEmails: [],
     emergencyMaintenanceMode: false,
     tokenRevocationWindowMinutes: 60,
-    updatedAt: new Date().toISOString(),
-    updatedBy: '2026vivekkushwah@gmail.com',
+    updatedAt: '',
+    updatedBy: '',
   });
 
   const [auditCategory, setAuditCategory] = useState<string>('all');
   const [auditLogs, setAuditLogs] = useState<AuditLogRecord[]>([]);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [configLoaded, setConfigLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const loadData = async () => {
@@ -51,8 +52,9 @@ export const AdminSettingsSection: React.FC = () => {
         adminService.getSecurityConfig(),
         adminService.getAuditLogs(auditCategory),
       ]);
-      setConfig(secConfig);
+      setConfig(secConfig); setConfigLoaded(true); setErrorMessage(null);
       setAuditLogs(logs);
+    } catch (error: any) { setConfigLoaded(false); setErrorMessage(error.message || 'Settings could not be loaded.');
     } finally {
       setLoading(false);
     }
@@ -64,32 +66,34 @@ export const AdminSettingsSection: React.FC = () => {
 
   const handleSaveSecurity = async () => {
     setErrorMessage(null);
-    if (!entitlements.isSuperAdmin) {
+    if (!configLoaded || !entitlements.isSuperAdmin) {
       setErrorMessage('Only superAdmin can modify critical security configuration.');
       return;
     }
 
     setLoading(true);
     setSavedMessage(null);
-    const res = await adminService.updateSecurityConfig(config);
-    setLoading(false);
-
-    if (res.success) {
-      setSavedMessage('Critical security settings saved and recorded in audit log.');
-      setTimeout(() => setSavedMessage(null), 3000);
-      const logs = await adminService.getAuditLogs('security');
-      setAuditLogs(logs);
-    } else {
-      setErrorMessage(res.error || 'Failed to update security configuration.');
-    }
+    try {
+      const res = await adminService.updateSecurityConfig(config);
+      if (!res.success) throw new Error(res.error || 'Maintenance mode could not be saved.');
+      if (res.config) setConfig(res.config);
+      setSavedMessage('Maintenance mode saved and recorded in the audit log.');
+      setAuditLogs(await adminService.getAuditLogs('security'));
+    } catch (error: any) { setErrorMessage(error.message || 'Security operation could not be completed.'); }
+    finally { setLoading(false); }
   };
 
-  const handleExportAuditCsv = () => {
-    const url = `/api/admin/audit-logs/export${auditCategory !== 'all' ? `?category=${auditCategory}` : ''}`;
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `mayf-audit-logs-${auditCategory}-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
+  const handleExportAuditCsv = async () => {
+    try {
+      const url = `/api/admin/audit-logs/export${auditCategory !== 'all' ? `?category=${encodeURIComponent(auditCategory)}` : ''}`;
+      const response = await fetch(url, { headers: await adminService.getAuthHeaders() });
+      if (!response.ok) throw new Error('Audit export failed. Please sign in again or retry.');
+      if (!(response.headers.get('content-type') || '').includes('text/csv')) throw new Error('Audit export returned an invalid file.');
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement('a'); anchor.href = objectUrl;
+      anchor.download = `mayf-audit-logs-${auditCategory}-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(objectUrl);
+    } catch (error: any) { setErrorMessage(error.message || 'Audit export failed.'); }
   };
 
   return (
@@ -101,7 +105,7 @@ export const AdminSettingsSection: React.FC = () => {
             <span>Security Configuration & Audit Infrastructure</span>
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Strict defence in depth: edge protection, token revocation policies, and comprehensive compliance audit trails.
+            Review administrator audit records and pause new purchases during maintenance.
           </p>
         </div>
 
@@ -110,7 +114,7 @@ export const AdminSettingsSection: React.FC = () => {
             <Button
               size="sm"
               variant="primary"
-              disabled={loading || !entitlements.isSuperAdmin}
+              disabled={loading || !configLoaded || !entitlements.isSuperAdmin}
               onClick={handleSaveSecurity}
               className="gap-1.5 shadow-xs"
             >
@@ -196,24 +200,24 @@ export const AdminSettingsSection: React.FC = () => {
                     Cloudflare Edge Services & Security
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Global DNS, CDN proxy, HTTPS, WAF, Turnstile bot protection, and cache acceleration active.
+                    Hosting and bot-protection settings are managed in Cloudflare. Their live status must be verified there.
                   </p>
                 </div>
               </div>
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                EDGE ACTIVE
+                EXTERNAL CONFIGURATION
               </span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-1 text-xs">
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
                 <span className="font-bold text-slate-800 block">Cloudflare CDN & Proxy</span>
-                <span className="text-[11px] text-slate-500">Orange-cloud proxied across global edge servers</span>
+                <span className="text-[11px] text-slate-500">Verify proxy and DNS settings in Cloudflare</span>
               </div>
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
                 <span className="font-bold text-slate-800 block">WAF & Turnstile</span>
-                <span className="text-[11px] text-slate-500">Bot defense and Turnstile CAPTCHA verification</span>
+                <span className="text-[11px] text-slate-500">Verify WAF rules and Turnstile credentials before release</span>
               </div>
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg sm:col-span-2 md:col-span-1">
                 <span className="font-bold text-slate-800 block">Admin Authentication</span>
@@ -259,7 +263,7 @@ export const AdminSettingsSection: React.FC = () => {
               <input
                 type="checkbox"
                 checked={config.emergencyMaintenanceMode}
-                disabled={!entitlements.isSuperAdmin}
+                disabled={!configLoaded || !entitlements.isSuperAdmin}
                 onChange={(e) => setConfig({ ...config, emergencyMaintenanceMode: e.target.checked })}
                 className="sr-only peer"
               />

@@ -19,3 +19,8 @@ export function isSupportedLaunchPaymentMethod(currency: unknown, provider: unkn
   return typeof currency === 'string' && currency.toUpperCase() === 'INR' &&
     (provider === undefined || provider === null || provider === 'auto' || provider === 'razorpay');
 }
+
+/** Enforce the deferred-Stripe release policy for internal service callers too. */
+export function assertReleaseCheckout(provider: unknown, currency: unknown): void {
+  if (!isSupportedLaunchPaymentMethod(currency, provider)) throw new Error('Only Razorpay checkout in INR is currently available.');
+}

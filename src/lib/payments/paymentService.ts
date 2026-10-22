@@ -1,4 +1,5 @@
 import { isProductionPaymentRuntime } from './runtime';
+import { assertReleaseCheckout } from './checkoutPolicy';
 import type { DurablePaymentRepository } from './durablePaymentRepository';
 /**
  * Provider-Independent Payment Service
@@ -210,6 +211,7 @@ export class PaymentService {
     providerResult: ProviderOrderResult;
   }> {
     const { userId, items, grossAmount, coupon, currency = 'INR', preferredProvider, customerDetails } = req;
+    assertReleaseCheckout(preferredProvider, currency);
     const purchasedDuration = req.annualPassDurationDays ?? 365;
     if (!Number.isInteger(purchasedDuration) || purchasedDuration < 1 || purchasedDuration > 3650) throw new Error('Invalid purchased membership duration.');
 
@@ -249,7 +251,8 @@ export class PaymentService {
     }
 
     // Determine target provider adapter
-    const adapter = this.getAdapter(preferredProvider, currency);
+    // Explicit release provider: stale auto/Stripe configuration must not reroute INR purchases.
+    const adapter = this.getAdapter('razorpay', currency);
     const providerType = adapter.provider;
 
     // Generate authoritative internal Order ID: MAYF-ORD-YYYYMMDD-XXXX

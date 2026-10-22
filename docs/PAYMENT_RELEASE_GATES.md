@@ -59,3 +59,11 @@
 ## Interim gateway availability
 
 For the requested first release, **Stripe is postponed**, not removed. The checkout page displays the international option as unavailable; server order creation only permits INR/Razorpay, including when the administrator has saved `activeProvider=stripe` and the client sends `auto`. `MAYF_ENABLE_CHECKOUT` remains false pending actual Razorpay sandbox settlement acceptance. Enabling Stripe later requires implementing and verifying hosted Checkout, signed settlement, refunds, and frontend confirmation; do not bypass the server gateway policy for a partially tested route.
+
+## User-authorized release scope and 22 October review
+
+The user has explicitly deferred Stripe. Launch scope is INR through Razorpay; preserve the Stripe implementation but keep it unavailable. Saved Stripe defaults cannot reroute service callers. Stripe setup is no longer a prerequisite for this scope. All other applicable live acceptance gates remain.
+
+Maintenance mode now persists atomically with its audit record and is enforced by the server before new order creation. The public checkout flag also reflects maintenance. This pauses new purchases while preserving admin tools and provider webhook reconciliation.
+
+See docs/PRODUCTION_READINESS_2026-10-22.md for the actual automated coverage, repaired student purchase/download flows and outstanding live-service/browser acceptance. Do not describe those live tests as completed.

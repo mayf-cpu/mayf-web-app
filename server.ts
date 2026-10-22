@@ -7,6 +7,8 @@ import { asyncRoute } from './src/lib/http/asyncRoute';
 import { filterCatalogue } from './src/lib/catalogue/catalogueQuery';
 import { catalogueRepository, catalogueRoute } from './src/lib/cms/catalogueRepository';
 import { isAllowedRequestOrigin } from './src/lib/security/requestOrigin';
+import { securitySettings } from './src/lib/security/securitySettings';
+import { firebaseAuthOrigin } from './src/lib/security/firebaseAuthOrigin';
 import publicFirebaseConfig from './src/config/firebasePublicConfig.json';
 import express, { Request, Response, NextFunction } from 'express';
 import { AiQuota } from './src/lib/ai/aiQuota';
@@ -57,20 +59,6 @@ import { sitemapService } from './src/lib/seo/sitemapService';
 import { aggregateMetricsService } from './src/lib/analytics/aggregateMetricsService';
 
 const app = express();
-// Refresh settings on their own routes so one integration cannot block unrelated APIs.
-for (const [paths, initialize] of [
-  [['/api/site-settings', '/api/admin/site-settings'], async () => { await siteSettingsService.initFromFirestore(); await homepageLayoutService.initFromFirestore(); }],
-  [['/api/homepage/layout', '/api/admin/layout/homepage'], () => homepageLayoutService.initFromFirestore()],
-  [['/api/adsense', '/api/admin/adsense'], () => adSenseService.initFromFirestore()],
-  [['/api/broadcasts', '/api/admin/broadcasts'], () => broadcastService.initStore()],
-  [['/api/payments', '/api/admin/payments/settings'], () => paymentSettingsRepository.run(() => undefined)],
-  [['/api/payments/create-order'], () => catalogueRepository.run(() => undefined)],
-] as [string[], () => Promise<void>][]) {
-  app.use(paths, async (_req, res, next) => {
-    try { await initialize(); next(); }
-    catch { res.status(503).json({ error: 'Firebase storage unavailable. Check Firestore database and service-account permissions.' }); }
-  });
-}
 // Environment constraint: Dev server must run on port 3000
 const isProduction = isProductionPaymentRuntime();
 
@@ -98,16 +86,20 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=(), payment=(self)');
 
+  // Firebase popup sign-in loads its helper iframe from the configured authDomain.
+  const authOrigin = firebaseAuthOrigin({ authDomain: process.env.FIREBASE_AUTH_DOMAIN || process.env.VITE_FIREBASE_AUTH_DOMAIN,
+    staging: process.env.APP_ENV === 'staging', projectId: getFirebaseAdminConfig().projectId,
+    productionAuthDomain: publicFirebaseConfig.authDomain });
   // Content Security Policy (enforcing strict resource origins and script protections)
   res.setHeader(
     'Content-Security-Policy',
     "default-src 'self'; " +
-    "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://www.googletagmanager.com https://checkout.razorpay.com https://js.stripe.com; " +
+    "script-src 'self' 'unsafe-inline' https://apis.google.com https://challenges.cloudflare.com https://www.googletagmanager.com https://checkout.razorpay.com https://js.stripe.com; " +
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
     "font-src 'self' https://fonts.gstatic.com data:; " +
     "img-src 'self' data: https: blob:; " +
-    "connect-src 'self' https://challenges.cloudflare.com https://www.google-analytics.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://api.razorpay.com https://api.stripe.com; " +
-    "frame-src 'self' https://challenges.cloudflare.com https://api.razorpay.com https://js.stripe.com https://www.youtube.com https://www.youtube-nocookie.com; " +
+    `connect-src 'self' ${authOrigin} https://accounts.google.com https://challenges.cloudflare.com https://www.google-analytics.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://api.razorpay.com https://api.stripe.com; ` +
+    `frame-src 'self' ${authOrigin} https://accounts.google.com https://challenges.cloudflare.com https://api.razorpay.com https://js.stripe.com https://www.youtube.com https://www.youtube-nocookie.com; ` +
     "object-src 'none'; " +
     "base-uri 'self';"
   );
@@ -192,6 +184,21 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// Refresh settings on their own routes so one integration cannot block unrelated APIs.
+for (const [paths, initialize] of [
+  [['/api/site-settings', '/api/admin/site-settings'], async () => { await siteSettingsService.initFromFirestore(); await homepageLayoutService.initFromFirestore(); }],
+  [['/api/homepage/layout', '/api/admin/layout/homepage'], () => homepageLayoutService.initFromFirestore()],
+  [['/api/adsense', '/api/admin/adsense'], () => adSenseService.initFromFirestore()],
+  [['/api/broadcasts', '/api/admin/broadcasts'], () => broadcastService.initStore()],
+  [['/api/payments', '/api/admin/payments/settings'], () => paymentSettingsRepository.run(() => undefined)],
+  [['/api/payments/create-order'], () => catalogueRepository.run(() => undefined)],
+] as [string[], () => Promise<void>][]) {
+  app.use(paths, async (_req, res, next) => {
+    try { await initialize(); next(); }
+    catch { res.status(503).json({ error: 'Firebase storage unavailable. Check Firestore database and service-account permissions.' }); }
+  });
+}
 
 // Authoritative robots.txt directives (excludes dashboard, checkout, account, admin, private APIs, downloads)
 app.get('/robots.txt', (req: Request, res: Response) => {
@@ -905,6 +912,9 @@ async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
   }
   paymentService.configureDurableOrders(new DurablePaymentRepository(firestore));
   try {
+    if ((await securitySettings.read()).emergencyMaintenanceMode) return res.status(503).json({
+      success: false, code: 'CHECKOUT_MAINTENANCE', error: 'Purchases are temporarily paused for maintenance.',
+    });
     const {
       amount,
       grossAmount,
@@ -1331,9 +1341,10 @@ app.post('/api/admin/payments/simulate-webhook', requireAuth, requireAdmin, asyn
 app.get('/api/annual-pass/config', asyncRoute(async (_req: Request, res: Response) => {
   const settings = await annualPassSettings.read();
   const { updatedBy, ...publicSettings } = settings;
+  const maintenance = (await securitySettings.read()).emergencyMaintenanceMode;
   const taxRatePercentage = await paymentSettingsRepository.run(() => paymentService.getMaskedSettings().taxRatePercentage);
   res.setHeader('Cache-Control', 'no-store');
-  return res.json({ success: true, settings: publicSettings, effectivePriceINR: settings.enabled ? annualPassPrice(settings, 'INR') : settings.regularPrice, taxRatePercentage, checkoutEnabled: process.env.MAYF_ENABLE_CHECKOUT === 'true' });
+  return res.json({ success: true, settings: publicSettings, effectivePriceINR: settings.enabled ? annualPassPrice(settings, 'INR') : settings.regularPrice, taxRatePercentage, checkoutEnabled: !maintenance && process.env.MAYF_ENABLE_CHECKOUT === 'true' });
 }));
 /**
  * Student Active Entitlement Status & Expiry Check
@@ -2158,33 +2169,28 @@ app.get('/api/admin/audit-logs/export', requireAuth, requireAdmin, asyncRoute(as
 /**
  * 16. Security Configuration: Get Settings
  */
-app.get('/api/admin/security/config', requireAuth, requireAdmin, (_req: Request, res: Response) => {
-  const config = adminUserManager.getSecurityConfig();
+app.get('/api/admin/security/config', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  const config = { ...adminUserManager.getSecurityConfig(), ...await securitySettings.read() };
   return res.json(config);
-});
+}));
 
 /**
  * 17. Security Configuration: Update Settings
  * RBAC GATED: ONLY superAdmin can modify critical security configuration
  */
-app.post('/api/admin/security/config', requireAuth, requireSuperAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/security/config', requireAuth, requireSuperAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const actor = {
     uid: req.userAuth!.uid,
     email: req.userAuth!.email,
     role: req.userAuth!.role as 'superAdmin',
   };
 
-  const result = adminUserManager.updateSecurityConfig(req.body, actor);
-  if (!result.success) {
-    return res.status(403).json({ error: result.error });
-  }
-
-  return res.json({
-    success: true,
-    config: result.config,
-    message: 'Critical security configuration successfully updated.',
-  });
-});
+  try {
+    const saved = await securitySettings.save(req.body, actor);
+    return res.json({ success: true, config: { ...adminUserManager.getSecurityConfig(), ...saved },
+      message: 'Maintenance mode and audit record durably saved.' });
+  } catch (error: any) { return res.status(400).json({ success: false, error: error.message || 'Maintenance configuration could not be saved.' }); }
+}));
 
 /**
  * 18. Order Refund Endpoint
