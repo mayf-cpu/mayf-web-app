@@ -17,7 +17,7 @@ This performs live GET checks that the Worker environment is actually `staging` 
 
 - Use a dedicated staging Worker/environment. Do not enable production checkout.
 - Confirm Firebase service account and Firestore rules in staging; verify authenticated student and admin sessions.
-- Provision separate **staging** Cloudflare R2 bucket `mayf-staging-materials` and bind `MAYF_PDF_BUCKET`. Never import test PDFs to the production `mayf-study-materials` bucket. Check actual object byte reads, PDF rendering, and private access.
+- Provision separate **staging** Cloudflare R2 bucket `mayf-staging-files` and bind `MAYF_PDF_BUCKET`. Never import test PDFs to the production `mayf-study-materials` bucket. Check actual object byte reads, PDF rendering, and private access.
 - Grant the configured Google service account read access to a test Drive folder. Import a **real PDF** and verify both R2 object and persisted `contentItems` document with the matching ID.
 - Verify an unpublished/archived PDF cannot be downloaded, and that re-import does not republish it.
 - Confirm download authorization, Turnstile, subscription checks, 60-second expiry, atomic single-use redemption, audit records, and concurrent requests across Worker instances.

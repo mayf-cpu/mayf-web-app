@@ -5,8 +5,8 @@ import { execFileSync } from 'node:child_process';
 test('staging configuration remains isolated from production', () => {
  assert.doesNotThrow(()=>execFileSync(process.execPath,['scripts/check-staging-isolation.mjs']));
  const wrangler=JSON.parse(readFileSync(new URL('../wrangler.staging.jsonc',import.meta.url),'utf8'));
- assert.equal(wrangler.name,'staging-acceptance-mayf');
- assert.equal(wrangler.r2_buckets[0].bucket_name,'mayf-staging-materials');
+ assert.equal(wrangler.name,'mayf-staging');
+ assert.equal(wrangler.r2_buckets[0].bucket_name,'mayf-staging-files');
  assert.equal(wrangler.vars.MAYF_ENABLE_ADMIN_REFUNDS,'false');
  assert.deepEqual(Object.keys(wrangler.vars).sort(),['APP_ENV','MAYF_ENABLE_CHECKOUT','MAYF_ENABLE_ADMIN_REFUNDS','MAYF_ENABLE_COUPON_CHECKOUT','MAYF_ENABLE_PAYMENT_SIMULATION'].sort());
  for (const key of ['route','routes','zone_id','env','services','d1_databases','kv_namespaces','unsafe','custom_domains','dispatch_namespaces','queues','durable_objects']) assert.equal(wrangler[key],undefined,`Unexpected staging binding: ${key}`);

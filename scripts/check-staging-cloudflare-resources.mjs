@@ -16,8 +16,8 @@ export async function verifyStagingCloudflareResources({ token, accountId, reque
   if (!/^[a-f0-9]{32}$/i.test(accountId || '')) throw Error('Staging Cloudflare account ID must be 32 hexadecimal characters');
   const worker = staging.name;
   const bucket = staging.r2_buckets?.[0]?.bucket_name;
-  if (worker !== 'staging-acceptance-mayf' || worker === production.name ||
-      bucket !== 'mayf-staging-materials' || bucket === production.r2_buckets?.[0]?.bucket_name) {
+  if (worker !== 'mayf-staging' || worker === production.name ||
+      bucket !== 'mayf-staging-files' || bucket === production.r2_buckets?.[0]?.bucket_name) {
     throw Error('Staging config no longer points to isolated Worker and R2 resources');
   }
   const getMetadata = async path => {

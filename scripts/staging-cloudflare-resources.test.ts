@@ -4,7 +4,7 @@ import { verifyStagingCloudflareResources } from './check-staging-cloudflare-res
 
 const token = 'local-mock-token-not-a-real-credential';
 const accountId = 'a'.repeat(32);
-const metadata = (bucket: unknown = {name:'mayf-staging-materials'}, secrets: unknown = [{name:'FIREBASE_SERVICE_ACCOUNT_JSON',type:'secret_text'}]) => {
+const metadata = (bucket: unknown = {name:'mayf-staging-files'}, secrets: unknown = [{name:'FIREBASE_SERVICE_ACCOUNT_JSON',type:'secret_text'}]) => {
  const calls: string[] = [];
  const request = async (url: string, options: any) => {
   calls.push(url);
@@ -18,11 +18,11 @@ const metadata = (bucket: unknown = {name:'mayf-staging-materials'}, secrets: un
 test('isolated staging preflight uses only read-only metadata for R2 and secret name', async () => {
  const m=metadata();
  assert.deepEqual(await verifyStagingCloudflareResources({token,accountId,request:m.request}),{
-  worker:'staging-acceptance-mayf',bucket:'mayf-staging-materials',serviceAccountBindingPresent:true,
+  worker:'mayf-staging',bucket:'mayf-staging-files',serviceAccountBindingPresent:true,
  });
  assert.equal(m.calls.length,2);
- assert.match(m.calls[0],/\/r2\/buckets\/mayf-staging-materials$/);
- assert.match(m.calls[1],/\/workers\/scripts\/staging-acceptance-mayf\/secrets$/);
+ assert.match(m.calls[0],/\/r2\/buckets\/mayf-staging-files$/);
+ assert.match(m.calls[1],/\/workers\/scripts\/mayf-staging\/secrets$/);
 });
 test('missing staging account, bucket or Worker service-account binding blocks a deploy', async () => {
  await assert.rejects(verifyStagingCloudflareResources({token,accountId:'not-an-account'}),/account ID/);
