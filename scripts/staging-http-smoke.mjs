@@ -13,11 +13,11 @@ const url = new URL(supplied);
 // The production Worker also lives under workers.dev. Require an unmistakable
 // preview name, never a plain Worker production hostname.
 const workerName = url.hostname.split('.')[0];
-const previewHostname = (workerName === 'mayf-staging' || /^[a-z0-9-]+-mayf$/.test(workerName)) && workerName !== 'mayf';
+const previewHostname = /^[a-z0-9-]+-mayf$/.test(workerName) && workerName !== 'mayf';
 if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash ||
     url.pathname !== '/' || !url.hostname.endsWith('.workers.dev') ||
     url.hostname === 'mayf.co.in' || !previewHostname) {
-  console.error('Expected an HTTPS MAYF preview hostname (mayf-staging.<account>.workers.dev or <branch>-mayf.<account>.workers.dev), not a production Worker.');
+  console.error('Expected an HTTPS MAYF preview hostname (<branch>-mayf.<account>.workers.dev), not a production Worker.');
   process.exit(2);
 }
 const check = async (path, token) => {

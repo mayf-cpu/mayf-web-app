@@ -1,5 +1,5 @@
 {
-  "name": "mayf-staging",
+  "name": "staging-acceptance-mayf",
   "main": "worker.ts",
   "compatibility_date": "2026-10-19",
   "compatibility_flags": [
@@ -15,7 +15,7 @@
   "r2_buckets": [
     {
       "binding": "MAYF_PDF_BUCKET",
-      "bucket_name": "mayf-staging-files"
+      "bucket_name": "mayf-staging-materials"
     }
   ],
   "define": {
