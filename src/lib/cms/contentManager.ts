@@ -62,6 +62,24 @@ export interface ContentFilterQuery {
   sortBy?: 'sortOrder' | 'latest' | 'views' | 'downloads' | 'sales' | 'alpha';
 }
 
+function cmsRecordForDisplay(item: CmsContentItem): CmsContentItem {
+  const metric = (...values: unknown[]): number => {
+    for (const value of values) {
+      if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return value;
+    }
+    return 0;
+  };
+  return {
+    ...item,
+    views: metric(item.views, item.viewCount),
+    downloads: metric(item.downloads, item.downloadCount),
+    sales: {
+      orderCount: metric(item.sales?.orderCount),
+      revenue: metric(item.sales?.revenue),
+    },
+  };
+}
+
 class ContentCmsManager {
   private itemsStore: Map<string, CmsContentItem> = new Map();
   private initialized = false;
@@ -225,7 +243,9 @@ class ContentCmsManager {
     };
   } {
     this.refreshSalesMetrics();
-    const all = Array.from(this.itemsStore.values());
+    // Imported ContentItem records use viewCount/downloadCount and may not
+    // have CMS presentation metrics. Adapt reads without rewriting stored data.
+    const all = Array.from(this.itemsStore.values()).map(cmsRecordForDisplay);
 
     const activeItems = all.filter((i) => !i.isDeleted);
     const archivedItems = all.filter((i) => i.isDeleted);
@@ -311,7 +331,8 @@ class ContentCmsManager {
    * Get single item
    */
   public getItem(id: string): CmsContentItem | null {
-    return this.itemsStore.get(id) || null;
+    const item = this.itemsStore.get(id);
+    return item ? cmsRecordForDisplay(item) : null;
   }
 
   /**
