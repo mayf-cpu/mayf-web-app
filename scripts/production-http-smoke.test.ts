@@ -18,3 +18,11 @@ test('staging identity, missing Firebase and enabled checkout cannot pass produc
   }
   await assert.rejects(productionHttpSmoke({attempts:1,request:async(url:any)=>url.endsWith('/api/annual-pass/config')?new Response(JSON.stringify({success:true,checkoutEnabled:true}),{headers:{'content-type':'application/json'}}):good(url),report:()=>{}}),/annual-pass/);
 });
+
+test('robots and sitemap reach Worker routes instead of the SPA asset fallback',async()=>{
+  const {readFileSync}=await import('node:fs');
+  for(const filename of ['wrangler.jsonc','wrangler.staging.jsonc']){
+    const config=JSON.parse(readFileSync(new URL('../'+filename,import.meta.url),'utf8'));
+    for(const path of ['/api/*','/robots.txt','/sitemap.xml'])assert.ok(config.assets.run_worker_first.includes(path));
+  }
+});
