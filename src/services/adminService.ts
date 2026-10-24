@@ -104,6 +104,7 @@ export interface OrderRecord {
   gateway: 'razorpay' | 'stripe';
   status: 'created' | 'pending' | 'paid' | 'failed' | 'refunded' | 'cancelled';
   refundRequestStatus?: string;
+  refundAvailable?: boolean;
   createdAt: string;
   paymentId: string;
 }
@@ -558,6 +559,13 @@ class AdminService {
     return data as OrderRecord[];
   }
 
+  async getPaymentWebhookEvents(): Promise<Array<{ provider: string; eventId: string; orderId: string; providerPaymentId: string; refundId: string | null; processedAt: string; outcome: string }>> {
+    const res = await fetch('/api/admin/payments/webhook-logs', { headers: await this.getAuthHeaders() });
+    const data = await res.json();
+    if (!res.ok || data.success !== true || !Array.isArray(data.logs)) throw new Error('Verified webhook audit could not be loaded.');
+    return data.logs;
+  }
+
   async processRefund(
     orderId: string,
     amount: number,
@@ -572,7 +580,8 @@ class AdminService {
       });
       const data = await res.json();
       if (!res.ok) return { success: false, error: data.error || 'Failed to process refund' };
-      return { success: data.success === true, refundStatus: data.refundStatus, message: data.message };
+      if (data.success !== true || !['requested', 'awaiting_webhook', 'needs_review', 'completed'].includes(data.refundStatus)) return { success: false, error: 'Refund response could not be verified. Refresh and reconcile before retrying.' };
+      return { success: true, refundStatus: data.refundStatus, message: data.message };
     } catch (e: any) {
       return { success: false, error: e?.message || 'Network error' };
     }

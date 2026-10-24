@@ -325,6 +325,17 @@ export class DurablePaymentRepository {
       .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   }
 
+  /** Allowlisted durable settlement evidence; no credentials or raw gateway payloads. */
+  async getWebhookEvents() {
+    const records = await this.store.list(EVENT_COLLECTION);
+    return records.map(({ data }) => ({
+      provider: data.provider, eventId: data.eventId, orderId: data.orderId,
+      providerOrderId: data.providerOrderId || null, providerPaymentId: data.providerPaymentId,
+      refundId: data.refundId || null, processedAt: data.processedAt,
+      outcome: data.refundId ? 'refunded' : 'paid',
+    })).sort((a, b) => String(b.processedAt).localeCompare(String(a.processedAt))).slice(0, 100);
+  }
+
   async getOrder(orderId: string): Promise<StoredOrder | null> {
     const doc = await this.store.collection(ORDER_COLLECTION).doc(validId(orderId)).get();
     return doc.exists ? doc.data() as StoredOrder : null;

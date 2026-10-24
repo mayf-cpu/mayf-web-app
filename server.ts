@@ -1289,14 +1289,13 @@ app.get('/api/admin/payments/orders', requireAuth, requireAdmin, asyncRoute(asyn
 /**
  * 8. Admin Webhook Idempotency Log
  */
-app.get('/api/admin/payments/webhook-logs', requireAuth, requireAdmin, (_req: Request, res: Response) => {
-  const logs = paymentService.getWebhookLogs();
-  return res.json({
-    success: true,
-    totalLogs: logs.length,
-    logs,
-  });
-});
+app.get('/api/admin/payments/webhook-logs', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const db = getAdminFirestore();
+  if (!db) return res.status(503).json({ success: false, error: 'Webhook audit storage is unavailable.' });
+  const logs = await new DurablePaymentRepository(db).getWebhookEvents();
+  return res.json({ success: true, totalLogs: logs.length, logs });
+}));
 
 /**
  * 9. Admin Webhook Simulator & Idempotency Tester
@@ -3315,6 +3314,8 @@ app.get('/api/admin/orders', requireAuth, requireAdmin, asyncRoute(async (_req: 
     gateway: order.provider,
     status: order.status,
     refundRequestStatus: order.metadata?.refundRequestStatus,
+    refundAvailable: process.env.MAYF_ENABLE_ADMIN_REFUNDS === 'true' && order.status === 'paid' &&
+      order.provider === 'razorpay' && order.currency === 'INR' && !order.metadata?.refundRequestStatus,
     createdAt: order.createdAt,
     paymentId: order.providerPaymentId || '',
   })));
