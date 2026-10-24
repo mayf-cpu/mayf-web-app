@@ -1,3 +1,4 @@
+import { submitDoubtRating } from '../lib/ai/feedbackClient';
 import React, { useEffect, useState } from 'react';
 import { History, Bot, ArrowRight, ThumbsUp, ThumbsDown, Sparkles, Image as ImageIcon, Camera, FileText } from 'lucide-react';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
@@ -30,6 +31,8 @@ export const DashboardAiHistoryPage: React.FC = () => {
   const { user, firebaseUser } = useAuth();
   const [historyItems, setHistoryItems] = useState<AiHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [ratingError, setRatingError] = useState('');
+  const [ratingPending, setRatingPending] = useState(false);
 
   useEffect(() => {
     async function loadHistory() {
@@ -61,18 +64,13 @@ export const DashboardAiHistoryPage: React.FC = () => {
   }, [user, firebaseUser]);
 
   const handleRate = async (doubtId: string, rating: 'helpful' | 'unhelpful') => {
-    setHistoryItems((prev) =>
-      prev.map((item) => (item.id === doubtId ? { ...item, userRating: rating } : item))
-    );
+    if (ratingPending) return;
+    setRatingPending(true); setRatingError('');
     try {
-      await fetch('/api/ai-teacher/rate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ doubtId, rating }),
-      });
-    } catch {
-      // ignore
-    }
+      await submitDoubtRating(firebaseUser, doubtId, rating);
+      setHistoryItems((prev) => prev.map((item) => item.id === doubtId ? { ...item, userRating: rating } : item));
+    } catch { setRatingError('Feedback was not saved. Sign in and retry.'); }
+    finally { setRatingPending(false); }
   };
 
   return (
@@ -81,6 +79,7 @@ export const DashboardAiHistoryPage: React.FC = () => {
       subtitle="Review past mathematical doubts, worked formulas, and step-by-step guidance from Professor Sigma."
     >
       <div className="space-y-4">
+        {ratingError && <p role="alert" className="text-sm text-red-700">{ratingError}</p>}
         {loading ? (
           <div className="py-12 text-center">
             <LoadingSpinner message="Loading your mathematical doubt logs..." />
@@ -170,6 +169,7 @@ export const DashboardAiHistoryPage: React.FC = () => {
                   ) : (
                     <div className="flex items-center gap-1">
                       <button
+                        disabled={ratingPending}
                         onClick={() => handleRate(item.id, 'helpful')}
                         className="p-1 hover:text-emerald-600 hover:bg-slate-100 rounded text-slate-400 cursor-pointer"
                         title="Helpful"
@@ -177,6 +177,7 @@ export const DashboardAiHistoryPage: React.FC = () => {
                         <ThumbsUp className="w-3.5 h-3.5" />
                       </button>
                       <button
+                        disabled={ratingPending}
                         onClick={() => handleRate(item.id, 'unhelpful')}
                         className="p-1 hover:text-rose-600 hover:bg-slate-100 rounded text-slate-400 cursor-pointer"
                         title="Not helpful"

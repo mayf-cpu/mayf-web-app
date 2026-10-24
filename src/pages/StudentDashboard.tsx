@@ -1,3 +1,4 @@
+import { submitDoubtRating } from '../lib/ai/feedbackClient';
 import { downloadCards, type DownloadCard as DownloadResource } from '../lib/download/downloadCatalogue';
 import { orderReceipt } from '../lib/payments/orderReceipt';
 /**
@@ -169,6 +170,19 @@ export const StudentDashboard: React.FC = () => {
   const [aiHistory, setAiHistory] = useState<any[]>([]);
   const [aiHistoryLoading, setAiHistoryLoading] = useState(false);
   const [aiRatingMap, setAiRatingMap] = useState<Record<string, 'helpful' | 'unhelpful'>>({});
+  const [aiRatingError, setAiRatingError] = useState('');
+  const [aiRatingPending, setAiRatingPending] = useState(false);
+  const rateAiAnswer = async (id: string, rating: 'helpful' | 'unhelpful') => {
+    if (aiRatingPending) return;
+    setAiRatingPending(true); setAiRatingError('');
+    try {
+      await submitDoubtRating(firebaseUser, id, rating);
+      setAiRatingMap(previous => ({ ...previous, [id]: rating }));
+      setAiHistory(previous => previous.map(item => item.id === id ? { ...item, userRating: rating } : item));
+    } catch { setAiRatingError('Feedback was not saved. Sign in and retry.'); }
+    finally { setAiRatingPending(false); }
+  };
+
 
   // State: Downloads
   const [downloadingItemId, setDownloadingItemId] = useState<string | null>(null);
@@ -1402,6 +1416,7 @@ export const StudentDashboard: React.FC = () => {
                 </Link>
               </div>
 
+              {aiRatingError && <p role="alert" className="text-sm text-red-700">{aiRatingError}</p>}
               {aiHistoryLoading ? (
                 <div className="py-12 text-center">
                   <LoadingSpinner message="Loading AI doubt history..." size="md" />
@@ -1460,18 +1475,24 @@ export const StudentDashboard: React.FC = () => {
 
                         <div className="flex items-center gap-2">
                           <button
-                            onClick={() => setAiRatingMap((prev) => ({ ...prev, [item.id]: 'helpful' }))}
+                            disabled={aiRatingPending}
+                            aria-label="Helpful answer"
+                            aria-pressed={(aiRatingMap[item.id] || item.userRating) === 'helpful'}
+                            onClick={() => void rateAiAnswer(item.id, 'helpful')}
                             className={`p-1 rounded flex items-center gap-1 cursor-pointer ${
-                              aiRatingMap[item.id] === 'helpful' ? 'text-[#059669] font-bold' : 'hover:text-[#0F172A]'
+                              (aiRatingMap[item.id] || item.userRating) === 'helpful' ? 'text-[#059669] font-bold' : 'hover:text-[#0F172A]'
                             }`}
                           >
                             <ThumbsUp className="w-3.5 h-3.5" />
                             <span className="text-[11px]">Helpful</span>
                           </button>
                           <button
-                            onClick={() => setAiRatingMap((prev) => ({ ...prev, [item.id]: 'unhelpful' }))}
+                            disabled={aiRatingPending}
+                            aria-label="Not helpful"
+                            aria-pressed={(aiRatingMap[item.id] || item.userRating) === 'unhelpful'}
+                            onClick={() => void rateAiAnswer(item.id, 'unhelpful')}
                             className={`p-1 rounded flex items-center gap-1 cursor-pointer ${
-                              aiRatingMap[item.id] === 'unhelpful' ? 'text-[#DC2626] font-bold' : 'hover:text-[#0F172A]'
+                              (aiRatingMap[item.id] || item.userRating) === 'unhelpful' ? 'text-[#DC2626] font-bold' : 'hover:text-[#0F172A]'
                             }`}
                           >
                             <ThumbsDown className="w-3.5 h-3.5" />
