@@ -57,7 +57,9 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.MAYF_STAGING_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.MAYF_STAGING_CLOUDFLARE_ACCOUNT_ID }}
-        run: node scripts/check-production-deployment.mjs
+        run: |
+          node scripts/check-production-deployment.mjs
+          node scripts/seed-production-pdf.mjs --verify-only
       - run: npm run build
       - name: Compile reviewed production Worker
         env:
