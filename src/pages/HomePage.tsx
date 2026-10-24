@@ -62,6 +62,7 @@ import {
 // layout defaults. Owner-written custom text and financial terms stay intact.
 const truthfulHomepageCopy = (value: string | undefined, fallback: string): string => {
   const legacyClaims: Record<string, string> = {
+    'Browse All 80+ Formulas': 'Browse Formula Deck',
     'Trending Revision Topics': 'Explore Revision Topics',
     'Most active proofs and problem sets this week across board batches.': 'Browse chapter explanations and revision topics.',
     'Most Popular Revision Handouts': 'Revision Handouts',
@@ -509,7 +510,7 @@ export const HomePage: React.FC = () => {
           </div>
           <Link href="/formula-deck">
             <Button variant="outline" size="sm">
-              <span>{config.viewAllText || 'Browse All 80+ Formulas'}</span>
+              <span>{truthfulHomepageCopy(config.viewAllText, 'Browse Formula Deck')}</span>
               <ArrowRight className="w-3.5 h-3.5 ml-1" />
             </Button>
           </Link>

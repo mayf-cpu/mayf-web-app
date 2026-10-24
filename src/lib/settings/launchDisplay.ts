@@ -15,6 +15,8 @@ export function launchDisplaySettings(settings: SiteSettings): SiteSettings {
 }
 
 const legacyPassCopy: Record<string, string> = {
+  '80+ Formula Flashcards with step derivations': 'Formula flashcards with worked derivations',
+  '80+ Interactive Formula Flashcards with rigorous step-by-step derivations': 'Interactive formula flashcards with worked derivations',
   'Complete, unrestricted access to the entire Class 5–10 mathematics curriculum.': 'Access to the published Class 5–10 learning resources included in your plan.',
   'Complete, unrestricted digital access to all Class 5–10 chapters, formulas, exemplar solutions, high-resolution PDF cheatsheets, and 24/7 Professor Sigma AI Teacher.': 'Explore published Class 5–10 chapters, formulas, printable resources, and Professor Sigma AI Teacher with daily usage limits.',
   'All 50+ Chapters across Class 5, 6, 7, 8, 9 & 10': 'Published chapters across Classes 5–10',

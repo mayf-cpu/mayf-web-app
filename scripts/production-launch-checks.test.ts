@@ -21,6 +21,7 @@ test('starter contact values are hidden without changing owner settings or finan
 test('only known unsupported starter pass claims are normalized, custom owner text is preserved', () => {
   assert.match(passDisplayCopy('Unlimited 24/7 Multimodal AI Teacher (Professor Sigma) doubts'), /daily usage limits/);
   assert.equal(passDisplayCopy('Owner custom benefit'), 'Owner custom benefit');
+  assert.equal(passDisplayCopy('80+ Interactive Formula Flashcards with rigorous step-by-step derivations'), 'Interactive formula flashcards with worked derivations');
   assert.equal(passDisplayCopy('100% 7-Day Money-Back Guarantee'), '100% 7-Day Money-Back Guarantee');
 });
 
