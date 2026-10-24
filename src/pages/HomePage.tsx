@@ -57,6 +57,19 @@ import {
   CustomAnnouncementBlockConfig,
 } from '../lib/layout/homepageLayoutTypes';
 
+// Replace only known demo claims, including copies persisted from the original
+// layout defaults. Owner-written custom text and financial terms stay intact.
+const truthfulHomepageCopy = (value: string | undefined, fallback: string): string => {
+  const legacyClaims: Record<string, string> = {
+    'Trending Revision Topics': 'Explore Revision Topics',
+    'Most active proofs and problem sets this week across board batches.': 'Browse chapter explanations and revision topics.',
+    'Most Popular Revision Handouts': 'Revision Handouts',
+    'Highest rated study guides, formula cheatsheets, and question banks.': 'Explore study guides, formula sheets, and practice resources.',
+    'Complete syllabus access for Class 5 to 10. Printable revision notes, formula flashcards, and unlimited AI Teacher guidance.': 'Explore Class 5 to 10 study materials, formula flashcards, and AI Teacher guidance with daily usage limits.',
+  };
+  return value ? (legacyClaims[value] || value) : fallback;
+};
+
 export const HomePage: React.FC = () => {
   const { navigate } = useNavigation();
   const { blocks, loading } = useHomepageLayout();
@@ -192,11 +205,11 @@ export const HomePage: React.FC = () => {
           <div className="mt-8 pt-6 border-t border-[#E2E8F0] flex flex-wrap items-center gap-6 text-xs text-[#64748B]">
             <div className="flex items-center gap-1.5 font-medium">
               <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
-              <span>100% NCERT & Exemplar Coverage</span>
+              <span>School Mathematics Revision</span>
             </div>
             <div className="flex items-center gap-1.5 font-medium">
               <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
-              <span>Verified Formulas with Proofs</span>
+              <span>Formulas & Worked Examples</span>
             </div>
             <div className="flex items-center gap-1.5 font-medium">
               <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
@@ -362,13 +375,13 @@ export const HomePage: React.FC = () => {
           <div>
             <div className="flex items-center gap-1.5 text-xs font-heading font-bold text-[#EA580C] uppercase tracking-wider mb-1">
               <Flame className="w-4 h-4 fill-current" />
-              <span>High Engagement Topics</span>
+              <span>Revision Topics</span>
             </div>
             <h2 className="font-heading font-bold text-2xl text-[#0F172A]">
-              {config.title || 'Trending Revision Topics'}
+              {truthfulHomepageCopy(config.title, 'Explore Revision Topics')}
             </h2>
             <p className="text-xs sm:text-sm text-[#64748B]">
-              {config.subtitle || 'Most active proofs and problem sets this week across board batches.'}
+              {truthfulHomepageCopy(config.subtitle, 'Browse chapter explanations and revision topics.')}
             </p>
           </div>
           <Link href="/study-material" className="self-start sm:self-auto">
@@ -388,7 +401,7 @@ export const HomePage: React.FC = () => {
             >
               <div>
                 <div className="flex items-center justify-between text-[11px] text-[#64748B] mb-2">
-                  <span className="font-mono font-bold text-[#EA580C]">#{idx + 1} Trending</span>
+                  <span className="font-mono font-bold text-[#EA580C]">Topic {idx + 1}</span>
                   <span>{item.classLevel}</span>
                 </div>
                 <h3 className="font-heading font-bold text-sm text-[#0F172A] mb-1.5 line-clamp-1">
@@ -570,14 +583,13 @@ export const HomePage: React.FC = () => {
           <div>
             <div className="flex items-center gap-1.5 text-xs font-heading font-bold text-[#1D4ED8] uppercase tracking-wider mb-1">
               <TrendingUp className="w-4 h-4" />
-              <span>Community Favorites</span>
+              <span>Study Resources</span>
             </div>
             <h2 className="font-heading font-bold text-2xl text-[#0F172A]">
-              {config.title || 'Most Popular Revision Handouts'}
+              {truthfulHomepageCopy(config.title, 'Revision Handouts')}
             </h2>
             <p className="text-xs sm:text-sm text-[#64748B]">
-              {config.subtitle ||
-                'Highest rated study guides, formula cheatsheets, and question banks.'}
+              {truthfulHomepageCopy(config.subtitle, 'Explore study guides, formula sheets, and practice resources.')}
             </p>
           </div>
           <Link href="/study-material" className="self-start sm:self-auto">
@@ -589,7 +601,7 @@ export const HomePage: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {popularChapters.map((chap, idx) => (
+          {popularChapters.map((chap) => (
             <Link
               key={chap.id}
               href={`/study/${chap.slug}`}
@@ -598,7 +610,7 @@ export const HomePage: React.FC = () => {
               <div>
                 <div className="flex items-center justify-between text-[11px] text-[#64748B] mb-2">
                   <span className="font-bold text-[#1D4ED8]">{chap.classLevel}</span>
-                  <span>{1200 + idx * 340} students saved</span>
+                  <span>Revision handout</span>
                 </div>
                 <h3 className="font-heading font-bold text-sm text-[#0F172A] mb-1 line-clamp-1">
                   {chap.title}
@@ -781,8 +793,7 @@ export const HomePage: React.FC = () => {
           {config.title || 'Maths at Your Fingertips Annual Pass'}
         </h2>
         <p className="text-sm text-[#64748B] mb-6">
-          {config.subtitle ||
-            'Complete syllabus access for Class 5 to 10. Printable revision notes, formula flashcards, and unlimited AI Teacher guidance.'}
+          {truthfulHomepageCopy(config.subtitle, 'Explore Class 5 to 10 study materials, formula flashcards, and AI Teacher guidance with daily usage limits.')}
         </p>
 
         <div className="inline-flex items-baseline gap-1 font-mono tabular-nums text-4xl sm:text-5xl font-extrabold text-[#0037B0] mb-2">
