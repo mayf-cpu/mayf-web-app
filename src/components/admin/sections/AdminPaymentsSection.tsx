@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { RefreshCw, Save } from 'lucide-react';
 import { Button } from '../../ui/Button';
 import { adminService } from '../../../services/adminService';
-import { requestGatewaySettings } from '../../../lib/payments/adminSettingsClient';
+import { requestGatewaySettings, verifyRazorpayTestConnection } from '../../../lib/payments/adminSettingsClient';
 import type { MaskedPaymentGatewaySettings, PaymentGatewaySettings } from '../../../lib/payments/types';
 
 type SecretField = 'razorpayKeySecret' | 'razorpayWebhookSecret' | 'stripeSecretKey' | 'stripeWebhookSecret';
@@ -24,6 +24,15 @@ export const AdminPaymentsSection: React.FC = () => {
     finally { setBusy(false); }
   };
   useEffect(() => { void load(); }, []);
+
+  const verifyConnection = async () => {
+    setBusy(true); setNotice(''); setError('');
+    try {
+      await verifyRazorpayTestConnection(await adminService.getAuthHeaders());
+      setNotice('Razorpay accepted the stored test key pair. No order or payment was created. Webhook delivery still needs testing.');
+    } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  };
 
   const save = async () => {
     if (!settings || busy) return;
@@ -76,6 +85,8 @@ export const AdminPaymentsSection: React.FC = () => {
           {secretInput('razorpayKeySecret', 'Razorpay Key Secret', settings.hasRazorpayKeySecret)}
           {secretInput('razorpayWebhookSecret', 'Razorpay Webhook Secret', settings.hasRazorpayWebhookSecret)}
           <p className="text-xs break-all">Webhook URL: {settings.webhookUrls.razorpay}</p>
+          <Button size="sm" variant="outline" disabled={busy || !settings.testMode} onClick={() => void verifyConnection()}>Verify Razorpay test connection</Button>
+          <p className="text-xs text-slate-500">Checks the saved test key pair with a read-only Razorpay request. Save edits before checking.</p>
         </section>
         <section className="p-5 border rounded-xl space-y-4"><h3 className="font-bold">Stripe</h3><p className="text-xs">Setup deferred. Customer checkout option remains disabled.</p>
           <label className="block text-xs space-y-1"><span>Stripe Publishable Key</span><input type="text" value={settings.stripePublishableKey || ''} disabled={busy} onChange={e => setSettings({ ...settings, stripePublishableKey: e.target.value })} className="w-full px-3 py-2 border rounded-lg" /></label>

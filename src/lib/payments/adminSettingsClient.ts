@@ -1,5 +1,13 @@
 import type { MaskedPaymentGatewaySettings, PaymentGatewaySettings } from './types';
 
+export async function verifyRazorpayTestConnection(headers: HeadersInit, fetcher: typeof fetch = fetch): Promise<void> {
+  const response = await fetcher('/api/admin/payments/settings/check', { method: 'POST', headers });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || data?.success !== true || data.verified !== true || data.mode !== 'test') {
+    throw new Error(data?.error || 'Razorpay test connection could not be verified.');
+  }
+}
+
 export function gatewaySettingsUpdate(input: Partial<PaymentGatewaySettings>): Partial<PaymentGatewaySettings> {
   const result = { ...input };
   for (const field of ['razorpayKeySecret', 'razorpayWebhookSecret', 'stripeSecretKey', 'stripeWebhookSecret'] as const) {

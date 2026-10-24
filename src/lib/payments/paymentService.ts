@@ -578,6 +578,10 @@ export class PaymentService {
     };
   }
 
+  async verifyRazorpayTestConnection(): Promise<void> {
+    await this.razorpayAdapter.verifyTestConnection();
+  }
+
   /**
    * Admin Payment Settings: Updates configuration securely
    * If a secret field is empty or contains masked bullets, leaves the existing stored secret untouched!

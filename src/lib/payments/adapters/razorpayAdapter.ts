@@ -58,6 +58,28 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
     return Boolean(this.webhookSecret && this.webhookSecret.length > 4);
   }
 
+  /** Read-only test-key verification. Never returns gateway records or raw errors. */
+  async verifyTestConnection(fetcher: typeof fetch = fetch): Promise<void> {
+    if (process.env.APP_ENV !== 'staging' || !this.testMode ||
+        !/^rzp_test_[A-Za-z0-9]+$/.test(this.keyId) || !this.keySecret ||
+        /sandbox|demo/i.test(this.keyId + this.keySecret)) {
+      throw new Error('Razorpay connection check requires isolated staging and real test-mode keys.');
+    }
+    let response: Response;
+    try {
+      response = await fetcher('https://api.razorpay.com/v1/orders?count=1', {
+        method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(10000),
+        headers: { Authorization: `Basic ${Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64')}` },
+      });
+    } catch { throw new Error('Razorpay test connection is unavailable. Please retry later.'); }
+    if (response.status === 401 || response.status === 403) throw new Error('Razorpay rejected the test key pair. Check the Key ID and Key Secret.');
+    if (!response.ok) throw new Error('Razorpay test connection is unavailable. Please retry later.');
+    const data = await response.json().catch(() => null) as any;
+    if (data?.entity !== 'collection' || !Array.isArray(data.items) || data.items.length > 1 || data.count !== data.items.length) {
+      throw new Error('Razorpay returned an unexpected connection-check response.');
+    }
+  }
+
   assertRefundConfigured(): void {
     if (!/^rzp_(test|live)_[A-Za-z0-9]+$/.test(this.keyId) || !this.keySecret ||
         /sandbox|demo/i.test(this.keySecret + this.keyId) || !this.hasWebhookSecret() ||

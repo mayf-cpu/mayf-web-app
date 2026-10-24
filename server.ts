@@ -1231,6 +1231,16 @@ app.get('/api/admin/payments/settings', requireAuth, requireAdmin, (_req: Reques
   });
 });
 
+app.post('/api/admin/payments/settings/check', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  if (process.env.APP_ENV !== 'staging') return res.status(409).json({ success: false, error: 'This read-only test connection check is staging-only.' });
+  try {
+    await paymentService.verifyRazorpayTestConnection();
+    return res.json({ success: true, verified: true, mode: 'test', message: 'Razorpay accepted the test key pair. No order or payment was created. Webhook delivery remains unverified.' });
+  } catch (error: any) {
+    return res.status(503).json({ success: false, error: error.message });
+  }
+}));
+
 app.post('/api/admin/payments/settings', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   try {
     const updated = await paymentSettingsRepository.run(() => paymentService.updateSettings(req.body), true);
