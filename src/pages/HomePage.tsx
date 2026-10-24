@@ -1,3 +1,4 @@
+import { usableWhatsApp } from '../lib/settings/launchDisplay';
 import React, { useState } from 'react';
 import {
   ArrowRight,
@@ -947,7 +948,8 @@ export const HomePage: React.FC = () => {
 
           {/* WhatsApp */}
           <a
-            href={config.whatsappUrl || 'https://chat.whatsapp.com/mayf-math-prep'}
+            href={usableWhatsApp(config.whatsappUrl) || undefined}
+            aria-disabled={!usableWhatsApp(config.whatsappUrl)}
             target="_blank"
             rel="noopener noreferrer"
             className="group p-4 rounded-lg border border-[#E2E8F0] hover:border-[#16A34A] bg-[#F8FAFC] hover:bg-white transition-all flex items-center justify-between"
@@ -960,7 +962,7 @@ export const HomePage: React.FC = () => {
                 <div className="font-heading font-bold text-sm text-[#0F172A] group-hover:text-[#16A34A] transition-colors">
                   WhatsApp Community
                 </div>
-                <div className="text-xs text-[#64748B]">Board Exam Alert Broadcasts</div>
+                <div className="text-xs text-[#64748B]">{usableWhatsApp(config.whatsappUrl) ? 'Board Exam Alert Broadcasts' : 'Community link coming soon'}</div>
               </div>
             </div>
             <ExternalLink className="w-4 h-4 text-[#94A3B8] group-hover:text-[#16A34A] transition-colors" />

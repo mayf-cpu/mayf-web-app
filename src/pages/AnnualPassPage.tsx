@@ -1,3 +1,4 @@
+import { passDisplayCopy } from '../lib/settings/launchDisplay';
 import React, { useState, useEffect } from 'react';
 import { Check, Sparkles, ShieldCheck, HelpCircle, ArrowRight, Star, Calendar } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
@@ -54,7 +55,7 @@ export const AnnualPassPage: React.FC = () => {
   const faqs = [
     {
       q: 'Does the Annual Pass cover both CBSE and ICSE syllabus?',
-      a: 'Yes! The Pass includes all curriculum requirements for CBSE, ICSE, and standard State Boards from Class 5 through Class 10.',
+      a: 'Resources are organized for Class 5–10 CBSE and ICSE revision. Browse the published catalogue to check the topics and materials currently available for your class.',
     },
     {
       q: 'Can my child switch between Class 9 and Class 10 anytime?',
@@ -72,7 +73,7 @@ export const AnnualPassPage: React.FC = () => {
 
   const canonicalUrl = 'https://mayf.co.in/annual-pass';
   const pageTitle = 'All-Class Annual Pass (Classes 5–10)';
-  const pageDesc = 'Unrestricted access to all Class 5 to 10 mathematics courses, 80+ formula decks, printable summaries, and 24/7 AI tutor guidance with coupon discount support.';
+  const pageDesc = 'Explore published Class 5–10 resources, formula cards, printable summaries and AI Teacher guidance with daily usage limits.';
 
   return (
     <SharedLayout>
@@ -94,7 +95,7 @@ export const AnnualPassPage: React.FC = () => {
             '@type': 'Offer',
             price: String(displayPrice),
             priceCurrency: config.currency,
-            availability: 'https://schema.org/InStock',
+            availability: configLoaded && config.enabled && checkoutEnabled ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
             url: 'https://mayf.co.in/annual-pass',
           },
         }}
@@ -189,7 +190,7 @@ export const AnnualPassPage: React.FC = () => {
                 <span className="font-heading font-bold text-xl text-[#0F172A]">{config.name}</span>
               </div>
               <p className="text-xs text-[#64748B] mb-6">
-                {config.description}
+                {passDisplayCopy(config.description)}
               </p>
 
               <div className="flex items-baseline gap-2 mb-1">
@@ -204,19 +205,20 @@ export const AnnualPassPage: React.FC = () => {
                 <span className="text-xs text-[#64748B]">/ {config.durationDays} days</span>
               </div>
               <p className="text-xs text-[#059669] font-semibold mb-6">
-                Less than ₹{Math.max(1, Math.round(displayPrice / config.durationDays))} per day for full access.
+                {configLoaded ? `About ₹${(displayPrice / config.durationDays).toFixed(2)} per day over the pass duration.` : 'Loading membership pricing…'}
               </p>
 
               <div className="space-y-3 text-xs sm:text-sm text-[#0F172A] border-t border-[#F1F5F9] pt-6 font-medium">
                 {config.benefits.map((benefit, idx) => (
                   <div key={idx} className="flex items-center gap-2.5">
                     <Check className="w-4 h-4 text-[#1D4ED8] shrink-0" strokeWidth={3} />
-                    <span>{benefit}</span>
+                    <span>{passDisplayCopy(benefit)}</span>
                   </div>
                 ))}
               </div>
             </div>
 
+            <p className="text-xs text-[#64748B]">AI requests have daily limits. Check available resources before purchasing; new content availability may change.</p>
             <div className="pt-8">
               {configLoaded && config.enabled && checkoutEnabled ? (
                 <Link href="/checkout?plan=annual-pass">

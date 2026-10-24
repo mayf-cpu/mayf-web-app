@@ -1,3 +1,4 @@
+import { launchDisplaySettings } from '../lib/settings/launchDisplay';
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { SiteSettings, DEFAULT_SITE_SETTINGS } from '../lib/settings/siteSettingsTypes';
 
@@ -23,14 +24,14 @@ export const SiteSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
         if (cached) {
           const parsed = JSON.parse(cached);
           if (parsed && parsed.brand) {
-            return parsed;
+            return launchDisplaySettings(parsed);
           }
         }
       } catch {
         // ignore
       }
     }
-    return DEFAULT_SITE_SETTINGS;
+    return launchDisplaySettings(DEFAULT_SITE_SETTINGS);
   });
 
   const [loading, setLoading] = useState<boolean>(true);
@@ -41,7 +42,7 @@ export const SiteSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.settings) {
-          setSettings(data.settings);
+          setSettings(launchDisplaySettings(data.settings));
           try {
             sessionStorage.setItem(CACHE_KEY, JSON.stringify(data.settings));
           } catch {

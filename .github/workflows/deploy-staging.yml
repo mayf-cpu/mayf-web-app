@@ -15,6 +15,17 @@ on:
         required: false
         default: false
 
+      exercise_staging_rollback:
+        description: 'Verify a known disabled-commerce staging version, then restore this candidate'
+        type: boolean
+        required: false
+        default: false
+      inspect_production_metadata:
+        description: 'Read-only production Worker, R2, domain and secret-name metadata'
+        type: boolean
+        required: false
+        default: false
+
 permissions:
   contents: read
 
@@ -103,8 +114,33 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.MAYF_STAGING_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.MAYF_STAGING_CLOUDFLARE_ACCOUNT_ID }}
         run: node scripts/check-staging-cloudflare-resources.mjs
+      - name: Read production hosting metadata without changes
+        if: inputs.inspect_production_metadata == true
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.MAYF_STAGING_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.MAYF_STAGING_CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/inspect-production-resources.mjs
+      - name: Exercise known disabled-commerce staging rollback
+        id: rollback_check
+        if: inputs.exercise_staging_rollback == true
+        continue-on-error: true
+        env:
+          PAYMENT_ACCEPTANCE: ${{ inputs.enable_payment_acceptance }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.MAYF_STAGING_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.MAYF_STAGING_CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test "$PAYMENT_ACCEPTANCE" != "true" || { echo "Rollback exercise requires normal disabled-commerce staging"; exit 1; }
+          npx wrangler rollback cdee813a-2f20-4a2a-a520-10fafb0e202d --config wrangler.staging.jsonc --yes --message "Owner-authorized isolated staging rollback acceptance"
+          node scripts/staging-http-smoke.mjs https://staging-acceptance-mayf.sachinagrawal16.workers.dev
+      # A failed rollback check does not skip restoration of the checked candidate.
       - name: Deploy ONLY isolated staging Worker
         run: npx wrangler deploy --config "$STAGING_WRANGLER_CONFIG"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.MAYF_STAGING_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.MAYF_STAGING_CLOUDFLARE_ACCOUNT_ID }}
+      - name: Require successful rollback check after candidate restoration
+        if: inputs.exercise_staging_rollback == true
+        env:
+          ROLLBACK_RESULT: ${{ steps.rollback_check.outcome }}
+        run: test "$ROLLBACK_RESULT" = "success"
