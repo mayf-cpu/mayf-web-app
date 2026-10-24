@@ -1,0 +1,46 @@
+name: MAYF regression checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - fix/backend-runtime-firebase
+      - qa/automated-regression-checks
+      - develop/mayf
+      - staging/consolidated-mayf-2026-10-21
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Set up Java for Firestore rules tests
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+      - name: TypeScript validation
+        run: npm run lint
+      - name: Regression tests
+        run: npm test
+      - name: Firestore security rules
+        run: npm run test:rules
+      - name: Production frontend build
+        run: npm run build
+      - name: Worker API smoke tests
+        run: npm run test:worker

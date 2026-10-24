@@ -60,96 +60,16 @@ export interface AuditLogEntry {
 }
 
 class AuditLogService {
-  private logs: AuditLogEntry[] = [
-    {
-      id: 'audit-101',
-      timestamp: new Date(Date.now() - 3600000 * 24 * 3).toISOString(),
-      action: 'ADMIN_CREATED',
-      category: 'admin',
-      actorUid: 'admin-super-001',
-      actorEmail: '2026vivekkushwah@gmail.com',
-      actorRole: 'superAdmin',
-      targetId: 'admin-002',
-      targetEmail: 'admin@mayf.co.in',
-      targetType: 'admin_account',
-      details: { roleAssigned: 'admin', claims: { admin: true, superAdmin: false } },
-      ipAddress: '103.21.244.0',
-      status: 'success',
-    },
-    {
-      id: 'audit-102',
-      timestamp: new Date(Date.now() - 3600000 * 24 * 2).toISOString(),
-      action: 'SECURITY_CONFIG_UPDATED',
-      category: 'security',
-      actorUid: 'admin-super-001',
-      actorEmail: '2026vivekkushwah@gmail.com',
-      actorRole: 'superAdmin',
-      targetId: 'sys-firebase-auth-policy',
-      targetType: 'auth_policy',
-      details: {
-        change: 'Enforced direct Firebase Auth token verification on administrative routes',
-        requireEdgeVerification: false,
-      },
-      ipAddress: '103.21.244.0',
-      status: 'success',
-    },
-    {
-      id: 'audit-103',
-      timestamp: new Date(Date.now() - 3600000 * 18).toISOString(),
-      action: 'ANNUAL_PASS_GRANTED',
-      category: 'subscription',
-      actorUid: 'admin-002',
-      actorEmail: 'admin@mayf.co.in',
-      actorRole: 'admin',
-      targetId: 'student-1001',
-      targetEmail: 'arjun.sharma@mayf.co.in',
-      targetType: 'student_entitlement',
-      details: {
-        tier: 'annual_pass',
-        expiryDate: '2027-03-31',
-        reason: 'Academic scholarship sponsorship',
-      },
-      ipAddress: '103.22.200.12',
-      status: 'success',
-    },
-    {
-      id: 'audit-104',
-      timestamp: new Date(Date.now() - 3600000 * 8).toISOString(),
-      action: 'CONTENT_DELETED',
-      category: 'content',
-      actorUid: 'admin-002',
-      actorEmail: 'admin@mayf.co.in',
-      actorRole: 'admin',
-      targetId: 'draft-ch-old-circles',
-      targetType: 'chapter',
-      details: {
-        title: 'Deprecated Circles 2024 Practice Sheet',
-        replacedBy: 'ch-class10-circles-ncert-2026',
-      },
-      ipAddress: '103.22.200.12',
-      status: 'success',
-    },
-    {
-      id: 'audit-105',
-      timestamp: new Date(Date.now() - 3600000 * 4).toISOString(),
-      action: 'REFUND_PROCESSED',
-      category: 'refund',
-      actorUid: 'admin-super-001',
-      actorEmail: '2026vivekkushwah@gmail.com',
-      actorRole: 'superAdmin',
-      targetId: 'ord-802',
-      targetEmail: 'priya.patel@gmail.com',
-      targetType: 'payment_order',
-      details: {
-        amount: 2999,
-        currency: 'INR',
-        provider: 'stripe',
-        reason: 'Customer accidental double checkout',
-      },
-      ipAddress: '103.21.244.0',
-      status: 'success',
-    },
-  ];
+  // No synthetic audit history. Persisted entries are loaded by the repository.
+  private logs: AuditLogEntry[] = [];
+
+  public exportState(): Record<string, any>[] {
+    return this.logs.map(entry => structuredClone(entry));
+  }
+
+  public importState(entries: Record<string, any>[]): void {
+    this.logs = (entries as AuditLogEntry[]).slice().sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  }
 
   public log(entry: Omit<AuditLogEntry, 'id' | 'timestamp'>): AuditLogEntry {
     const fullEntry: AuditLogEntry = {
@@ -159,9 +79,6 @@ class AuditLogService {
     };
 
     this.logs.unshift(fullEntry);
-    if (this.logs.length > 500) {
-      this.logs.pop();
-    }
 
     console.info(`[AUDIT LOG] ${fullEntry.action} by ${fullEntry.actorEmail} on ${fullEntry.targetId}:`, fullEntry.details);
     return fullEntry;

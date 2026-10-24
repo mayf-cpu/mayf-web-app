@@ -1,145 +1,70 @@
-import React, { useState } from 'react';
-import {
-  CreditCard,
-  CheckCircle2,
-  Users,
-  Calendar,
-  Sparkles,
-  ShieldCheck,
-  TrendingUp,
-  Edit,
-  Save,
-} from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 import { Button } from '../../ui/Button';
+import { adminService } from '../../../services/adminService';
+import type { AnnualPassSettings } from '../../../lib/payments/types';
 
 export const AdminAnnualPassSection: React.FC = () => {
-  const [singlePrice, setSinglePrice] = useState('1999');
+  const [settings, setSettings] = useState<AnnualPassSettings | null>(null);
   const [familyPrice, setFamilyPrice] = useState('2999');
-  const [saved, setSaved] = useState(false);
-
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const load = async () => {
+    setLoading(true); setError('');
+    try {
+      const response = await fetch('/api/admin/annual-pass/settings', { headers: await adminService.getAuthHeaders() });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Unable to load membership settings.');
+      setSettings(data.settings);
+      setFamilyPrice(String(data.settings.familyPrice ?? 2999));
+    } catch (error: any) { setError(error.message); }
+    finally { setLoading(false); }
   };
-
+  useEffect(() => { void load(); }, []);
+  const save = async () => {
+    if (!settings || saving) return;
+    setSaving(true); setError(''); setMessage('');
+    try {
+      const response = await fetch('/api/admin/annual-pass/settings', {
+        method: 'POST', headers: await adminService.getAuthHeaders(),
+        body: JSON.stringify({ ...settings, familyPrice: Number(familyPrice) }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Membership settings were not saved.');
+      setSettings(data.settings); setMessage('Membership settings saved.');
+    } catch (error: any) { setError(error.message); }
+    finally { setSaving(false); }
+  };
+  const patch = (update: Partial<AnnualPassSettings>) => setSettings(current => current ? { ...current, ...update } : current);
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-heading font-extrabold text-slate-900 tracking-tight">
-            Annual Pass Tier Configuration
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Configure pricing tiers, multi-child family discounts, and entitlements for Classes 5 to 10.
-          </p>
-        </div>
-
-        <Button size="sm" variant="primary" onClick={handleSave} className="gap-1.5 shadow-xs">
-          <Save className="w-3.5 h-3.5" />
-          <span>{saved ? 'Saved Changes!' : 'Update Pass Pricing'}</span>
-        </Button>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div><h2 className="text-xl font-heading font-extrabold text-slate-900">Annual Pass Configuration</h2><p className="text-sm text-slate-600">Manage the membership price, promotional dates and access duration.</p></div>
+        <div className="flex gap-2"><Button onClick={load} disabled={loading || saving} variant="outline">Refresh</Button><Button onClick={save} disabled={loading || !settings} isLoading={saving}>Update Pass Pricing</Button></div>
       </div>
-
-      {/* Pricing Matrix Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Tier 1: Single Child */}
-        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-2xs space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="font-heading font-extrabold text-xs uppercase tracking-wider text-blue-700 bg-blue-50 px-2.5 py-1 rounded">
-              STANDARD TIER
-            </span>
-            <span className="font-mono text-xs text-slate-500">Academic Year 2026–2027</span>
-          </div>
-
-          <div>
-            <h3 className="font-heading font-bold text-lg text-slate-900">
-              Single Child Annual Pass
-            </h3>
-            <p className="text-xs text-slate-500 mt-1">
-              Full access for 1 student across their enrolled grade level (Class 5–10).
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-xs font-semibold text-slate-700 block">
-              Annual Price (INR ₹):
-            </label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
-              <input
-                type="number"
-                value={singlePrice}
-                onChange={(e) => setSinglePrice(e.target.value)}
-                className="w-full pl-8 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold text-slate-900"
-              />
-            </div>
-          </div>
-
-          <div className="pt-2 border-t border-slate-100 space-y-1.5 text-xs text-slate-600">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>Full formula deck with KaTeX proofs</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>24/7 AI Teacher doubt clearing</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>NCERT Exemplar step-by-step worked solutions</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Tier 2: Family Pack */}
-        <div className="bg-white rounded-xl border border-blue-200 bg-linear-to-b from-blue-50/20 to-white p-6 shadow-2xs space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="font-heading font-extrabold text-xs uppercase tracking-wider text-purple-700 bg-purple-50 px-2.5 py-1 rounded">
-              FAMILY PACK TIER
-            </span>
-            <span className="font-mono text-xs text-purple-600 font-bold">Best Value</span>
-          </div>
-
-          <div>
-            <h3 className="font-heading font-bold text-lg text-slate-900">
-              Family Multi-Child Annual Pass
-            </h3>
-            <p className="text-xs text-slate-500 mt-1">
-              Complete access for up to 3 siblings across different grades (Classes 5 to 10).
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-xs font-semibold text-slate-700 block">
-              Annual Price (INR ₹):
-            </label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
-              <input
-                type="number"
-                value={familyPrice}
-                onChange={(e) => setFamilyPrice(e.target.value)}
-                className="w-full pl-8 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold text-slate-900"
-              />
-            </div>
-          </div>
-
-          <div className="pt-2 border-t border-slate-100 space-y-1.5 text-xs text-slate-600">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>Multi-profile switcher for 2–3 siblings</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>Individual streaks and AI history per child</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>High-priority AI response throughput</span>
-            </div>
-          </div>
-        </div>
-      </div>
+      {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+      {message && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{message}</p>}
+      {loading && <p>Loading membership settings…</p>}
+      {settings && <div className="grid gap-6 md:grid-cols-2">
+        <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-6 text-slate-900">
+          <h3 className="font-bold text-lg">Single Child Annual Pass</h3>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={settings.enabled} onChange={event => patch({ enabled: event.target.checked })} />Accept new Annual Pass purchases</label>
+          <label className="block text-sm">Pass name<input className="mt-1 block w-full rounded border p-2" value={settings.name} onChange={event => patch({ name: event.target.value })} /></label>
+          <label className="block text-sm">Regular price (INR)<input type="number" min="1" step="0.01" className="mt-1 block w-full rounded border p-2" value={settings.regularPrice} onChange={event => patch({ regularPrice: Number(event.target.value) })} /></label>
+          <label className="block text-sm">Promotional price (INR)<input type="number" min="1" step="0.01" className="mt-1 block w-full rounded border p-2" value={settings.salePrice} onChange={event => patch({ salePrice: Number(event.target.value) })} /></label>
+          <p className="text-xs text-slate-600">Checkout uses the promotional price during the dates below, and the regular price outside that period. Configured tax is added at checkout.</p>
+          <label className="block text-sm">Access duration (days)<input type="number" min="1" max="3650" className="mt-1 block w-full rounded border p-2" value={settings.durationDays} onChange={event => patch({ durationDays: Number(event.target.value) })} /></label>
+          <label className="block text-sm">Promotion starts<input type="date" className="mt-1 block w-full rounded border p-2" value={settings.promotionalStartDate || ''} onChange={event => patch({ promotionalStartDate: event.target.value || null })} /></label>
+          <label className="block text-sm">Promotion ends<input type="date" className="mt-1 block w-full rounded border p-2" value={settings.promotionalEndDate || ''} onChange={event => patch({ promotionalEndDate: event.target.value || null })} /></label>
+        </section>
+        <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-6 text-slate-900">
+          <h3 className="font-bold text-lg">Family Multi-Child Annual Pass</h3>
+          <p className="text-sm text-slate-600">You can save a proposed family price. Family checkout and linked child profiles are not available yet.</p>
+          <label className="block text-sm">Proposed family price (INR)<input type="number" min="1" step="0.01" className="mt-1 block w-full rounded border p-2" value={familyPrice} onChange={event => setFamilyPrice(event.target.value)} /></label>
+          <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Saving this price does not sell or activate a family membership.</p>
+        </section>
+      </div>}
     </div>
   );
 };

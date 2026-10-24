@@ -1,3 +1,4 @@
+import { submitDoubtRating } from '../lib/ai/feedbackClient';
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Bot,
@@ -35,6 +36,7 @@ interface ChatMessage {
   questionType?: 'text' | 'image' | 'camera' | 'screenshot';
   imageUrl?: string;
   userRating?: 'helpful' | 'unhelpful';
+  doubtId?: string;
 }
 
 interface ImagePayload {
@@ -61,6 +63,9 @@ export const AiTeacherPage: React.FC = () => {
   const [quotaRemaining, setQuotaRemaining] = useState<number | null>(null);
   const [activeModel, setActiveModel] = useState<string>('gemini-3.8-flash');
   const [ratingSubmittedIds, setRatingSubmittedIds] = useState<Record<string, 'helpful' | 'unhelpful'>>({});
+
+  const [ratingError, setRatingError] = useState('');
+  const [ratingPending, setRatingPending] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
@@ -155,16 +160,13 @@ export const AiTeacherPage: React.FC = () => {
 
   // Rating handler
   const handleRateDoubt = async (doubtId: string, rating: 'helpful' | 'unhelpful') => {
-    setRatingSubmittedIds((prev) => ({ ...prev, [doubtId]: rating }));
+    if (ratingPending) return;
+    setRatingPending(true); setRatingError('');
     try {
-      await fetch('/api/ai-teacher/rate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ doubtId, rating }),
-      });
-    } catch {
-      // ignore
-    }
+      await submitDoubtRating(firebaseUser, doubtId, rating);
+      setRatingSubmittedIds((prev) => ({ ...prev, [doubtId]: rating }));
+    } catch { setRatingError('Feedback was not saved. Sign in and retry.'); }
+    finally { setRatingPending(false); }
   };
 
   const handleSendMessage = async (textOverride?: string) => {
@@ -253,6 +255,7 @@ export const AiTeacherPage: React.FC = () => {
 
       const teacherMsg: ChatMessage = {
         id: data.doubtId || 'msg-' + (Date.now() + 1),
+        doubtId: data.doubtId,
         sender: 'ai_teacher',
         text: data.reply,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -347,6 +350,7 @@ export const AiTeacherPage: React.FC = () => {
       />
 
       <div className="max-w-4xl mx-auto space-y-5">
+        {ratingError && <p role="alert" className="text-sm text-red-700">{ratingError}</p>}
         
         {/* Header & Classroom Controls */}
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -416,7 +420,7 @@ export const AiTeacherPage: React.FC = () => {
             </span>
             <span className="inline-flex items-center gap-1 text-[11px] text-emerald-800 font-medium">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              Firebase App Check Protected
+              Server-enforced usage limits
             </span>
             {quotaRemaining !== null && (
               <span className="text-[11px] text-slate-600">
@@ -517,7 +521,7 @@ export const AiTeacherPage: React.FC = () => {
                     )}
 
                     {/* Feedback Rating Strip (For Teacher responses) */}
-                    {isTeacher && msg.id !== 'welcome-1' && (
+                    {isTeacher && msg.doubtId && firebaseUser && (
                       <div className="mt-4 pt-3 border-t border-slate-200/80 flex items-center justify-between text-xs text-slate-500">
                         <span className="text-[11px]">Was this step-by-step solution helpful?</span>
                         <div className="flex items-center gap-1.5">
@@ -529,7 +533,8 @@ export const AiTeacherPage: React.FC = () => {
                           ) : (
                             <>
                               <button
-                                onClick={() => handleRateDoubt(msg.id, 'helpful')}
+                                disabled={ratingPending}
+                                onClick={() => handleRateDoubt(msg.doubtId!, 'helpful')}
                                 className="w-9 h-9 min-w-[36px] min-h-[36px] flex items-center justify-center text-slate-400 hover:text-emerald-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
                                 title="Helpful answer"
                                 aria-label="Helpful answer"
@@ -537,7 +542,8 @@ export const AiTeacherPage: React.FC = () => {
                                 <ThumbsUp className="w-4 h-4" />
                               </button>
                               <button
-                                onClick={() => handleRateDoubt(msg.id, 'unhelpful')}
+                                disabled={ratingPending}
+                                onClick={() => handleRateDoubt(msg.doubtId!, 'unhelpful')}
                                 className="w-9 h-9 min-w-[36px] min-h-[36px] flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
                                 title="Not helpful"
                                 aria-label="Not helpful"

@@ -1,3 +1,5 @@
+import { validateAnnualPassSettings } from './annualPassSettings';
+import { isProductionPaymentRuntime } from './runtime';
 /**
  * Authoritative Annual Pass & Entitlement Service
  * Maths at Your Fingertips (mayf.co.in)
@@ -66,7 +68,7 @@ export class EntitlementService {
       updatedBy: 'system_init',
     };
 
-    this.seedInitialEntitlements();
+    if (!isProductionPaymentRuntime()) this.seedInitialEntitlements();
   }
 
   /**
@@ -111,21 +113,19 @@ export class EntitlementService {
   // Settings Management
   // --------------------------------------------------------------------------
 
-  getSettings(): AnnualPassSettings {
-    return { ...this.settings };
-  }
-
+  settingsState = {
+    exportState: () => [{ id: 'annual-pass', ...this.getSettings() }],
+    importState: (items: Record<string, any>[]) => {
+      const record = items.find(item => item.id === 'annual-pass');
+      if (!record) throw new Error('Annual Pass configuration is missing.');
+      const { id, ...settings } = record;
+      this.settings = validateAnnualPassSettings(settings as AnnualPassSettings);
+    },
+  };
+  getSettings(): AnnualPassSettings { return structuredClone(this.settings); }
   updateSettings(partial: Partial<AnnualPassSettings>, adminId = 'admin'): AnnualPassSettings {
-    this.settings = {
-      ...this.settings,
-      ...partial,
-      durationDays: partial.durationDays && partial.durationDays > 0 ? partial.durationDays : this.settings.durationDays,
-      regularPrice: partial.regularPrice !== undefined ? Math.max(0, partial.regularPrice) : this.settings.regularPrice,
-      salePrice: partial.salePrice !== undefined ? Math.max(0, partial.salePrice) : this.settings.salePrice,
-      updatedAt: new Date().toISOString(),
-      updatedBy: adminId,
-    };
-    return { ...this.settings };
+    this.settings = validateAnnualPassSettings({ ...this.settings, ...partial, updatedAt: new Date().toISOString(), updatedBy: adminId });
+    return this.getSettings();
   }
 
   // --------------------------------------------------------------------------

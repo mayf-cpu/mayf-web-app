@@ -236,8 +236,8 @@ export const DEFAULT_HOMEPAGE_BLOCKS: HomepageBlock[] = [
     enabled: true,
     order: 5,
     config: {
-      title: 'Trending Revision Topics',
-      subtitle: 'Most active proofs and problem sets this week across board batches.',
+      title: 'Explore Revision Topics',
+      subtitle: 'Browse chapter explanations and revision topics.',
       maxItems: 4,
     } as TrendingBlockConfig,
   },
@@ -288,8 +288,8 @@ export const DEFAULT_HOMEPAGE_BLOCKS: HomepageBlock[] = [
     enabled: true,
     order: 9,
     config: {
-      title: 'Most Popular Revision Handouts',
-      subtitle: 'Highest rated study guides, formula cheatsheets, and question banks.',
+      title: 'Revision Handouts',
+      subtitle: 'Explore study guides, formula sheets, and practice resources.',
       maxItems: 4,
     } as PopularBlockConfig,
   },
@@ -327,7 +327,7 @@ export const DEFAULT_HOMEPAGE_BLOCKS: HomepageBlock[] = [
     config: {
       badgeText: 'ALL-IN-ONE BOARD PASS',
       title: 'Maths at Your Fingertips Annual Pass',
-      subtitle: 'Complete syllabus access for Class 5 to 10. Printable revision notes, formula flashcards, and unlimited AI Teacher guidance.',
+      subtitle: 'Explore Class 5 to 10 study materials, formula flashcards, and AI Teacher guidance with daily usage limits.',
       priceFormatted: '₹999',
       periodText: '/ entire academic year',
       guaranteeText: '100% Money-Back Guarantee within 7 days. No questions asked.',

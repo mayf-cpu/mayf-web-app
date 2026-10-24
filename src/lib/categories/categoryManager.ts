@@ -63,6 +63,9 @@ class CategoryManager {
   private categoriesMap: Map<string, HierarchicalCategory> = new Map();
   private initialized = false;
 
+  public exportState(): Record<string, any>[] { return structuredClone(Array.from(this.categoriesMap.values())); }
+  public importState(items: Record<string, any>[]): void { this.categoriesMap = new Map(items.map(item => [item.id, item as any])); }
+
   constructor() {
     this.initializeStore();
   }
@@ -380,8 +383,7 @@ class CategoryManager {
 
     // Direct content count in this category
     const contentCount =
-      contentCmsManager.countItemsWithCategory(cat.name) +
-      contentCmsManager.countItemsWithCategory(cat.id);
+      contentCmsManager.countItemsWithCategory(cat.name, cat.id, cat.applicableGrades);
 
     return {
       ...cat,
@@ -480,7 +482,7 @@ class CategoryManager {
 
     const timestamp = new Date().toISOString();
     const slugBase = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-    const id = `cat-${slugBase}-${Date.now().toString().slice(-4)}`;
+    const id = `cat-${slugBase}-${crypto.randomUUID()}`;
 
     // Determine default sortOrder among siblings
     let maxSort = 0;
@@ -536,6 +538,7 @@ class CategoryManager {
     if (!trimmed) throw new Error('New category name cannot be empty.');
 
     const oldName = cat.name;
+    contentCmsManager.reassignCategory(oldName, trimmed, actor, cat.id, cat.id, cat.applicableGrades);
     cat.name = trimmed;
     cat.slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
     cat.updatedAt = new Date().toISOString();
@@ -693,8 +696,7 @@ class CategoryManager {
 
     // Direct content count
     const directContent =
-      contentCmsManager.countItemsWithCategory(cat.name) +
-      contentCmsManager.countItemsWithCategory(cat.id);
+      contentCmsManager.countItemsWithCategory(cat.name, cat.id, cat.applicableGrades);
 
     // Descendants check
     const descendantIds = this.getDescendantIds(id);
@@ -704,8 +706,7 @@ class CategoryManager {
       const desc = this.categoriesMap.get(descId);
       if (desc) {
         totalContentCount +=
-          contentCmsManager.countItemsWithCategory(desc.name) +
-          contentCmsManager.countItemsWithCategory(desc.id);
+          contentCmsManager.countItemsWithCategory(desc.name, desc.id, desc.applicableGrades);
       }
     }
 
@@ -759,14 +760,14 @@ class CategoryManager {
       }
 
       // Reassign content of this category
-      const resDirect = contentCmsManager.reassignCategory(cat.name, targetCat.name, actor);
+      const resDirect = contentCmsManager.reassignCategory(cat.name, targetCat.name, actor, cat.id, targetCat.id, cat.applicableGrades);
       reassignedCount += resDirect.reassignedCount;
 
       // Reassign content of all descendants
       for (const descId of this.getDescendantIds(id)) {
         const desc = this.categoriesMap.get(descId);
         if (desc) {
-          const resDesc = contentCmsManager.reassignCategory(desc.name, targetCat.name, actor);
+          const resDesc = contentCmsManager.reassignCategory(desc.name, targetCat.name, actor, desc.id, targetCat.id, desc.applicableGrades);
           reassignedCount += resDesc.reassignedCount;
         }
       }

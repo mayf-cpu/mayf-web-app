@@ -12,6 +12,7 @@
  */
 
 import crypto from 'crypto';
+import { isProductionPaymentRuntime } from '../payments/runtime';
 import {
   CouponItem,
   CouponValidationRequest,
@@ -27,9 +28,20 @@ export class CouponService {
   private promotionsStore: Map<string, PromotionalBlock> = new Map();
 
   constructor() {
-    this.seedInitialCoupons();
-    this.seedInitialPromotions();
+    if (!isProductionPaymentRuntime()) {
+      this.seedInitialCoupons();
+      this.seedInitialPromotions();
+    }
   }
+
+  couponState = {
+    exportState: () => structuredClone([...this.couponsStore.values()].map(coupon => ({ ...coupon, id: coupon.code }))),
+    importState: (items: Record<string, any>[]) => { this.couponsStore = new Map(items.map(({ id, ...coupon }) => [coupon.code, coupon as CouponItem])); },
+  };
+  promotionState = {
+    exportState: () => structuredClone([...this.promotionsStore.values()]),
+    importState: (items: Record<string, any>[]) => { this.promotionsStore = new Map(items.map(item => [item.id, item as PromotionalBlock])); },
+  };
 
   /**
    * Seed production coupons
@@ -49,10 +61,8 @@ export class CouponService {
         usageLimit: 5000,
         perUserLimit: 1,
         scope: 'annual_pass_only',
-        timesUsed: 42,
-        userUsageMap: {
-          'mayf-student-1001': 1,
-        },
+        timesUsed: 0,
+        userUsageMap: {},
         createdAt: '2026-01-01T00:00:00.000Z',
         updatedAt: '2026-01-01T00:00:00.000Z',
       },
@@ -69,7 +79,7 @@ export class CouponService {
         usageLimit: 2500,
         perUserLimit: 2,
         scope: 'all',
-        timesUsed: 19,
+        timesUsed: 0,
         userUsageMap: {},
         createdAt: '2026-01-01T00:00:00.000Z',
         updatedAt: '2026-01-01T00:00:00.000Z',
@@ -87,7 +97,7 @@ export class CouponService {
         usageLimit: 500,
         perUserLimit: 1,
         scope: 'annual_pass_only',
-        timesUsed: 8,
+        timesUsed: 0,
         userUsageMap: {},
         createdAt: '2026-04-01T00:00:00.000Z',
         updatedAt: '2026-04-01T00:00:00.000Z',
@@ -135,6 +145,7 @@ export class CouponService {
     const cleanCode = (req.code || '').trim().toUpperCase();
     const grossAmount = Math.max(0, req.cartGrossAmount || 0);
 
+    if (!Number.isFinite(req.cartGrossAmount) || req.cartGrossAmount < 0) throw new Error('Invalid cart amount.');
     if (!cleanCode) {
       return {
         valid: false,
@@ -145,6 +156,7 @@ export class CouponService {
       };
     }
 
+    if ((req.currency || 'INR').toUpperCase() !== 'INR') return { valid: false, discountAmount: 0, netAmount: grossAmount, message: 'Coupons are currently valid for INR purchases only.', error: 'Use INR checkout for this coupon.' };
     const coupon = this.couponsStore.get(cleanCode);
     if (!coupon) {
       return {
@@ -245,13 +257,7 @@ export class CouponService {
 
     if (coupon.scope === 'annual_pass_only') {
       const hasAnnualPass =
-        items.length === 0 || // Defaults to pass if single item cart
-        items.some(
-          (i) =>
-            i.annualPass === true ||
-            (i.title && i.title.toLowerCase().includes('annual pass')) ||
-            (i.id && i.id.includes('pass'))
-        );
+        items.some(i => i.annualPass === true);
 
       if (!hasAnnualPass) {
         return {
@@ -267,22 +273,19 @@ export class CouponService {
       // Compute subtotal of Annual Pass items
       if (items.length > 0) {
         const passItems = items.filter(
-          (i) =>
-            i.annualPass === true ||
-            (i.title && i.title.toLowerCase().includes('annual pass')) ||
-            (i.id && i.id.includes('pass'))
+          i => i.annualPass === true
         );
         const calcSubtotal = passItems.reduce(
           (sum, item) => sum + (Number(item.unitPrice ?? item.price ?? 0)) * (Number(item.quantity) || 1),
           0
         );
-        eligibleSubtotal = calcSubtotal > 0 ? calcSubtotal : grossAmount;
+        eligibleSubtotal = Math.min(calcSubtotal, grossAmount);
       }
     } else if (coupon.scope === 'selected_products') {
       const selectedIds = coupon.selectedProductIds || [];
       const eligibleItems = items.filter((i) => i.id && selectedIds.includes(i.id));
 
-      if (eligibleItems.length === 0 && items.length > 0) {
+      if (eligibleItems.length === 0) {
         return {
           valid: false,
           code: coupon.code,
@@ -297,7 +300,7 @@ export class CouponService {
         (sum, item) => sum + (Number(item.unitPrice ?? item.price ?? 0)) * (Number(item.quantity) || 1),
         0
       );
-      eligibleSubtotal = calcSubtotal > 0 ? calcSubtotal : grossAmount;
+      eligibleSubtotal = Math.min(calcSubtotal, grossAmount);
     }
 
     // 7. Calculate authoritative discount
@@ -376,8 +379,8 @@ export class CouponService {
 
   saveCoupon(data: Partial<CouponItem>): CouponItem {
     const rawCode = (data.code || '').trim().toUpperCase();
-    if (!rawCode) {
-      throw new Error('Coupon code is required.');
+    if (!/^[A-Z0-9_-]{1,64}$/.test(rawCode)) {
+      throw new Error('Coupon code must contain 1–64 letters, numbers, underscores or hyphens.');
     }
 
     const existing = this.couponsStore.get(rawCode);
@@ -391,24 +394,68 @@ export class CouponService {
       description: data.description ?? existing?.description ?? '',
       startDate: data.startDate !== undefined ? data.startDate : existing?.startDate,
       endDate: data.endDate !== undefined ? data.endDate : existing?.endDate,
-      minimumCartAmount: data.minimumCartAmount !== undefined ? (data.minimumCartAmount ? Number(data.minimumCartAmount) : null) : existing?.minimumCartAmount,
-      maximumDiscountAmount: data.maximumDiscountAmount !== undefined ? (data.maximumDiscountAmount ? Number(data.maximumDiscountAmount) : null) : existing?.maximumDiscountAmount,
-      usageLimit: data.usageLimit !== undefined ? (data.usageLimit ? Number(data.usageLimit) : null) : existing?.usageLimit,
-      perUserLimit: data.perUserLimit !== undefined ? (data.perUserLimit ? Number(data.perUserLimit) : 1) : existing?.perUserLimit ?? 1,
+      minimumCartAmount: data.minimumCartAmount !== undefined ? (data.minimumCartAmount == null ? null : Number(data.minimumCartAmount)) : existing?.minimumCartAmount,
+      maximumDiscountAmount: data.maximumDiscountAmount !== undefined ? (data.maximumDiscountAmount == null ? null : Number(data.maximumDiscountAmount)) : existing?.maximumDiscountAmount,
+      usageLimit: data.usageLimit !== undefined ? (data.usageLimit == null ? null : Number(data.usageLimit)) : existing?.usageLimit,
+      perUserLimit: data.perUserLimit !== undefined ? (data.perUserLimit == null ? null : Number(data.perUserLimit)) : existing?.perUserLimit ?? 1,
       scope: data.scope || existing?.scope || 'all',
       selectedProductIds: data.selectedProductIds || existing?.selectedProductIds || [],
       timesUsed: existing?.timesUsed || 0,
       userUsageMap: existing?.userUsageMap || {},
+      // Admin form inputs must never override active reservations or redemption ledger.
+      activeReservations: existing?.activeReservations || {},
       createdAt: existing?.createdAt || now,
       updatedAt: now,
     };
 
+    if (!['fixed', 'percentage'].includes(updated.discountType) ||
+        !Number.isFinite(updated.discountValue) || updated.discountValue <= 0 ||
+        (updated.discountType === 'percentage' && updated.discountValue > 100)) throw new Error('Enter a valid positive discount (percentage at most 100).');
+    if (!['all', 'annual_pass_only', 'selected_products'].includes(updated.scope)) throw new Error('Invalid coupon scope.');
+    for (const value of [updated.minimumCartAmount, updated.maximumDiscountAmount, updated.usageLimit, updated.perUserLimit]) {
+      if (value != null && (!Number.isFinite(value) || value <= 0)) throw new Error('Coupon limits must be positive numbers.');
+    }
+    for (const value of [updated.usageLimit, updated.perUserLimit]) {
+      if (value != null && !Number.isInteger(value)) throw new Error('Redemption limits must be whole numbers.');
+    }
+    for (const date of [updated.startDate, updated.endDate]) {
+      if (date && !Number.isFinite(Date.parse(date))) throw new Error('Invalid coupon date.');
+    }
+    if (updated.startDate && updated.endDate && updated.startDate > updated.endDate) throw new Error('End date must follow start date.');
+    if (updated.scope === 'selected_products' && !updated.selectedProductIds?.length) throw new Error('Select at least one eligible product.');
+    // Previously sold uses plus outstanding gateway claims are financial
+    // obligations, even when a hold timer has expired. Do not let a CMS
+    // edit shrink limits below obligations and strand a captured payment.
+    const outstanding = Object.values(updated.activeReservations || {});
+    if (updated.usageLimit != null &&
+        updated.usageLimit < updated.timesUsed + outstanding.length) {
+      throw new Error('Coupon global limit cannot be below redeemed uses plus outstanding checkout reservations.');
+    }
+    const heldByStudent: Record<string, number> = {};
+    for (const hold of outstanding) {
+      if (!hold || typeof hold.userId !== 'string') throw new Error('Invalid outstanding coupon reservation.');
+      heldByStudent[hold.userId] = (heldByStudent[hold.userId] || 0) + 1;
+    }
+    if (updated.perUserLimit != null) {
+      for (const uid of new Set([...Object.keys(updated.userUsageMap), ...Object.keys(heldByStudent)])) {
+        if ((updated.userUsageMap[uid] || 0) + (heldByStudent[uid] || 0) > updated.perUserLimit) {
+          throw new Error('Coupon per-user limit cannot be below redeemed uses plus outstanding reservations.');
+        }
+      }
+    }
     this.couponsStore.set(rawCode, updated);
     return updated;
   }
 
   deleteCoupon(code: string): boolean {
-    return this.couponsStore.delete(code.toUpperCase());
+    const normalized = code.toUpperCase();
+    const coupon = this.couponsStore.get(normalized);
+    // An expired hold may still back an unresolved gateway charge.
+    // Never let administrators delete that financial obligation by timer alone.
+    if (coupon && Object.keys(coupon.activeReservations || {}).length > 0) {
+      throw new Error('Coupon has outstanding checkout reservations. Resolve them before deleting.');
+    }
+    return this.couponsStore.delete(normalized);
   }
 
   // --------------------------------------------------------------------------
@@ -434,6 +481,7 @@ export class CouponService {
 
   savePromotion(data: Partial<PromotionalBlock>): PromotionalBlock {
     const id = data.id || `promo-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) throw new Error('Invalid promotion ID.');
     const existing = this.promotionsStore.get(id);
     const now = new Date().toISOString();
 
@@ -442,7 +490,7 @@ export class CouponService {
       title: data.title || existing?.title || 'Special Mathematics Promotion',
       subtitle: data.subtitle ?? existing?.subtitle ?? '',
       badgeText: data.badgeText ?? existing?.badgeText ?? 'LIMITED TIME OFFER',
-      couponCode: data.couponCode ? data.couponCode.trim().toUpperCase() : existing?.couponCode,
+      couponCode: data.couponCode !== undefined ? data.couponCode.trim().toUpperCase() : existing?.couponCode,
       targetPlacements: data.targetPlacements || existing?.targetPlacements || ['homepage'],
       ctaText: data.ctaText || existing?.ctaText || 'Get Offer Now',
       ctaLink: data.ctaLink || existing?.ctaLink || '/checkout',
@@ -454,6 +502,13 @@ export class CouponService {
       updatedAt: now,
     };
 
+    if (!updated.targetPlacements.length || updated.targetPlacements.some(p => !['homepage', 'catalogue'].includes(p))) throw new Error('Choose a valid promotion placement.');
+    if (!['gradient', 'urgent', 'accent', 'minimal'].includes(updated.bannerStyle)) throw new Error('Invalid banner style.');
+    if (!(updated.ctaLink.startsWith('/') && !updated.ctaLink.startsWith('//') && !updated.ctaLink.includes('\\')) && !/^https:\/\//i.test(updated.ctaLink)) throw new Error('Use a site path or HTTPS link for the promotion.');
+    for (const date of [updated.startsAt, updated.expiresAt]) {
+      if (date && !Number.isFinite(Date.parse(date))) throw new Error('Invalid promotion date.');
+    }
+    if (updated.startsAt && updated.expiresAt && updated.startsAt > updated.expiresAt) throw new Error('Promotion end date must follow start date.');
     this.promotionsStore.set(id, updated);
     return updated;
   }

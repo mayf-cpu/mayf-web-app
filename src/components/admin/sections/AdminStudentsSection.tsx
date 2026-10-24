@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Users,
   Search,
@@ -51,6 +51,8 @@ export const AdminStudentsSection: React.FC = () => {
   // Modal / Drawer state for inspecting student profile
   const [selectedStudent, setSelectedStudent] = useState<StudentRecord | null>(null);
   const [activeTab, setActiveTab] = useState<'entitlements' | 'lifecycle' | 'orders' | 'activity'>('entitlements');
+  const inspectorRequest = useRef(0);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [studentOrders, setStudentOrders] = useState<OrderRecord[]>([]);
   const [studentActivity, setStudentActivity] = useState<StudentActivityRecord[]>([]);
   const [actionLoading, setActionLoading] = useState(false);
@@ -73,6 +75,9 @@ export const AdminStudentsSection: React.FC = () => {
         includeDisabled: true,
       });
       setStudents(data);
+    } catch (error: any) {
+      setStudents([]);
+      setActionMessage({ type: 'error', text: error?.message || 'Unable to load Firebase users' });
     } finally {
       setLoading(false);
     }
@@ -88,19 +93,20 @@ export const AdminStudentsSection: React.FC = () => {
     setActionMessage(null);
     setCustomExpiry(student.passExpiry || '2027-04-30');
 
-    // Load full orders and activity
-    const [orders, activity] = await Promise.all([
-      adminService.getUserOrders(student.uid),
-      adminService.getUserActivity(student.uid),
-    ]);
-    setStudentOrders(orders);
-    setStudentActivity(activity);
+    const request = ++inspectorRequest.current;
+    setStudentOrders([]); setStudentActivity([]); setHistoryLoading(true);
+    try {
+      const [orders, activity] = await Promise.all([adminService.getUserOrders(student.uid), adminService.getUserActivity(student.uid)]);
+      if (request !== inspectorRequest.current) return;
+      setStudentOrders(orders); setStudentActivity(activity);
+    } catch (error: any) {
+      if (request === inspectorRequest.current) setActionMessage({ type: 'error', text: error.message || 'Student history could not be loaded.' });
+    } finally { if (request === inspectorRequest.current) setHistoryLoading(false); }
   };
 
   const handleCloseInspector = () => {
-    setSelectedStudent(null);
-    setActionMessage(null);
-    setRefundOrderId(null);
+    inspectorRequest.current++;
+    setSelectedStudent(null); setActionMessage(null); setRefundOrderId(null); setHistoryLoading(false);
   };
 
   // Actions
@@ -256,12 +262,13 @@ export const AdminStudentsSection: React.FC = () => {
     setActionLoading(false);
     if (res.success) {
       setStudentOrders((prev) =>
-        prev.map((o) => (o.id === order.id ? { ...o, status: 'refunded' } : o))
+        prev.map((o) => (o.id === order.id ? { ...o, refundRequestStatus: res.refundStatus,
+          ...(res.refundStatus === 'completed' ? { status: 'refunded' as const } : {}) } : o))
       );
       setRefundOrderId(null);
       setActionMessage({
         type: 'success',
-        text: `Refund processed for order ${order.orderNumber}. Audit log recorded.`,
+        text: res.message || 'Refund request recorded; awaiting verified provider confirmation.',
       });
     } else {
       setActionMessage({ type: 'error', text: res.error || 'Failed to process refund.' });
@@ -467,6 +474,7 @@ export const AdminStudentsSection: React.FC = () => {
       {selectedStudent && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {historyLoading && <p role="status" className="p-3 text-sm text-blue-800 bg-blue-50">Loading saved orders and reported activity…</p>}
             {/* Modal Header */}
             <div className="px-6 py-4 border-b border-slate-200 flex items-start justify-between bg-slate-50">
               <div className="flex items-center gap-3">
@@ -836,7 +844,7 @@ export const AdminStudentsSection: React.FC = () => {
                               <span>{ord.planName}</span>
                               <span
                                 className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                                  ord.status === 'captured' || ord.status === 'paid'
+                                  ord.status === 'paid'
                                     ? 'bg-emerald-100 text-emerald-800'
                                     : ord.status === 'refunded'
                                     ? 'bg-purple-100 text-purple-800'
@@ -853,9 +861,9 @@ export const AdminStudentsSection: React.FC = () => {
 
                           <div className="flex items-center gap-3">
                             <span className="font-heading font-extrabold text-sm text-slate-900">
-                              ₹{ord.amount}
+                              {new Intl.NumberFormat('en-IN', { style: 'currency', currency: ord.currency }).format(ord.amount)}
                             </span>
-                            {ord.status !== 'refunded' && (
+                            {ord.status === 'paid' && ord.gateway === 'razorpay' && !ord.refundRequestStatus && (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -864,6 +872,9 @@ export const AdminStudentsSection: React.FC = () => {
                               >
                                 Refund Order
                               </Button>
+                            )}
+                            {ord.status === 'paid' && ord.refundRequestStatus && (
+                              <span className="text-xs text-amber-800">Refund: {ord.refundRequestStatus.replaceAll('_', ' ')}</span>
                             )}
                           </div>
                         </div>

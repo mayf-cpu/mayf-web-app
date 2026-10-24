@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { getAdminAuth, verifyStudentSessionToken } from '../src/lib/firebase/admin';
+import { getAdminAuth, getFirebaseAdminConfig, getFirebaseAdminDiagnostics, verifyStudentSessionToken } from '../src/lib/firebase/admin';
 
 test('failed Firebase verification cannot grant privileges from a forged payload', async (t) => {
   const auth = getAdminAuth();
@@ -46,5 +46,70 @@ test('production rejects development tokens', async () => {
   } finally {
     if (previous === undefined) delete process.env.NODE_ENV;
     else process.env.NODE_ENV = previous;
+  }
+});
+
+test('allowlisted administrator email requires a verified email token', async t => {
+  const auth = getAdminAuth();
+  assert.ok(auth);
+  const verifier = t.mock.method(auth, 'verifyIdToken', async () => ({
+    uid: 'owner', email: 'ntnagrawal146@gmail.com', email_verified: false,
+  }));
+  assert.equal((await verifyStudentSessionToken('header.payload.signature')).role, 'student');
+  verifier.mock.mockImplementation(async () => ({
+    uid: 'owner', email: 'ntnagrawal146@gmail.com', email_verified: true,
+  }));
+  assert.equal((await verifyStudentSessionToken('header.payload.signature')).role, 'superAdmin');
+});
+
+
+test('credential diagnostics tolerate invalid JSON and expose no secret values', () => {
+  const prior = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  try {
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON = 'null';
+    assert.equal(getFirebaseAdminDiagnostics().serviceAccountJsonReadable, false);
+    assert.doesNotThrow(() => getFirebaseAdminConfig());
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON = JSON.stringify({
+      project_id: 'test-project', client_email: 'test@example.com', private_key: 'never-expose-this-test-key',
+    });
+    const diagnostic = getFirebaseAdminDiagnostics();
+    assert.equal(diagnostic.serviceAccountJsonReadable, true);
+    assert.equal(diagnostic.privateKeyPresent, true);
+    assert.equal(JSON.stringify(diagnostic).includes('never-expose'), false);
+  } finally {
+    if (prior === undefined) delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    else process.env.FIREBASE_SERVICE_ACCOUNT_JSON = prior;
+  }
+});
+
+test('the owner-authorized backup account receives admin access after verified Google sign-in', async t => {
+  const auth = getAdminAuth();
+  assert.ok(auth);
+  const verifier = t.mock.method(auth, 'verifyIdToken', async () => ({
+    uid: 'authorized-backup', email: 'mayfbackup@gmail.com', email_verified: true,
+  }));
+  const result = await verifyStudentSessionToken('header.payload.signature');
+  assert.equal(result.valid, true);
+  assert.equal(result.role, 'admin');
+  assert.equal(result.superAdmin, false);
+  verifier.mock.mockImplementation(async () => ({
+    uid: 'unverified-backup', email: 'mayfbackup@gmail.com', email_verified: false,
+  }));
+  assert.equal((await verifyStudentSessionToken('header.payload.signature')).role, 'student');
+});
+
+test('an explicit administrator allowlist can revoke backup-email bootstrap access', async t => {
+  const previous = process.env.ADMIN_AUTHORIZED_EMAILS;
+  process.env.ADMIN_AUTHORIZED_EMAILS = 'administrator@example.com';
+  try {
+    const auth = getAdminAuth();
+    assert.ok(auth);
+    t.mock.method(auth, 'verifyIdToken', async () => ({
+      uid: 'backup', email: 'mayfbackup@gmail.com', email_verified: true,
+    }));
+    assert.equal((await verifyStudentSessionToken('header.payload.signature')).role, 'student');
+  } finally {
+    if (previous === undefined) delete process.env.ADMIN_AUTHORIZED_EMAILS;
+    else process.env.ADMIN_AUTHORIZED_EMAILS = previous;
   }
 });

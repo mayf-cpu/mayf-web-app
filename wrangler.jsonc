@@ -1,11 +1,43 @@
 {
   "name": "mayf",
-  "main": "bootstrap-worker.ts",
   "compatibility_date": "2026-10-19",
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": [
+      "/api/*"
+    ]
   },
-  "previews": {}
+  "previews": {},
+  "r2_buckets": [
+    {
+      "binding": "MAYF_PDF_BUCKET",
+      "bucket_name": "mayf-study-materials"
+    }
+  ],
+  "main": "worker.ts",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "define": {
+    "process.env.NODE_ENV": "\"production\""
+  },
+  "vars": {
+    "APP_ENV": "production",
+    "PUBLIC_APP_URL": "https://mayf.co.in",
+    "MAYF_ENABLE_CHECKOUT": "false",
+    "MAYF_ENABLE_ADMIN_REFUNDS": "false",
+    "MAYF_ENABLE_COUPON_CHECKOUT": "false",
+    "MAYF_ENABLE_PAYMENT_SIMULATION": "false"
+  },
+  "routes": [
+    {
+      "pattern": "mayf.co.in",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.mayf.co.in",
+      "custom_domain": true
+    }
+  ]
 }

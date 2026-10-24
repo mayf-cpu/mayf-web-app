@@ -23,16 +23,15 @@ class BroadcastService {
   private cacheTimestamp: number = 0;
 
   constructor() {
-    this.initStore();
+    SEED_BROADCASTS.forEach((b) => this.broadcastsStore.set(b.id, { ...b }));
   }
 
-  private async initStore(): Promise<void> {
-    // Seed initial broadcasts into store
-    SEED_BROADCASTS.forEach((b) => this.broadcastsStore.set(b.id, { ...b }));
+  public async initStore(): Promise<void> {
+
 
     try {
       const db = getAdminFirestore();
-      if (!db) return;
+      if (!db) { if (process.env.NODE_ENV === 'production') throw new Error('Firebase storage is not configured'); return; }
 
       const docRef = db.collection('siteSettings').doc('broadcasts');
       const snap = await docRef.get();
@@ -54,13 +53,14 @@ class BroadcastService {
         this.cacheTimestamp = Date.now();
       }
     } catch (e: any) {
-      console.warn('[BroadcastService] Firestore sync note, using authoritative memory cache:', e?.message || e);
+      throw e;
     }
   }
 
   private async persistToFirestore(): Promise<void> {
     try {
       const db = getAdminFirestore();
+      if (!db && process.env.NODE_ENV === 'production') throw new Error('Firebase storage is not configured');
       if (db) {
         const items = Array.from(this.broadcastsStore.values());
         await db.collection('siteSettings').doc('broadcasts').set({
@@ -69,7 +69,7 @@ class BroadcastService {
         });
       }
     } catch (e: any) {
-      console.warn('[BroadcastService] Firestore persistence note:', e?.message || e);
+      throw e;
     }
   }
 

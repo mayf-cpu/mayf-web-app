@@ -1,3 +1,4 @@
+import { requestAdminCatalogue } from '../lib/cms/adminCatalogueClient';
 /**
  * Client-Side Admin Service
  *
@@ -15,8 +16,10 @@ import { DashboardAnalyticsData } from '../lib/analytics/analyticsTypes';
 export interface AdminMetrics {
   totalStudents: number;
   activeAnnualPasses: number;
-  totalRevenue: number;
-  aiDoubtsSolved: number;
+  totalRevenue: number | null;
+  aiDoubtsSolved: number | null;
+  aiTeacherConfigured?: boolean;
+  firebaseConfigured?: boolean;
   totalFormulas: number;
   totalChapters: number;
   activeCoupons: number;
@@ -52,7 +55,7 @@ export interface StudentRecord {
 
 export interface StudentActivityRecord {
   id: string;
-  type: 'ai_doubt' | 'formula_deck' | 'pdf_download' | 'login' | 'quiz_attempt';
+  type: string;
   title: string;
   description: string;
   timestamp: string;
@@ -86,8 +89,8 @@ export interface AiActivityRecord {
   topic: string;
   questionSnippet: string;
   model: string;
-  latencyMs: number;
-  tokensUsed: number;
+  latencyMs: number | null;
+  tokensUsed: number | null;
   resolved: boolean;
   rating?: number;
 }
@@ -100,7 +103,9 @@ export interface OrderRecord {
   amount: number;
   currency: string;
   gateway: 'razorpay' | 'stripe';
-  status: 'captured' | 'paid' | 'pending' | 'failed' | 'refunded';
+  status: 'created' | 'pending' | 'paid' | 'failed' | 'refunded' | 'cancelled';
+  refundRequestStatus?: string;
+  refundAvailable?: boolean;
   createdAt: string;
   paymentId: string;
 }
@@ -240,7 +245,7 @@ export interface CanDeleteCategoryResponse {
 }
 
 class AdminService {
-  private async getAuthHeaders(): Promise<HeadersInit> {
+  async getAuthHeaders(): Promise<HeadersInit> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
@@ -252,8 +257,8 @@ class AdminService {
       } catch (e) {
         console.warn('[AdminService] Could not retrieve ID token:', e);
       }
-    } else {
-      // Fallback for sandboxed preview sessions
+    } else if (import.meta.env.DEV) {
+      // Fallback for local development sessions only
       headers['Authorization'] = 'Bearer dev-admin-token-2026vivekkushwah@gmail.com';
     }
 
@@ -281,6 +286,9 @@ class AdminService {
     try {
       const headers = await this.getAuthHeaders();
       const res = await fetch('/api/admin/verify-access', { headers });
+      if (!res.headers.get('content-type')?.includes('application/json')) {
+        throw new Error('The admin service is unavailable. Please contact the site administrator.');
+      }
       const data = await res.json();
       if (res.ok && data.authorized) {
         return { authorized: true, role: data.role, email: data.email };
@@ -291,26 +299,31 @@ class AdminService {
     }
   }
 
+  /** Persisted SEO settings, always requested with the current Firebase session. */
+  async getSeoSettings(): Promise<{ success: boolean; settings?: { canonicalDomain: string; defaultTitle: string; defaultDesc: string }; error?: string }> {
+    const response = await fetch('/api/admin/seo', { headers: await this.getAuthHeaders() });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.error || 'Unable to load SEO settings.');
+    return data;
+  }
+
+  async saveSeoSettings(settings: { canonicalDomain: string; defaultTitle: string; defaultDesc: string }): Promise<{ success: boolean; settings?: { canonicalDomain: string; defaultTitle: string; defaultDesc: string }; error?: string }> {
+    const response = await fetch('/api/admin/seo', {
+      method: 'PUT', headers: await this.getAuthHeaders(), body: JSON.stringify(settings),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.error || 'SEO settings were not saved.');
+    return data;
+  }
+
   async getMetrics(): Promise<AdminMetrics> {
     try {
       const headers = await this.getAuthHeaders();
       const res = await fetch('/api/admin/metrics', { headers });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
-    } catch {
-      return {
-        totalStudents: 12480,
-        activeAnnualPasses: 3410,
-        totalRevenue: 6816590,
-        aiDoubtsSolved: 84320,
-        totalFormulas: 38,
-        totalChapters: 64,
-        activeCoupons: 5,
-        serverStatus: 'healthy',
-        cloudflareAccessActive: false,
-        edgeVerifiedEmail: '2026vivekkushwah@gmail.com',
-        uptimeHours: 342,
-      };
+    } catch (error) {
+      throw error;
     }
   }
 
@@ -334,43 +347,8 @@ class AdminService {
       const res = await fetch(url, { headers });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
-    } catch {
-      return [
-        {
-          uid: 'student-1001',
-          displayName: 'Arjun Sharma',
-          email: 'arjun.sharma@mayf.co.in',
-          phoneNumber: '+91 98765 43210',
-          studentClass: 'Class 10',
-          board: 'CBSE',
-          hasAnnualPass: true,
-          passExpiry: '2027-03-31',
-          isPro: true,
-          disabled: false,
-          streakDays: 14,
-          lastActiveDate: '2026-10-08',
-          createdAt: '2026-04-01T00:00:00.000Z',
-          lastLoginAt: '2026-10-08T09:12:00.000Z',
-          role: 'student',
-        },
-        {
-          uid: 'student-1002',
-          displayName: 'Priya Patel',
-          email: 'priya.patel@gmail.com',
-          phoneNumber: '+91 91234 56789',
-          studentClass: 'Class 9',
-          board: 'ICSE',
-          hasAnnualPass: true,
-          passExpiry: '2027-04-15',
-          isPro: true,
-          disabled: false,
-          streakDays: 22,
-          lastActiveDate: '2026-10-08',
-          createdAt: '2026-04-10T00:00:00.000Z',
-          lastLoginAt: '2026-10-08T08:45:00.000Z',
-          role: 'student',
-        },
-      ];
+    } catch (error) {
+      throw error;
     }
   }
 
@@ -480,25 +458,14 @@ class AdminService {
   }
 
   async getUserOrders(uid: string): Promise<OrderRecord[]> {
-    try {
-      const headers = await this.getAuthHeaders();
-      const res = await fetch(`/api/admin/users/${uid}/orders`, { headers });
-      if (!res.ok) return [];
-      return await res.json();
-    } catch {
-      return [];
-    }
+    const res = await fetch(`/api/admin/users/${encodeURIComponent(uid)}/orders`, { headers: await this.getAuthHeaders() });
+    if (!res.ok) throw new Error(`Student orders could not be loaded (${res.status}).`);
+    return res.json();
   }
-
   async getUserActivity(uid: string): Promise<StudentActivityRecord[]> {
-    try {
-      const headers = await this.getAuthHeaders();
-      const res = await fetch(`/api/admin/users/${uid}/activity`, { headers });
-      if (!res.ok) return [];
-      return await res.json();
-    } catch {
-      return [];
-    }
+    const res = await fetch(`/api/admin/users/${encodeURIComponent(uid)}/activity`, { headers: await this.getAuthHeaders() });
+    if (!res.ok) throw new Error(`Student activity could not be loaded (${res.status}).`);
+    return res.json();
   }
 
   async setUserRole(
@@ -576,34 +543,37 @@ class AdminService {
   }
 
   async getAiActivity(): Promise<AiActivityRecord[]> {
-    try {
-      const headers = await this.getAuthHeaders();
-      const res = await fetch('/api/admin/ai-activity', { headers });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    } catch {
-      return [];
-    }
+    const headers = await this.getAuthHeaders();
+    const res = await fetch('/api/admin/ai-activity', { headers });
+    if (!res.ok) throw new Error('AI activity is unavailable (' + res.status + ').');
+    const result = await res.json();
+    if (!Array.isArray(result)) throw new Error('Invalid AI activity response.');
+    return result;
   }
 
   async getOrders(): Promise<OrderRecord[]> {
-    try {
-      const headers = await this.getAuthHeaders();
-      const res = await fetch('/api/admin/orders', { headers });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    } catch {
-      return [];
-    }
+    const headers = await this.getAuthHeaders();
+    const res = await fetch('/api/admin/orders', { headers });
+    if (!res.ok) throw new Error(`Payment ledger unavailable (HTTP ${res.status}).`);
+    const data: unknown = await res.json();
+    if (!Array.isArray(data)) throw new Error('Invalid payment ledger response.');
+    return data as OrderRecord[];
+  }
+
+  async getPaymentWebhookEvents(): Promise<Array<{ provider: string; eventId: string; orderId: string; providerPaymentId: string; refundId: string | null; processedAt: string; outcome: string }>> {
+    const res = await fetch('/api/admin/payments/webhook-logs', { headers: await this.getAuthHeaders() });
+    const data = await res.json();
+    if (!res.ok || data.success !== true || !Array.isArray(data.logs)) throw new Error('Verified webhook audit could not be loaded.');
+    return data.logs;
   }
 
   async processRefund(
     orderId: string,
     amount: number,
     reason: string
-  ): Promise<{ success: boolean; error?: string }> {
-    const headers = await this.getAuthHeaders();
+  ): Promise<{ success: boolean; error?: string; refundStatus?: string; message?: string }> {
     try {
+      const headers = await this.getAuthHeaders();
       const res = await fetch(`/api/admin/orders/${orderId}/refund`, {
         method: 'POST',
         headers,
@@ -611,7 +581,8 @@ class AdminService {
       });
       const data = await res.json();
       if (!res.ok) return { success: false, error: data.error || 'Failed to process refund' };
-      return { success: true };
+      if (data.success !== true || !['requested', 'awaiting_webhook', 'needs_review', 'completed'].includes(data.refundStatus)) return { success: false, error: 'Refund response could not be verified. Refresh and reconcile before retrying.' };
+      return { success: true, refundStatus: data.refundStatus, message: data.message };
     } catch (e: any) {
       return { success: false, error: e?.message || 'Network error' };
     }
@@ -627,27 +598,10 @@ class AdminService {
     tab?: 'active' | 'archived';
     sortBy?: string;
   }): Promise<ContentListResponse> {
-    try {
-      const headers = await this.getAuthHeaders();
-      const query = new URLSearchParams();
-      if (params?.search) query.append('search', params.search);
-      if (params?.classLevel) query.append('classLevel', params.classLevel);
-      if (params?.contentType) query.append('contentType', params.contentType);
-      if (params?.accessType) query.append('accessType', params.accessType);
-      if (params?.visibility) query.append('visibility', params.visibility);
-      if (params?.tab) query.append('tab', params.tab);
-      if (params?.sortBy) query.append('sortBy', params.sortBy);
-
-      const res = await fetch(`/api/admin/content?${query.toString()}`, { headers });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    } catch (e: any) {
-      console.error('[AdminService] getContentList error:', e);
-      return {
-        items: [],
-        counts: { total: 0, active: 0, archived: 0, published: 0, draft: 0, hidden: 0 },
-      };
-    }
+    const headers = await this.getAuthHeaders();
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params || {})) if (value) query.append(key, value);
+    return requestAdminCatalogue(`/api/admin/content?${query.toString()}`, headers);
   }
 
   async getContentItem(id: string): Promise<CmsContentRecord | null> {
@@ -1093,35 +1047,19 @@ class AdminService {
   }
 
   async getAuditLogs(category?: string): Promise<AuditLogRecord[]> {
-    try {
-      const headers = await this.getAuthHeaders();
-      const url = `/api/admin/audit-logs${category && category !== 'all' ? `?category=${category}` : ''}`;
-      const res = await fetch(url, { headers });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    } catch {
-      return [];
-    }
+    const headers = await this.getAuthHeaders();
+    const url = `/api/admin/audit-logs${category && category !== 'all' ? `?category=${encodeURIComponent(category)}` : ''}`;
+    const response = await fetch(url, { headers });
+    if (!response.ok) throw new Error(`Audit history unavailable (HTTP ${response.status}).`);
+    const data: unknown = await response.json();
+    if (!Array.isArray(data)) throw new Error('Invalid audit history response.');
+    return data as AuditLogRecord[];
   }
 
   async getSecurityConfig(): Promise<SecurityConfigRecord> {
-    try {
-      const headers = await this.getAuthHeaders();
-      const res = await fetch('/api/admin/security/config', { headers });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    } catch {
-      return {
-        cloudflareAccessAud: '566895799712-cfaccess-aud-mayf-2026',
-        cloudflareTeamDomain: 'mayf.cloudflareaccess.com',
-        requireCloudflareAccess: false,
-        authorizedAdminEmails: ['2026vivekkushwah@gmail.com', 'ntnagrawal146@gmail.com', 'admin@mayf.co.in'],
-        emergencyMaintenanceMode: false,
-        tokenRevocationWindowMinutes: 60,
-        updatedAt: new Date().toISOString(),
-        updatedBy: '2026vivekkushwah@gmail.com',
-      };
-    }
+    const res = await fetch('/api/admin/security/config', { headers: await this.getAuthHeaders() });
+    if (!res.ok) throw new Error(`Security configuration unavailable (HTTP ${res.status}).`);
+    return res.json();
   }
 
   async updateSecurityConfig(
@@ -1132,7 +1070,7 @@ class AdminService {
       const res = await fetch('/api/admin/security/config', {
         method: 'POST',
         headers,
-        body: JSON.stringify(updates),
+        body: JSON.stringify({ emergencyMaintenanceMode: updates.emergencyMaintenanceMode }),
       });
       const data = await res.json();
       if (!res.ok) return { success: false, error: data.error || 'Failed to update security configuration' };

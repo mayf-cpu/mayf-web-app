@@ -177,6 +177,7 @@ if (typeof window !== 'undefined' && import.meta.env.DEV) {
  * Google Sign-In Popup helper
  */
 export async function signInWithGooglePopup(): Promise<FirebaseUser> {
+  if (!hasRealFirebaseCredentials()) throw new Error('Google sign-in is not configured on this website. The site administrator must configure Firebase.');
   const result = await signInWithPopup(auth, googleAuthProvider);
   return result.user;
 }

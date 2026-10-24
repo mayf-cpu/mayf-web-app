@@ -1,3 +1,4 @@
+import { usableWhatsApp } from '../lib/settings/launchDisplay';
 import React, { useState } from 'react';
 import {
   ArrowRight,
@@ -56,6 +57,24 @@ import {
   AdSenseBlockConfig,
   CustomAnnouncementBlockConfig,
 } from '../lib/layout/homepageLayoutTypes';
+
+// Replace only known demo claims, including copies persisted from the original
+// layout defaults. Owner-written custom text and financial terms stay intact.
+const truthfulHomepageCopy = (value: string | undefined, fallback: string): string => {
+  const legacyClaims: Record<string, string> = {
+    'Structured Math Video Courses': 'Structured Mathematics Topics',
+    'Concept-first video series covering every NCERT exemplar proof.': 'Explore chapter explanations and worked examples by topic.',
+    'Exemplar & Board Diagnostic Assessments': 'Annual Pass Revision Topics',
+    'Full length mock papers and timed section practice for Annual Pass holders.': 'Explore the published chapter explanations included in Annual Pass.',
+    'Browse All 80+ Formulas': 'Browse Formula Deck',
+    'Trending Revision Topics': 'Explore Revision Topics',
+    'Most active proofs and problem sets this week across board batches.': 'Browse chapter explanations and revision topics.',
+    'Most Popular Revision Handouts': 'Revision Handouts',
+    'Highest rated study guides, formula cheatsheets, and question banks.': 'Explore study guides, formula sheets, and practice resources.',
+    'Complete syllabus access for Class 5 to 10. Printable revision notes, formula flashcards, and unlimited AI Teacher guidance.': 'Explore Class 5 to 10 study materials, formula flashcards, and AI Teacher guidance with daily usage limits.',
+  };
+  return value ? (legacyClaims[value] || value) : fallback;
+};
 
 export const HomePage: React.FC = () => {
   const { navigate } = useNavigation();
@@ -136,12 +155,12 @@ export const HomePage: React.FC = () => {
   const renderHero = (block: HomepageBlock<HeroBlockConfig>) => {
     const config = block.config || {};
     return (
-      <section key={block.id} className="relative overflow-hidden pt-4 pb-8 md:py-12">
+      <section key={block.id} className="relative pt-4 pb-8 md:py-12">
         {config.showWatermark !== false && (
-          <>
+          <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
             <WatermarkGlyph glyph="∫" size="xl" className="opacity-40 -top-8 right-0" />
             <WatermarkGlyph glyph="π" size="lg" className="opacity-30 top-36 -left-6" />
-          </>
+          </div>
         )}
 
         <div className="max-w-3xl">
@@ -192,11 +211,11 @@ export const HomePage: React.FC = () => {
           <div className="mt-8 pt-6 border-t border-[#E2E8F0] flex flex-wrap items-center gap-6 text-xs text-[#64748B]">
             <div className="flex items-center gap-1.5 font-medium">
               <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
-              <span>100% NCERT & Exemplar Coverage</span>
+              <span>School Mathematics Revision</span>
             </div>
             <div className="flex items-center gap-1.5 font-medium">
               <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
-              <span>Verified Formulas with Proofs</span>
+              <span>Formulas & Worked Examples</span>
             </div>
             <div className="flex items-center gap-1.5 font-medium">
               <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
@@ -362,13 +381,13 @@ export const HomePage: React.FC = () => {
           <div>
             <div className="flex items-center gap-1.5 text-xs font-heading font-bold text-[#EA580C] uppercase tracking-wider mb-1">
               <Flame className="w-4 h-4 fill-current" />
-              <span>High Engagement Topics</span>
+              <span>Revision Topics</span>
             </div>
             <h2 className="font-heading font-bold text-2xl text-[#0F172A]">
-              {config.title || 'Trending Revision Topics'}
+              {truthfulHomepageCopy(config.title, 'Explore Revision Topics')}
             </h2>
             <p className="text-xs sm:text-sm text-[#64748B]">
-              {config.subtitle || 'Most active proofs and problem sets this week across board batches.'}
+              {truthfulHomepageCopy(config.subtitle, 'Browse chapter explanations and revision topics.')}
             </p>
           </div>
           <Link href="/study-material" className="self-start sm:self-auto">
@@ -388,7 +407,7 @@ export const HomePage: React.FC = () => {
             >
               <div>
                 <div className="flex items-center justify-between text-[11px] text-[#64748B] mb-2">
-                  <span className="font-mono font-bold text-[#EA580C]">#{idx + 1} Trending</span>
+                  <span className="font-mono font-bold text-[#EA580C]">Topic {idx + 1}</span>
                   <span>{item.classLevel}</span>
                 </div>
                 <h3 className="font-heading font-bold text-sm text-[#0F172A] mb-1.5 line-clamp-1">
@@ -495,7 +514,7 @@ export const HomePage: React.FC = () => {
           </div>
           <Link href="/formula-deck">
             <Button variant="outline" size="sm">
-              <span>{config.viewAllText || 'Browse All 80+ Formulas'}</span>
+              <span>{truthfulHomepageCopy(config.viewAllText, 'Browse Formula Deck')}</span>
               <ArrowRight className="w-3.5 h-3.5 ml-1" />
             </Button>
           </Link>
@@ -570,14 +589,13 @@ export const HomePage: React.FC = () => {
           <div>
             <div className="flex items-center gap-1.5 text-xs font-heading font-bold text-[#1D4ED8] uppercase tracking-wider mb-1">
               <TrendingUp className="w-4 h-4" />
-              <span>Community Favorites</span>
+              <span>Study Resources</span>
             </div>
             <h2 className="font-heading font-bold text-2xl text-[#0F172A]">
-              {config.title || 'Most Popular Revision Handouts'}
+              {truthfulHomepageCopy(config.title, 'Revision Handouts')}
             </h2>
             <p className="text-xs sm:text-sm text-[#64748B]">
-              {config.subtitle ||
-                'Highest rated study guides, formula cheatsheets, and question banks.'}
+              {truthfulHomepageCopy(config.subtitle, 'Explore study guides, formula sheets, and practice resources.')}
             </p>
           </div>
           <Link href="/study-material" className="self-start sm:self-auto">
@@ -589,7 +607,7 @@ export const HomePage: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {popularChapters.map((chap, idx) => (
+          {popularChapters.map((chap) => (
             <Link
               key={chap.id}
               href={`/study/${chap.slug}`}
@@ -598,7 +616,7 @@ export const HomePage: React.FC = () => {
               <div>
                 <div className="flex items-center justify-between text-[11px] text-[#64748B] mb-2">
                   <span className="font-bold text-[#1D4ED8]">{chap.classLevel}</span>
-                  <span>{1200 + idx * 340} students saved</span>
+                  <span>Revision handout</span>
                 </div>
                 <h3 className="font-heading font-bold text-sm text-[#0F172A] mb-1 line-clamp-1">
                   {chap.title}
@@ -624,21 +642,21 @@ export const HomePage: React.FC = () => {
         id: 'course-1',
         title: 'Class 10 Trigonometry Complete Visual Proofs',
         desc: 'Derive identities with right-triangle geometry. Never memorize blindly.',
-        lessons: '12 Master Video Lessons',
+        lessons: 'Chapter explanations',
         badge: 'Board High-Yield',
       },
       {
         id: 'course-2',
         title: 'Class 9 Real Numbers & Euclid Geometry Foundation',
         desc: 'Axioms, postulates, rationalization, and surds step-by-step masterclass.',
-        lessons: '8 Master Video Lessons',
+        lessons: 'Chapter explanations',
         badge: 'Core Foundation',
       },
       {
         id: 'course-3',
         title: 'Class 8 Algebraic Identities & Factorisation',
         desc: 'Geometric area proofs for (a+b)², (a-b)², and split-the-middle-term drills.',
-        lessons: '10 Master Video Lessons',
+        lessons: 'Chapter explanations',
         badge: 'High-Scoring',
       },
     ];
@@ -649,14 +667,13 @@ export const HomePage: React.FC = () => {
           <div>
             <div className="flex items-center gap-1.5 text-xs font-heading font-bold text-[#7C3AED] uppercase tracking-wider mb-1">
               <Video className="w-4 h-4" />
-              <span>Video Masterclasses</span>
+              <span>Structured Learning</span>
             </div>
             <h2 className="font-heading font-bold text-2xl text-[#0F172A]">
-              {config.title || 'Structured Math Video Courses'}
+              {truthfulHomepageCopy(config.title, 'Structured Mathematics Topics')}
             </h2>
             <p className="text-xs sm:text-sm text-[#64748B]">
-              {config.subtitle ||
-                'Concept-first video series covering every NCERT exemplar proof.'}
+              {truthfulHomepageCopy(config.subtitle, 'Explore chapter explanations and worked examples by topic.')}
             </p>
           </div>
           <Link href="/courses" className="self-start sm:self-auto">
@@ -691,7 +708,7 @@ export const HomePage: React.FC = () => {
 
               <Link href="/study-material">
                 <Button size="sm" variant="outline" className="w-full font-semibold border-purple-200 text-purple-700 hover:bg-purple-50">
-                  <span>Start Video Series</span>
+                  <span>Browse Study Topics</span>
                   <ArrowRight className="w-3.5 h-3.5 ml-1" />
                 </Button>
               </Link>
@@ -719,11 +736,10 @@ export const HomePage: React.FC = () => {
               <span>Pro Curriculum Assets</span>
             </div>
             <h2 className="font-heading font-bold text-2xl text-[#0F172A]">
-              {config.title || 'Exemplar & Board Diagnostic Assessments'}
+              {truthfulHomepageCopy(config.title, 'Annual Pass Revision Topics')}
             </h2>
             <p className="text-xs sm:text-sm text-[#64748B]">
-              {config.subtitle ||
-                'Full length mock papers and timed section practice for Annual Pass holders.'}
+              {truthfulHomepageCopy(config.subtitle, 'Explore the published chapter explanations included in Annual Pass.')}
             </p>
           </div>
           <Link href="/annual-pass" className="self-start sm:self-auto">
@@ -755,7 +771,7 @@ export const HomePage: React.FC = () => {
                 <p className="text-xs text-[#64748B] line-clamp-2 mb-3">{item.description}</p>
               </div>
               <div className="flex items-center justify-between pt-2 border-t border-amber-100 text-xs font-semibold text-amber-700">
-                <span>View Assessment</span>
+                <span>View Chapter</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </div>
             </Link>
@@ -781,8 +797,7 @@ export const HomePage: React.FC = () => {
           {config.title || 'Maths at Your Fingertips Annual Pass'}
         </h2>
         <p className="text-sm text-[#64748B] mb-6">
-          {config.subtitle ||
-            'Complete syllabus access for Class 5 to 10. Printable revision notes, formula flashcards, and unlimited AI Teacher guidance.'}
+          {truthfulHomepageCopy(config.subtitle, 'Explore Class 5 to 10 study materials, formula flashcards, and AI Teacher guidance with daily usage limits.')}
         </p>
 
         <div className="inline-flex items-baseline gap-1 font-mono tabular-nums text-4xl sm:text-5xl font-extrabold text-[#0037B0] mb-2">
@@ -936,7 +951,8 @@ export const HomePage: React.FC = () => {
 
           {/* WhatsApp */}
           <a
-            href={config.whatsappUrl || 'https://chat.whatsapp.com/mayf-math-prep'}
+            href={usableWhatsApp(config.whatsappUrl) || undefined}
+            aria-disabled={!usableWhatsApp(config.whatsappUrl)}
             target="_blank"
             rel="noopener noreferrer"
             className="group p-4 rounded-lg border border-[#E2E8F0] hover:border-[#16A34A] bg-[#F8FAFC] hover:bg-white transition-all flex items-center justify-between"
@@ -949,7 +965,7 @@ export const HomePage: React.FC = () => {
                 <div className="font-heading font-bold text-sm text-[#0F172A] group-hover:text-[#16A34A] transition-colors">
                   WhatsApp Community
                 </div>
-                <div className="text-xs text-[#64748B]">Board Exam Alert Broadcasts</div>
+                <div className="text-xs text-[#64748B]">{usableWhatsApp(config.whatsappUrl) ? 'Board Exam Alert Broadcasts' : 'Community link coming soon'}</div>
               </div>
             </div>
             <ExternalLink className="w-4 h-4 text-[#94A3B8] group-hover:text-[#16A34A] transition-colors" />

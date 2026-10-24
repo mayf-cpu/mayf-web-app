@@ -11,9 +11,16 @@
 
 import { ContentRegistryRow, IngestionJobRecord, ImportJobStatus, WebhookIngestResponse } from './types';
 import { copyDriveFileToProductionStorage } from './driveStorageAdapter';
+import { loadIngestionJobs, saveIngestionJob } from './durableIngestionJobs';
+import { ingestionJobIdForContent } from './ingestionJobId';
+import { IngestionLock } from './ingestionLock';
 import { ContentItem, StudentClass, ContentType } from '../firebase/types';
+import { getAdminFirestore } from '../firebase/admin';
+import { importPublicationPolicy } from './importPublicationPolicy';
+import { verifyWebhookSecret } from './webhookAuth';
+export { verifyWebhookSecret } from './webhookAuth';
 
-// In-memory persistent job store (synced with Firestore /importJobs in live environment)
+// Initial fixture state for local development; Firestore is authoritative for live jobs.
 export let INGESTION_JOBS_STORE: IngestionJobRecord[] = [
   // 1. IMPORTED - Class 10 Real Numbers
   {
@@ -234,23 +241,13 @@ export let INGESTION_JOBS_STORE: IngestionJobRecord[] = [
 ];
 
 /**
- * Validates the Webhook Secret from Google Apps Script.
- */
-export function verifyWebhookSecret(authHeader: string | undefined): boolean {
-  const configuredSecret = process.env.INGESTION_WEBHOOK_SECRET || 'mayf_ingest_secret_change_in_production_2026';
-  if (!authHeader) return false;
-  
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-  return token === configuredSecret;
-}
-
-/**
  * Ingests a single Content Registry row from Google Sheet.
  * Idempotently creates or updates the target Firestore document.
  */
-export async function processRegistryRow(
+async function processRegistryRowInternal(
   row: ContentRegistryRow,
-  triggeredBy: IngestionJobRecord['triggeredBy'] = 'apps_script_webhook'
+  triggeredBy: IngestionJobRecord['triggeredBy'] = 'apps_script_webhook',
+  renewLease: () => Promise<void> = async () => {},
 ): Promise<{ success: boolean; firestore_id?: string; error?: string; job: IngestionJobRecord }> {
   const timestamp = new Date().toISOString();
   const contentId = row.content_id?.trim();
@@ -261,7 +258,7 @@ export async function processRegistryRow(
 
   // Find existing job or create new one
   let existingJobIndex = INGESTION_JOBS_STORE.findIndex((j) => j.content_id === contentId);
-  const jobId = existingJobIndex !== -1 ? INGESTION_JOBS_STORE[existingJobIndex].id : `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const jobId = existingJobIndex !== -1 ? INGESTION_JOBS_STORE[existingJobIndex].id : ingestionJobIdForContent(contentId);
 
   // Handle intentional rejection
   if (row.status === 'Rejected') {
@@ -282,6 +279,7 @@ export async function processRegistryRow(
       createdAt: existingJobIndex !== -1 ? INGESTION_JOBS_STORE[existingJobIndex].createdAt : timestamp,
       updatedAt: timestamp,
     };
+    await saveIngestionJob(rejectedJob);
     if (existingJobIndex !== -1) {
       INGESTION_JOBS_STORE[existingJobIndex] = rejectedJob;
     } else {
@@ -311,6 +309,7 @@ export async function processRegistryRow(
       updatedAt: timestamp,
     };
 
+    await saveIngestionJob(failedJob);
     if (existingJobIndex !== -1) {
       INGESTION_JOBS_STORE[existingJobIndex] = failedJob;
     } else {
@@ -319,19 +318,25 @@ export async function processRegistryRow(
     return { success: false, error: failedJob.errorMessage, job: failedJob };
   }
 
-  // 1. Copy Google Drive file to Production Cloud Storage
-  // (Ensuring Google Drive is NEVER the permanent delivery source)
+  // Determine the stable content ID before copying: it also identifies the
+  // private R2 object. Never expose a public storage link for paid content.
   const slug = row.slug || row.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  const firestoreId = row.firestore_id || `cnt-${row.content_type}-${slug}`;
+  if (!/^[A-Za-z0-9_-]{1,150}$/.test(firestoreId)) throw new Error('Invalid CMS content ID');
+  const db = getAdminFirestore();
+  if (!db) throw new Error('CMS database unavailable');
+  const existing = await db.collection('contentItems').doc(firestoreId).get();
+  if (existing.exists && !existing.updateTime) throw new Error('CMS revision unavailable');
+  const previous = existing.exists ? existing.data() || {} : {};
+  await renewLease();
   const storageResult = await copyDriveFileToProductionStorage(
     row.drive_file_id,
     row.thumbnail_drive_file_id,
     slug,
     row.content_type,
-    row.access_type
+    row.access_type,
+    firestoreId,
   );
-
-  // 2. Generate or preserve Firestore document ID (Idempotency)
-  const firestoreId = row.firestore_id || `cnt-${row.content_type}-${slug}`;
 
   // 3. Construct Firestore ContentItem payload
   // CRITICAL: Respect visibility (Visible = true, Hidden = false)
@@ -383,6 +388,23 @@ export async function processRegistryRow(
     downloadCount: 0,
   };
 
+  // The R2 transfer alone is not a completed import. The CMS record must be
+  // committed durably before the job can be reported as imported.
+  const publication = importPublicationPolicy(previous, existing.exists, isPubliclyVisible);
+  await renewLease();
+  await db.commit([{
+    collection: 'contentItems', id: firestoreId,
+    ...(existing.updateTime ? { updateTime: existing.updateTime } : {}),
+    data: {
+      ...previous,
+      ...contentDoc,
+      ...publication,
+      sourceDriveId: row.drive_file_id,
+      importStatus: 'imported',
+      lastSync: timestamp,
+    },
+  }]);
+
   // 4. Record successful Ingestion Job
   const successfulJob: IngestionJobRecord = {
     id: jobId,
@@ -414,6 +436,7 @@ export async function processRegistryRow(
     completedAt: timestamp,
   };
 
+  await saveIngestionJob(successfulJob);
   if (existingJobIndex !== -1) {
     INGESTION_JOBS_STORE[existingJobIndex] = successfulJob;
   } else {
@@ -430,6 +453,17 @@ export async function processRegistryRow(
 /**
  * Batch processes items sent from Google Apps Script.
  */
+export async function processRegistryRow(
+ row: ContentRegistryRow,
+ triggeredBy: IngestionJobRecord['triggeredBy'] = 'apps_script_webhook'
+): Promise<{ success: boolean; firestore_id?: string; error?: string; job: IngestionJobRecord }> {
+ const db = getAdminFirestore();
+ if (!db) throw new Error('Import database unavailable');
+ const lease = await new IngestionLock(db).acquire(row.content_id);
+ try { return await processRegistryRowInternal(row, triggeredBy, lease.renew); }
+ finally { await lease.release(); }
+}
+
 export async function processBatchIngestion(
   items: ContentRegistryRow[],
   triggeredBy: IngestionJobRecord['triggeredBy'] = 'apps_script_webhook'
@@ -491,32 +525,51 @@ export async function retryIngestionJob(jobId: string): Promise<IngestionJobReco
   job.status = 'importing';
   job.updatedAt = new Date().toISOString();
 
-  // If previous error was mock perm issue, replace with clean ID on retry
-  if (job.sourceRowMetadata.drive_file_id?.includes('INVALID_PERMS')) {
-    job.sourceRowMetadata.drive_file_id = '1dr_RECOVERED_VALID_FILE_' + Date.now();
-  }
-
   job.sourceRowMetadata.status = 'Approved';
-  const outcome = await processRegistryRow(job.sourceRowMetadata, 'admin_retry');
-
-  return outcome.job;
+  try {
+    const outcome = await processRegistryRow(job.sourceRowMetadata, 'admin_retry');
+    return outcome.job;
+  } catch (error) {
+    const failed = INGESTION_JOBS_STORE.find((item) => item.id === jobId) || job;
+    failed.status = 'failed';
+    failed.updatedAt = new Date().toISOString();
+    failed.errorMessage = error instanceof Error ? error.message : 'Unexpected import error';
+    failed.triggeredBy = 'admin_retry';
+    failed.sourceRowMetadata = { ...failed.sourceRowMetadata,
+      import_status: 'FAILED', import_error: failed.errorMessage };
+    await saveIngestionJob(failed);
+    return failed;
+  }
 }
 
 /**
  * Triggers full sync with Google Sheet staging registry.
  */
-export async function syncRegistryNow(): Promise<{ syncedJobs: IngestionJobRecord[]; totalProcessed: number }> {
-  // Finds any approved rows in the registry and imports them
-  const approvedRows = INGESTION_JOBS_STORE.filter((j) => j.status === 'approved' || j.status === 'pending');
-  const processed: IngestionJobRecord[] = [];
-
-  for (const item of approvedRows) {
-    const outcome = await processRegistryRow(item.sourceRowMetadata, 'admin_manual_sync');
-    processed.push(outcome.job);
+export async function syncRegistryNow(): Promise<{ syncedJobs: IngestionJobRecord[]; totalProcessed: number; failedCount: number }> {
+  // Google Sheets is the authoritative source for manual "Sync Approved Rows".
+  // Never implicitly import a pending row or silently fall back to sample jobs.
+  const { registrySource, readRegistrySheet, writeRegistryResult } = await import('./registrySource');
+  const source = await registrySource.read();
+  const registry = await readRegistrySheet(source);
+  const approved = registry.rows.filter(item => item.row.status === 'Approved').slice(0, 5);
+  let failedCount = 0;
+  for (const item of approved) {
+    let outcome: { success: boolean; firestore_id?: string; error?: string };
+    try {
+      outcome = await processRegistryRow(item.row, 'admin_manual_sync');
+    } catch (error) {
+      outcome = { success: false, error: error instanceof Error ? error.message : 'Import failed' };
+    }
+    if (!outcome.success) failedCount++;
+    // Propagates Sheets write failure, so admin cannot see a false success.
+    await writeRegistryResult(source, item.sheetRow, registry.headers, outcome, registry.token);
   }
+  return { syncedJobs: await refreshIngestionJobs(), totalProcessed: approved.length, failedCount };
+}
 
-  return {
-    syncedJobs: INGESTION_JOBS_STORE,
-    totalProcessed: processed.length,
-  };
+/** Reload authoritative job state before admin reads or mutates jobs. */
+export async function refreshIngestionJobs(): Promise<IngestionJobRecord[]> {
+  const jobs = await loadIngestionJobs();
+  INGESTION_JOBS_STORE.splice(0, INGESTION_JOBS_STORE.length, ...jobs);
+  return INGESTION_JOBS_STORE;
 }

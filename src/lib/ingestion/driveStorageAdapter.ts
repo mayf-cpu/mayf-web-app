@@ -1,12 +1,10 @@
+import { hasPdfMarkers } from '../download/pdfIntegrity';
 /**
- * Production Storage & Google Drive Ingestion Adapter.
- * 
- * SECURITY DIRECTIVE:
- * Google Drive MUST NEVER be used as the permanent delivery source for paid study material.
- * This adapter transfers files from Google Drive staging into production Cloud Storage.
- * Original Google Drive file IDs are strictly maintained privately for audit/traceability
- * and are never exposed in public client payloads.
+ * Authenticated Google Drive staging -> private Cloudflare R2 PDF import.
+ * Never invent a public storage URL. Only confirmed PDF uploads are successes.
  */
+import crypto from 'node:crypto';
+import { getPdfBucket, keyForPdf, versionedPdfKey } from '../download/pdfObjectStorage';
 
 export interface StorageIngestResult {
   productionFileUrl: string;
@@ -15,60 +13,104 @@ export interface StorageIngestResult {
   mimeType: string;
   sourceDriveFileId?: string;
 }
+type ServiceAccount = { client_email: string; private_key: string; token_uri?: string };
+function getServiceAccount(): ServiceAccount {
+  const json = process.env.GOOGLE_SERVICE_ACCOUNT_KEY || process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (!json) throw new Error('Google Drive service account is not configured');
+  let data: Partial<ServiceAccount>;
+  try { data = JSON.parse(json) as Partial<ServiceAccount>; }
+  catch { throw new Error('Google Drive service account JSON is invalid'); }
+  if (!data?.client_email || !data.private_key?.includes('PRIVATE KEY')) {
+    throw new Error('Google Drive service account credentials are incomplete');
+  }
+  return data as ServiceAccount;
+}
+function jwtPart(value: unknown): string {
+  return Buffer.from(JSON.stringify(value)).toString('base64url');
+}
+async function getDriveAccessToken(account: ServiceAccount): Promise<string> {
+  const issued = Math.floor(Date.now() / 1000);
+  const tokenEndpoint = 'https://oauth2.googleapis.com/token';
+  const header = jwtPart({ alg: 'RS256', typ: 'JWT' });
+  const payload = jwtPart({
+    iss: account.client_email,
+    scope: 'https://www.googleapis.com/auth/drive.readonly',
+    aud: tokenEndpoint, iat: issued, exp: issued + 3600,
+  });
+  const input = header + '.' + payload;
+  const signature = crypto.sign('RSA-SHA256', Buffer.from(input), account.private_key).toString('base64url');
+  const response = await fetch(tokenEndpoint, {
+    method: 'POST', redirect: 'manual',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: input + '.' + signature,
+    }), signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) throw new Error('Google Drive OAuth token exchange failed (' + response.status + ')');
+  const result = await response.json() as { access_token?: string };
+  if (!result.access_token) throw new Error('Google Drive OAuth token not returned');
+  return result.access_token;
+}
 
-/**
- * Copies a file from Google Drive staging to Production Cloud Storage.
- * In a live environment with Google Workspace API & Firebase Admin Storage,
- * this calls drive.files.get with alt=media, and streams into storage.bucket().file(...).
- */
 export async function copyDriveFileToProductionStorage(
   driveFileId: string | undefined,
-  thumbnailDriveFileId: string | undefined,
-  slug: string,
+  _thumbnailDriveFileId: string | undefined,
+  _slug: string,
   contentType: string,
-  accessType: 'free' | 'paid'
+  _accessType: 'free' | 'paid',
+  contentId?: string,
 ): Promise<StorageIngestResult> {
-  const isServiceAccountConfigured = Boolean(process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
-  const storageBucketName = process.env.VITE_FIREBASE_STORAGE_BUCKET || 'mayf-production-assets.storage.googleapis.com';
-
-  // Realistic mock size & mimeType mapping
-  let mimeType = 'application/pdf';
-  let extension = 'pdf';
-  let defaultSize = 1450000;
-
-  if (contentType === 'video' || contentType === 'reel') {
-    mimeType = 'video/mp4';
-    extension = 'mp4';
-    defaultSize = 18400000;
-  } else if (contentType === 'singleImage' || contentType === 'multiImage') {
-    mimeType = 'image/png';
-    extension = 'png';
-    defaultSize = 750000;
+  if (!driveFileId?.trim() || !/^[A-Za-z0-9_-]{5,200}$/.test(driveFileId))
+    throw new Error('Cannot import file: source Google Drive file ID is missing or invalid.');
+  if (contentType !== 'pdf') throw new Error('Verified Google Drive import currently supports PDF content only');
+  if (!contentId) throw new Error('Content registry ID is required for private storage');
+  const bucket = getPdfBucket();
+  if (!bucket?.put) throw new Error('Private R2 PDF bucket is not configured for uploads');
+  const token = await getDriveAccessToken(getServiceAccount());
+  const url = 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(driveFileId) + '?alt=media';
+  const response = await fetch(url, {
+    redirect: 'manual',
+    headers: { Authorization: 'Bearer ' + token },
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!response.ok) throw new Error('Google Drive file download failed (' + response.status + ')');
+  const contentLength = Number(response.headers.get('content-length'));
+  const maxBytes = 30 * 1024 * 1024;
+  if (Number.isFinite(contentLength) && contentLength > maxBytes)
+    throw new Error('PDF exceeds the 30 MiB import limit');
+  if (!response.body) throw new Error('Google Drive returned an empty body');
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    length += value.byteLength;
+    if (length > maxBytes) {
+      await reader.cancel();
+      throw new Error('PDF exceeds the 30 MiB import limit');
+    }
+    chunks.push(value);
   }
-
-  // Generates canonical Production Storage URI (never a direct Google Drive link!)
-  // For paid content, protected via Firebase storage signed token access
-  const timestamp = Date.now();
-  const productionFileName = `${slug}-${timestamp}.${extension}`;
-  const productionPath = `production-curriculum/${accessType}/${contentType}/${productionFileName}`;
-  
-  // Publicly verifiable production CDN/Firebase Storage URL
-  const productionFileUrl = `https://storage.googleapis.com/${storageBucketName}/${productionPath}`;
-
-  // Production Thumbnail URI
-  let productionThumbnailUrl: string | undefined;
-  if (thumbnailDriveFileId) {
-    const thumbName = `${slug}-thumb-${timestamp}.webp`;
-    productionThumbnailUrl = `https://storage.googleapis.com/${storageBucketName}/production-thumbnails/${thumbName}`;
-  } else {
-    productionThumbnailUrl = `https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=600&auto=format&fit=crop&q=80`;
+  const bytes = new Uint8Array(length);
+  let cursor = 0;
+  for (const chunk of chunks) { bytes.set(chunk, cursor); cursor += chunk.byteLength; }
+  if (!hasPdfMarkers(bytes))
+    throw new Error('Google Drive source is not a valid PDF');
+  // Immutable content-addressed object: a competing importer can never
+  // replace previously published PDF bytes with a different version.
+  const key = versionedPdfKey(contentId, crypto.createHash('sha256').update(bytes).digest('hex'));
+  if (!(await bucket.head(key))) {
+    await bucket.put(key, bytes, { httpMetadata: { contentType: 'application/pdf' } });
   }
-
+  const stored = await bucket.head(key);
+  if (!stored || stored.size !== bytes.length)
+    throw new Error('R2 upload verification failed; import was not published');
   return {
-    productionFileUrl,
-    productionThumbnailUrl,
-    fileSizeBytes: defaultSize,
-    mimeType,
+    productionFileUrl: 'r2://mayf-study-materials/' + key,
+    fileSizeBytes: bytes.length,
+    mimeType: 'application/pdf',
     sourceDriveFileId: driveFileId,
   };
 }

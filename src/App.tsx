@@ -14,6 +14,8 @@ import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { LoadingSpinner } from './components/ui/LoadingState';
 
+const ResponsiveCheckPage = lazy(() => import('./pages/ResponsiveCheckPage').then(m => ({ default: m.ResponsiveCheckPage })));
+
 // Critical LCP path: Keep HomePage in primary bundle for sub-second FCP/LCP
 import { HomePage } from './pages/HomePage';
 
@@ -38,6 +40,7 @@ const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((m) => ({ de
 
 function AppRouter() {
   const { currentRoute } = useNavigation();
+  if (import.meta.env.VITE_APP_ENV === 'staging' && window.location.pathname === '/release-check') return <ResponsiveCheckPage />;
 
   switch (currentRoute.route) {
     case '/':

@@ -34,6 +34,7 @@ export const StudyMaterialPage: React.FC = () => {
   const searchContainerRef = useRef<HTMLDivElement>(null);
 
   // Pagination states (strict cursor-based pagination, maximum 20 items per page)
+  const requestSequence = useRef(0);
   const [items, setItems] = useState<ContentItem[]>([]);
   const [cursor, setCursor] = useState<QueryDocumentSnapshot | null>(null);
   const [hasMore, setHasMore] = useState<boolean>(false);
@@ -113,7 +114,7 @@ export const StudyMaterialPage: React.FC = () => {
       searchService.autocomplete(searchInput.trim(), 5).then((suggestions) => {
         setSearchSuggestions(suggestions);
         setShowSuggestions(suggestions.length > 0);
-      });
+      }).catch(() => { setSearchSuggestions([]); setShowSuggestions(false); });
     } else {
       setSearchSuggestions([]);
       setShowSuggestions(false);
@@ -133,6 +134,7 @@ export const StudyMaterialPage: React.FC = () => {
 
   // Database cursor-driven catalogue query
   const loadCatalogue = async (reset: boolean = true) => {
+    const sequence = ++requestSequence.current;
     if (reset) {
       setLoading(true);
       setCursor(null);
@@ -144,6 +146,7 @@ export const StudyMaterialPage: React.FC = () => {
     try {
       const result = await fetchContentCatalogue(
         {
+          search: debouncedQuery,
           classLevel: selectedClass,
           categoryId: selectedCategory,
           subcategoryId: selectedSubcategory,
@@ -156,6 +159,7 @@ export const StudyMaterialPage: React.FC = () => {
         MAX_PAGE_SIZE
       );
 
+      if (sequence !== requestSequence.current) return;
       if (reset) {
         setItems(result.items);
       } else {
@@ -165,17 +169,19 @@ export const StudyMaterialPage: React.FC = () => {
       setHasMore(result.hasMore);
       setErrorMessage(null);
     } catch (err: any) {
+      if (sequence !== requestSequence.current) return;
       console.error('[StudyMaterialPage] Catalogue fetch error:', err);
       setErrorMessage(err?.message || 'Unable to load curriculum study materials. Please check your network connection and retry.');
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
+      if (sequence === requestSequence.current) { setLoading(false); setLoadingMore(false); }
     }
   };
 
   useEffect(() => {
     loadCatalogue(true);
+    return () => { requestSequence.current++; };
   }, [
+    debouncedQuery,
     selectedClass,
     selectedCategory,
     selectedSubcategory,
@@ -185,14 +191,7 @@ export const StudyMaterialPage: React.FC = () => {
     sortBy,
   ]);
 
-  // Client search filtering against currently loaded items or query
-  const displayedItems = debouncedQuery
-    ? items.filter((item) =>
-        item.title.toLowerCase().includes(debouncedQuery.toLowerCase()) ||
-        (item.shortDescription && item.shortDescription.toLowerCase().includes(debouncedQuery.toLowerCase())) ||
-        (item.tags && item.tags.some((t) => t.toLowerCase().includes(debouncedQuery.toLowerCase())))
-      )
-    : items;
+  const displayedItems = items;
 
   return (
     <SharedLayout>
@@ -583,7 +582,7 @@ export const StudyMaterialPage: React.FC = () => {
                   <ArrowUpRight className="w-4 h-4" />
                 </Button>
                 <p className="text-[11px] text-[#94A3B8] mt-1.5 font-mono">
-                  Backed by Firestore indexed cursor queries (startAfter). Max 20 items per request.
+                  Showing up to 20 resources per page.
                 </p>
               </div>
             )}

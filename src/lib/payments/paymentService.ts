@@ -1,3 +1,6 @@
+import { isProductionPaymentRuntime } from './runtime';
+import { assertReleaseCheckout } from './checkoutPolicy';
+import type { DurablePaymentRepository } from './durablePaymentRepository';
 /**
  * Provider-Independent Payment Service
  * Maths at Your Fingertips (mayf.co.in)
@@ -27,6 +30,7 @@ import {
 import { RazorpayAdapter } from './adapters/razorpayAdapter';
 import { StripeAdapter } from './adapters/stripeAdapter';
 import { couponService } from '../coupons/couponService';
+import { sealGatewaySettings, openGatewaySettings } from './settingsEncryption';
 
 export class PaymentService {
   private razorpayAdapter: RazorpayAdapter;
@@ -40,25 +44,60 @@ export class PaymentService {
 
   // Payment Gateway Settings (Configurable by admin, secrets kept strictly server-side)
   private settings: PaymentGatewaySettings;
+  private initialSettings: PaymentGatewaySettings;
 
-  constructor() {
+  constructor(private durableOrders?: Pick<DurablePaymentRepository, 'createOrder'> & Partial<Pick<DurablePaymentRepository, 'reserveCoupon' | 'releaseCouponReservation'>>) {
     this.razorpayAdapter = new RazorpayAdapter();
     this.stripeAdapter = new StripeAdapter();
 
     this.settings = {
       activeProvider: 'razorpay',
-      testMode: process.env.APP_ENV !== 'production',
-      razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_mayf2026demo',
-      razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || 'rzp_sec_sandbox_k98a7sd6f',
-      razorpayWebhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || 'rzp_whsec_mayf_prod_992',
-      stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || 'pk_test_mayf2026intl',
-      stripeSecretKey: process.env.STRIPE_SECRET_KEY || 'sk_test_sandbox_intlk98a7',
-      stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || 'whsec_stripe_mayf_prod_881',
+      testMode: !isProductionPaymentRuntime(),
+      razorpayKeyId: process.env.RAZORPAY_KEY_ID || (isProductionPaymentRuntime() ? '' : 'rzp_test_mayf2026demo'),
+      razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || (isProductionPaymentRuntime() ? '' : 'rzp_sec_sandbox_k98a7sd6f'),
+      razorpayWebhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || (isProductionPaymentRuntime() ? '' : 'rzp_whsec_mayf_prod_992'),
+      stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || (isProductionPaymentRuntime() ? '' : 'pk_test_mayf2026intl'),
+      stripeSecretKey: process.env.STRIPE_SECRET_KEY || (isProductionPaymentRuntime() ? '' : 'sk_test_sandbox_intlk98a7'),
+      stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || (isProductionPaymentRuntime() ? '' : 'whsec_stripe_mayf_prod_881'),
       taxRatePercentage: 18, // 18% GST standard educational rate in India (or 0% exempt)
       allowCouponDiscounts: true,
     };
 
-    this.seedInitialOrders();
+    this.initialSettings = { ...this.settings };
+
+    if (!isProductionPaymentRuntime()) this.seedInitialOrders();
+  }
+
+  /** Persist only encrypted credentials in the private Firestore runtime settings collection. */
+  readonly settingsState = {
+    exportState: () => [{ id: 'gateway', ...sealGatewaySettings(this.settings) }],
+    importState: (items: Record<string, any>[]) => {
+      const entry = items.find(item => item.id === 'gateway');
+      if (entry) {
+        const { id, ...data } = entry;
+        this.settings = openGatewaySettings(data);
+      } else {
+        // Never keep stale runtime credentials after persisted settings are removed.
+        this.settings = { ...this.initialSettings };
+      }
+      this.razorpayAdapter.configure({
+        keyId: this.settings.razorpayKeyId,
+        secretKey: this.settings.razorpayKeySecret,
+        webhookSecret: this.settings.razorpayWebhookSecret,
+        testMode: this.settings.testMode,
+      });
+      this.stripeAdapter.configure({
+        keyId: this.settings.stripePublishableKey,
+        secretKey: this.settings.stripeSecretKey,
+        webhookSecret: this.settings.stripeWebhookSecret,
+        testMode: this.settings.testMode,
+      });
+    },
+  };
+
+  /** Configure persistent storage before checkout. Never treat a missing store as success. */
+  configureDurableOrders(repository: Pick<DurablePaymentRepository, 'createOrder'> & Partial<Pick<DurablePaymentRepository, 'reserveCoupon' | 'releaseCouponReservation'>>): void {
+    this.durableOrders = repository;
   }
 
   /**
@@ -158,6 +197,11 @@ export class PaymentService {
     return this.settings.activeProvider === 'stripe' ? this.stripeAdapter : this.razorpayAdapter;
   }
 
+  assertRefundConfigured(): void { this.razorpayAdapter.assertRefundConfigured(); }
+  initiateFullRefund(intent: import('./refundInitiation').RefundIntent) {
+    return this.razorpayAdapter.initiateFullRefund(intent);
+  }
+
   /**
    * STEP 1: Server Creates Order
    * Computes verified pricing, discounts, tax, and registers the order in status 'created'
@@ -167,11 +211,18 @@ export class PaymentService {
     providerResult: ProviderOrderResult;
   }> {
     const { userId, items, grossAmount, coupon, currency = 'INR', preferredProvider, customerDetails } = req;
+    assertReleaseCheckout(preferredProvider, currency);
+    const purchasedDuration = req.annualPassDurationDays ?? 365;
+    if (!Number.isInteger(purchasedDuration) || purchasedDuration < 1 || purchasedDuration > 3650) throw new Error('Invalid purchased membership duration.');
 
     // Calculate coupon discount securely on server (never trust client-calculated discounts)
     let discount = 0;
     let validatedCoupon = coupon ? coupon.trim().toUpperCase() : undefined;
-    if (this.settings.allowCouponDiscounts && validatedCoupon) {
+    let quotedCouponUpdatedAt: string | undefined;
+    if (validatedCoupon) {
+      if (!this.settings.allowCouponDiscounts) {
+        throw new Error('Coupon not applicable: coupon discounts are currently disabled.');
+      }
       const val = couponService.validateCoupon({
         code: validatedCoupon,
         userId,
@@ -179,13 +230,14 @@ export class PaymentService {
         currency,
         items,
       });
-      if (val.valid) {
-        discount = val.discountAmount;
-        validatedCoupon = val.code;
-      } else {
-        // If client provided an invalid/expired coupon, do not apply discount
-        validatedCoupon = undefined;
+      // Never create a full-price gateway order after a customer attempted
+      // to apply an invalid, expired or exhausted coupon.
+      if (!val.valid || !val.code || !(val.discountAmount > 0)) {
+        throw new Error('Coupon not applicable: ' + (val.error || 'No discount is available for this order.'));
       }
+      discount = val.discountAmount;
+      validatedCoupon = val.code;
+      quotedCouponUpdatedAt = val.coupon?.updatedAt;
     }
     // Cap discount to gross amount
     discount = Math.min(discount, grossAmount);
@@ -199,7 +251,8 @@ export class PaymentService {
     }
 
     // Determine target provider adapter
-    const adapter = this.getAdapter(preferredProvider, currency);
+    // Explicit release provider: stale auto/Stripe configuration must not reroute INR purchases.
+    const adapter = this.getAdapter('razorpay', currency);
     const providerType = adapter.provider;
 
     // Generate authoritative internal Order ID: MAYF-ORD-YYYYMMDD-XXXX
@@ -223,10 +276,11 @@ export class PaymentService {
       ],
       grossAmount,
       discount,
-      coupon: coupon ? coupon.trim().toUpperCase() : undefined,
+      coupon: validatedCoupon,
       tax,
       currency: currency.toUpperCase(),
       provider: providerType,
+      metadata: { annualPassDurationDays: purchasedDuration },
       providerOrderId: '', // will be populated from adapter result
       providerPaymentId: undefined,
       status: 'created',
@@ -235,11 +289,42 @@ export class PaymentService {
       customerDetails,
     };
 
-    // Call adapter to generate gateway order / checkout session
-    const providerResult = await adapter.createOrder(newOrder);
+    let couponReserved = false;
+    if (validatedCoupon) {
+      if (!this.durableOrders?.reserveCoupon || !this.durableOrders?.releaseCouponReservation) {
+        throw new Error('Coupon not applicable: reservation storage is unavailable.');
+      }
+      const claim = await this.durableOrders.reserveCoupon({
+        orderId, userId, code: validatedCoupon, discount,
+        expectedUpdatedAt: quotedCouponUpdatedAt,
+      });
+      newOrder.couponReservationId = orderId;
+      newOrder.couponReservationExpiresAt = claim.expiresAt;
+      couponReserved = true;
+    }
+    let providerResult: ProviderOrderResult;
+    try {
+      // Call adapter to generate gateway order / checkout session
+      providerResult = await adapter.createOrder(newOrder);
     newOrder.providerOrderId = providerResult.providerOrderId;
 
-    // Persist in orders store
+    // Never return checkout credentials before the order is durably recorded.
+    if (this.durableOrders) {
+      await this.durableOrders.createOrder(newOrder);
+    } else if (isProductionPaymentRuntime()) {
+      throw new Error('Payment checkout unavailable: durable order storage is not configured');
+    }
+    } catch (error) {
+      if (couponReserved && validatedCoupon) {
+        try {
+          await this.durableOrders!.releaseCouponReservation!(orderId, validatedCoupon);
+        } catch (releaseError) {
+          console.error('[MAYF] Coupon reservation release failed:', releaseError);
+        }
+      }
+      throw error;
+    }
+    // Maintain the legacy index for existing development tests and readers.
     this.ordersStore.set(orderId, newOrder);
 
     return {
@@ -330,6 +415,19 @@ export class PaymentService {
       order,
       entitlementGranted: true,
     };
+  }
+
+  /**
+   * Signature-only adapter entry point for durable processing. Unlike handleWebhook
+   * this does not mutate volatile orders or acknowledge an event before Firestore.
+   */
+  async verifyWebhookReceipt(
+    provider: PaymentProvider,
+    headers: Record<string, string | string[] | undefined>,
+    rawBody: string | Buffer | Record<string, unknown>,
+  ) {
+    const adapter = provider === 'stripe' ? this.stripeAdapter : this.razorpayAdapter;
+    return adapter.verifyWebhook(headers, rawBody);
   }
 
   /**
@@ -480,6 +578,10 @@ export class PaymentService {
     };
   }
 
+  async verifyRazorpayTestConnection(): Promise<void> {
+    await this.razorpayAdapter.verifyTestConnection();
+  }
+
   /**
    * Admin Payment Settings: Updates configuration securely
    * If a secret field is empty or contains masked bullets, leaves the existing stored secret untouched!
@@ -571,6 +673,7 @@ export class PaymentService {
     message: string;
     order?: StoredOrder;
   }> {
+    if (isProductionPaymentRuntime()) throw new Error('Webhook simulation is available only in local development.');
     const targetOrder = this.ordersStore.get(params.orderId);
     if (!targetOrder) {
       throw new Error(`Order ${params.orderId} not found`);
@@ -608,8 +711,8 @@ export class PaymentService {
 
     // Generate valid HMAC signature with the webhook secret
     const secret = params.provider === 'stripe'
-      ? (this.settings.stripeWebhookSecret || 'whsec_stripe_mayf_prod_881')
-      : (this.settings.razorpayWebhookSecret || 'rzp_whsec_mayf_prod_992');
+      ? (this.settings.stripeWebhookSecret || (isProductionPaymentRuntime() ? '' : 'whsec_stripe_mayf_prod_881'))
+      : (this.settings.razorpayWebhookSecret || (isProductionPaymentRuntime() ? '' : 'rzp_whsec_mayf_prod_992'));
 
     const rawBodyString = JSON.stringify(rawPayload);
     const timestamp = Math.floor(Date.now() / 1000);

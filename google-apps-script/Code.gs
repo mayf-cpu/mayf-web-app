@@ -22,18 +22,18 @@
  * INSTALLATION:
  * 1. In your Google Sheet, open Extensions > Apps Script.
  * 2. Paste this entire code into Code.gs.
- * 3. Update MAYF_WEBHOOK_URL and INGESTION_WEBHOOK_SECRET in Properties Service
- *    or edit the constants below.
+ * 3. Add MAYF_WEBHOOK_URL and MAYF_INGESTION_WEBHOOK_SECRET in
+ *    Project Settings > Script Properties. Never paste credentials into source.
+ *    The matching server-side secret is INGESTION_WEBHOOK_SECRET (32+ chars).
  * 4. Run `setupInstallableTrigger()` once from the toolbar to enable edit detection.
  */
 
 // Production or Staging Webhook Configuration
 const CONFIG = {
-  // Replace with your live app domain (e.g., https://mayf.co.in or your Cloud Run / AI Studio dev URL)
-  WEBHOOK_URL: 'https://mayf.co.in/api/ingestion/webhook',
-  
-  // Must match INGESTION_WEBHOOK_SECRET in your .env configuration
-  WEBHOOK_SECRET: 'mayf_ingest_secret_change_in_production_2026',
+  // Script Properties allow staging and production to use separate endpoints/secrets.
+  // A missing configuration must fail closed, never send to a default live host.
+  WEBHOOK_URL: PropertiesService.getScriptProperties().getProperty('MAYF_WEBHOOK_URL') || '',
+  WEBHOOK_SECRET: PropertiesService.getScriptProperties().getProperty('MAYF_INGESTION_WEBHOOK_SECRET') || '',
   
   SHEET_NAME: 'Content Registry',
   STATUS_COLUMN_INDEX: 22, // Column V: 'status'
@@ -216,6 +216,12 @@ function syncAllApprovedRows() {
  * Sends authenticated webhook POST to the MAYF server.
  */
 function sendWebhookPayload(items) {
+  if (!CONFIG.WEBHOOK_URL.startsWith('https://') ||
+      !CONFIG.WEBHOOK_URL.endsWith('/api/ingestion/webhook') ||
+      CONFIG.WEBHOOK_SECRET.length < 32 ||
+      CONFIG.WEBHOOK_SECRET.includes('change_in_production')) {
+    throw new Error('Set a valid MAYF_WEBHOOK_URL and a unique 32+ character MAYF_INGESTION_WEBHOOK_SECRET in Script Properties.');
+  }
   const options = {
     method: 'post',
     contentType: 'application/json',
@@ -324,5 +330,5 @@ function setupInstallableTrigger() {
     .onEdit()
     .create();
 
-  SpreadsheetApp.getUi().alert('Installable Edit Trigger Installed!\nSetting any row status to "Approved" will automatically ingest it into MAYF production storage.');
+  SpreadsheetApp.getUi().alert('Installable Edit Trigger Installed!\nSetting any row status to "Approved" will automatically ingest it into the separately configured MAYF endpoint. ');
 }

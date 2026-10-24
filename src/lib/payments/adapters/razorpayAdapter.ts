@@ -1,3 +1,4 @@
+import { isProductionPaymentRuntime } from '../runtime';
 /**
  * Razorpay Payment Adapter (Primary India Gateway)
  * Maths at Your Fingertips (mayf.co.in)
@@ -30,16 +31,18 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
   private testMode: boolean;
 
   constructor(config?: Partial<PaymentAdapterConfig>) {
-    this.keyId = config?.keyId || process.env.RAZORPAY_KEY_ID || 'rzp_test_mayf2026demo';
-    this.keySecret = config?.secretKey || process.env.RAZORPAY_KEY_SECRET || 'rzp_sec_sandbox_k98a7sd6f';
-    this.webhookSecret = config?.webhookSecret || process.env.RAZORPAY_WEBHOOK_SECRET || 'rzp_whsec_mayf_prod_992';
-    this.testMode = config?.testMode ?? (process.env.APP_ENV !== 'production');
+    this.keyId = config?.keyId || process.env.RAZORPAY_KEY_ID || (isProductionPaymentRuntime() ? '' : 'rzp_test_mayf2026demo');
+    this.keySecret = config?.secretKey || process.env.RAZORPAY_KEY_SECRET || (isProductionPaymentRuntime() ? '' : 'rzp_sec_sandbox_k98a7sd6f');
+    this.webhookSecret = config?.webhookSecret || process.env.RAZORPAY_WEBHOOK_SECRET || (isProductionPaymentRuntime() ? '' : 'rzp_whsec_mayf_prod_992');
+    this.testMode = config?.testMode ?? (!isProductionPaymentRuntime());
   }
 
   configure(config: PaymentAdapterConfig): void {
-    if (config.keyId) this.keyId = config.keyId;
-    if (config.secretKey) this.keySecret = config.secretKey;
-    if (config.webhookSecret) this.webhookSecret = config.webhookSecret;
+    // The service supplies a complete authoritative settings snapshot.
+    // Missing credentials must clear previously configured adapter state.
+    this.keyId = config.keyId || '';
+    this.keySecret = config.secretKey || '';
+    this.webhookSecret = config.webhookSecret || '';
     if (config.testMode !== undefined) this.testMode = config.testMode;
   }
 
@@ -55,56 +58,98 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
     return Boolean(this.webhookSecret && this.webhookSecret.length > 4);
   }
 
+  /** Read-only test-key verification. Never returns gateway records or raw errors. */
+  async verifyTestConnection(fetcher: typeof fetch = fetch): Promise<void> {
+    if (process.env.APP_ENV !== 'staging' || !this.testMode ||
+        !/^rzp_test_[A-Za-z0-9]+$/.test(this.keyId) || !this.keySecret ||
+        /sandbox|demo/i.test(this.keyId + this.keySecret)) {
+      throw new Error('Razorpay connection check requires isolated staging and real test-mode keys.');
+    }
+    let response: Response;
+    try {
+      response = await fetcher('https://api.razorpay.com/v1/orders?count=1', {
+        method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(10000),
+        headers: { Authorization: `Basic ${Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64')}` },
+      });
+    } catch { throw new Error('Razorpay test connection is unavailable. Please retry later.'); }
+    if (response.status === 401 || response.status === 403) throw new Error('Razorpay rejected the test key pair. Check the Key ID and Key Secret.');
+    if (!response.ok) throw new Error('Razorpay test connection is unavailable. Please retry later.');
+    const data = await response.json().catch(() => null) as any;
+    if (data?.entity !== 'collection' || !Array.isArray(data.items) || data.items.length > 1 || data.count !== data.items.length) {
+      throw new Error('Razorpay returned an unexpected connection-check response.');
+    }
+  }
+
+  assertRefundConfigured(): void {
+    if (!/^rzp_(test|live)_[A-Za-z0-9]+$/.test(this.keyId) || !this.keySecret ||
+        /sandbox|demo/i.test(this.keySecret + this.keyId) || !this.hasWebhookSecret() ||
+        (this.testMode ? !this.keyId.startsWith('rzp_test_') : !this.keyId.startsWith('rzp_live_')) ||
+        (process.env.APP_ENV === 'staging' && !this.keyId.startsWith('rzp_test_'))) {
+      throw new Error('Real gateway credentials, matching mode and a refund webhook secret are required');
+    }
+  }
+
+  /** https://razorpay.com/docs/api/refunds/normal-refunds-idempotent */
+  async initiateFullRefund(intent: import('../refundInitiation').RefundIntent): Promise<{ refundId: string }> {
+    this.assertRefundConfigured();
+    if (!/^pay_[A-Za-z0-9]+$/.test(intent.providerPaymentId) ||
+        !/^[A-Za-z0-9_-]{10,100}$/.test(intent.idempotencyKey) ||
+        !Number.isSafeInteger(intent.amount) || intent.amount <= 0 || intent.currency !== 'INR') {
+      throw new Error('Invalid provider refund request');
+    }
+    const response = await fetch(`https://api.razorpay.com/v1/payments/${intent.providerPaymentId}/refund`, {
+      method: 'POST', signal: AbortSignal.timeout(15000),
+      headers: { Authorization: `Basic ${Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64')}`,
+        'Content-Type': 'application/json', 'X-Refund-Idempotency': intent.idempotencyKey },
+      body: JSON.stringify({ amount: intent.amount, speed: 'normal' }),
+    });
+    if (!response.ok) throw new Error(`Gateway refund outcome requires review (${response.status})`);
+    const result = await response.json() as any;
+    if (!/^rfnd_[A-Za-z0-9]+$/.test(result.id || '') || result.entity !== 'refund' ||
+        result.payment_id !== intent.providerPaymentId || result.amount !== intent.amount ||
+        result.currency !== intent.currency || !['pending', 'processed'].includes(result.status)) {
+      throw new Error('Gateway returned an unconfirmed refund outcome');
+    }
+    return { refundId: result.id };
+  }
+
   /**
    * Generates Razorpay Order
    * Razorpay amounts are strictly represented in smallest currency unit (Paise: INR 1 = 100 paise)
    */
   async createOrder(order: StoredOrder): Promise<ProviderOrderResult> {
-    const finalPayable = Math.max(0, (order.grossAmount - order.discount) + (order.tax || 0));
+    const finalPayable = order.grossAmount - order.discount + (order.tax || 0);
     const amountInPaise = Math.round(finalPayable * 100);
-
-    // When real credentials are configured in production, call Razorpay API:
-    // https://api.razorpay.com/v1/orders
-    const isLiveKey = this.keyId.startsWith('rzp_live_') && this.keySecret && !this.keySecret.includes('sandbox');
-    let providerOrderId = '';
-
-    if (isLiveKey) {
-      try {
-        const basicAuth = Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64');
-        const resp = await fetch('https://api.razorpay.com/v1/orders', {
-          method: 'POST',
-          headers: {
-            Authorization: `Basic ${basicAuth}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            amount: amountInPaise,
-            currency: 'INR',
-            receipt: order.orderId,
-            notes: {
-              userId: order.userId,
-              orderId: order.orderId,
-              coupon: order.coupon || '',
-            },
-          }),
-        });
-
-        if (resp.ok) {
-          const data = await resp.json();
-          providerOrderId = data.id;
-        } else {
-          const errText = await resp.text();
-          console.warn('[Razorpay] Live API call responded with non-200:', errText);
-        }
-      } catch (err) {
-        console.warn('[Razorpay] Network error reaching Razorpay live API, falling back to deterministic order ID:', err);
+    if (order.currency !== 'INR' || !Number.isSafeInteger(amountInPaise) || amountInPaise < 100 ||
+        !order.orderId || order.orderId.length > 40) throw new Error('Invalid Razorpay order amount, currency or receipt');
+    const localSimulation = !isProductionPaymentRuntime() && process.env.APP_ENV !== 'staging' && this.testMode &&
+      this.keyId === 'rzp_test_mayf2026demo' && this.keySecret === 'rzp_sec_sandbox_k98a7sd6f';
+    let providerOrderId: string;
+    if (localSimulation) {
+      providerOrderId = `order_mayf_${Date.now().toString(36)}_${crypto.randomBytes(6).toString('hex')}`;
+    } else {
+      if (!/^rzp_(test|live)_[A-Za-z0-9]+$/.test(this.keyId) || !this.keySecret ||
+          /sandbox|demo/i.test(this.keyId + this.keySecret) ||
+          (this.testMode ? !this.keyId.startsWith('rzp_test_') : !this.keyId.startsWith('rzp_live_')) ||
+          (process.env.APP_ENV === 'staging' && !this.keyId.startsWith('rzp_test_'))) {
+        throw new Error('Real Razorpay credentials with matching mode are required; staging requires test keys');
       }
-    }
-
-    if (!providerOrderId) {
-      // Deterministic & unique Razorpay Order ID format: order_XXXXXXXXXXXXXXXX
-      const randomEntropy = crypto.randomBytes(6).toString('hex').toLowerCase();
-      providerOrderId = `order_mayf_${Date.now().toString(36)}_${randomEntropy}`;
+      // Real test keys call the same API as live keys; a provider failure never becomes a fake order.
+      const response = await fetch('https://api.razorpay.com/v1/orders', {
+        method: 'POST', signal: AbortSignal.timeout(15000),
+        headers: { Authorization: `Basic ${Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64')}`,
+          'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: amountInPaise, currency: 'INR', receipt: order.orderId,
+          notes: { userId: order.userId, orderId: order.orderId, coupon: order.coupon || '' } }),
+      });
+      if (!response.ok) throw new Error('Razorpay order creation failed; reconcile any uncertain provider outcome before retrying');
+      const result = await response.json() as any;
+      if (!/^order_[A-Za-z0-9]+$/.test(result.id || '') || result.entity !== 'order' ||
+          result.amount !== amountInPaise || result.currency !== 'INR' || result.receipt !== order.orderId ||
+          result.status !== 'created' || result.amount_paid !== 0 || result.amount_due !== amountInPaise) {
+        throw new Error('Razorpay returned an order that does not match the requested purchase');
+      }
+      providerOrderId = result.id;
     }
 
     return {
@@ -156,6 +201,8 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
       };
     }
 
+    if (!this.hasSecret()) return { valid: false, providerPaymentId: providerPaymentId || '', error: 'Payment verification is not configured.' };
+
     // Expected signature calculation
     const payload = `${providerOrderId}|${providerPaymentId}`;
     const expectedSignature = crypto
@@ -173,7 +220,7 @@ export class RazorpayAdapter implements PaymentProviderAdapter {
     }
 
     // In sandbox test mode, if client generated a test signature with standard test sandbox secret or simulated format
-    if (!match && this.testMode) {
+    if (!match && this.testMode && !isProductionPaymentRuntime()) {
       if (
         signature === `sig_rzp_valid_${providerOrderId}_${providerPaymentId}` ||
         signature.startsWith('sig_rzp_valid_')

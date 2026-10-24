@@ -1,3 +1,4 @@
+import { waitForPaymentConfirmation } from '../lib/payments/paymentConfirmation';
 /**
  * Authoritative Student Checkout Page
  * Maths at Your Fingertips (mayf.co.in)
@@ -10,7 +11,8 @@
  * - Real-time coupon calculation (BOARD2026, etc.)
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { SessionGuard } from '../lib/auth/sessionGuard';
 import {
   ShieldCheck,
   Lock,
@@ -51,11 +53,14 @@ export const CheckoutPage: React.FC = () => {
 
   // Gateway Selection
   const [selectedProvider, setSelectedProvider] = useState<PaymentProvider>('razorpay');
+  const providerRef = useRef(selectedProvider); providerRef.current = selectedProvider;
+  const quoteGuard = useRef(new SessionGuard());
+  useEffect(() => { quoteGuard.current.invalidate(); setCouponValidation(null); setAppliedCoupon(''); setCouponLoading(false); }, [selectedProvider]);
 
   // Form State
-  const [studentName, setStudentName] = useState(user?.displayName || 'Arjun Sharma');
-  const [email, setEmail] = useState(user?.email || 'parent.sharma@gmail.com');
-  const [phone, setPhone] = useState(user?.phoneNumber || '+91 98765 43210');
+  const [studentName, setStudentName] = useState(user?.displayName || '');
+  const [email, setEmail] = useState(user?.email || '');
+  const [phone, setPhone] = useState(user?.phoneNumber || '');
   const [studentClass, setStudentClass] = useState(user?.studentClass || 'Class 10');
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState('');
@@ -68,6 +73,15 @@ export const CheckoutPage: React.FC = () => {
     message?: string;
     error?: string;
   } | null>(null);
+
+  const confirmationController = useRef<AbortController | null>(null);
+  const currentAccount = useRef(firebaseUser?.uid); currentAccount.current = firebaseUser?.uid;
+  const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
+  useEffect(() => {
+    setAwaitingConfirmation(false); setIsProcessing(false); setPendingOrderData(null); setVerificationSuccess(null);
+    return () => { confirmationController.current?.abort(); confirmationController.current = null; if (redirectTimer.current) clearTimeout(redirectTimer.current); };
+  }, [firebaseUser?.uid]);
 
   // Process & Verification State
   const [isProcessing, setIsProcessing] = useState(false);
@@ -90,11 +104,17 @@ export const CheckoutPage: React.FC = () => {
   }, []);
 
   // Pricing calculations
-  const [configuredPriceINR, setConfiguredPriceINR] = useState(999);
+  const [configuredPriceINR, setConfiguredPriceINR] = useState(0);
+  const [pricingLoaded, setPricingLoaded] = useState(false);
+  const [passAvailable, setPassAvailable] = useState(false);
+  const [taxRate, setTaxRate] = useState(0);
   const [configuredPassName, setConfiguredPassName] = useState('Maths at Your Fingertips Annual Pass (Class 5–10)');
 
   // Authoritative server-side coupon validation
   const validateCouponOnServer = async (codeToValidate: string, gross: number) => {
+    const isCurrent = quoteGuard.current.begin();
+    const currency = providerRef.current === 'razorpay' ? 'INR' : 'USD';
+    if (currency === 'USD') gross = 29;
     const cleanCode = (codeToValidate || '').trim().toUpperCase();
     if (!cleanCode) {
       setCouponValidation(null);
@@ -114,7 +134,7 @@ export const CheckoutPage: React.FC = () => {
         body: JSON.stringify({
           code: cleanCode,
           cartGrossAmount: gross,
-          currency: selectedProvider === 'razorpay' ? 'INR' : 'USD',
+          currency,
           userId: user?.uid,
           items: [
             {
@@ -129,6 +149,7 @@ export const CheckoutPage: React.FC = () => {
       });
 
       const data = await res.json();
+      if (!isCurrent()) return;
       if (data.success && data.valid) {
         setCouponValidation({
           valid: true,
@@ -163,6 +184,7 @@ export const CheckoutPage: React.FC = () => {
         });
       }
     } catch (err: any) {
+      if (!isCurrent()) return;
       setCouponValidation({
         valid: false,
         code: cleanCode,
@@ -172,33 +194,26 @@ export const CheckoutPage: React.FC = () => {
       });
       setAppliedCoupon('');
     } finally {
-      setCouponLoading(false);
+      if (isCurrent()) setCouponLoading(false);
     }
   };
 
   useEffect(() => {
     async function loadConfigAndCoupon() {
-      let initialGross = 999;
+      let initialGross = 0;
       try {
         const res = await fetch('/api/annual-pass/config');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && data.settings) {
-            if (data.settings.salePrice) {
-              setConfiguredPriceINR(data.settings.salePrice);
-              initialGross = data.settings.salePrice;
-            }
-            if (data.settings.name) setConfiguredPassName(data.settings.name);
-          }
-        }
-      } catch (err) {
-        console.warn('Could not fetch pass config in checkout:', err);
-      }
+        const data = await res.json();
+        if (!res.ok || !data.success || !Number.isFinite(data.effectivePriceINR) || data.effectivePriceINR <= 0 || !Number.isFinite(data.taxRatePercentage)) throw new Error('Checkout pricing is unavailable. Please retry later.');
+        initialGross = data.effectivePriceINR;
+        setConfiguredPriceINR(initialGross); setConfiguredPassName(data.settings.name);
+        setTaxRate(data.taxRatePercentage); setPassAvailable(data.settings.enabled === true && data.checkoutEnabled === true); setPricingLoaded(true);
+      } catch (error: any) { setErrorMsg(error.message || 'Checkout pricing could not be loaded.'); return; }
 
       // Check URL query parameters for coupon
       try {
         const params = new URLSearchParams(window.location.search);
-        const urlCoupon = params.get('coupon') || 'BOARD2026';
+        const urlCoupon = params.get('coupon') || '';
         if (urlCoupon) {
           const upper = urlCoupon.trim().toUpperCase();
           setCouponCode(upper);
@@ -223,7 +238,9 @@ export const CheckoutPage: React.FC = () => {
   const grossPrice = isINR ? configuredPriceINR : 29;
   const isDiscountActive = Boolean(couponValidation && couponValidation.valid && couponValidation.discountAmount > 0);
   const discountAmount = isDiscountActive ? couponValidation!.discountAmount : 0;
-  const netAmount = isDiscountActive ? couponValidation!.netAmount : grossPrice;
+  const discountedSubtotal = isDiscountActive ? couponValidation!.netAmount : grossPrice;
+  const taxAmount = Math.round(discountedSubtotal * taxRate / 100);
+  const netAmount = discountedSubtotal + taxAmount;
 
   const handleApplyCoupon = (e: React.FormEvent) => {
     e.preventDefault();
@@ -231,6 +248,7 @@ export const CheckoutPage: React.FC = () => {
   };
 
   const handleRemoveCoupon = () => {
+    quoteGuard.current.invalidate();
     setCouponCode('');
     setAppliedCoupon('');
     setCouponValidation(null);
@@ -241,22 +259,14 @@ export const CheckoutPage: React.FC = () => {
    */
   const handleInitiateOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (awaitingConfirmation || verificationSuccess) { setErrorMsg('Check this order in your purchase history before paying again.'); return; }
     setIsProcessing(true);
     setErrorMsg('');
     setVerificationSuccess(null);
 
     try {
-      // 1. Verify Bot Challenge (Cloudflare Turnstile)
-      try {
-        await fetch('/api/turnstile/verify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: 'cf-test-valid-checkout-token' }),
-        });
-      } catch (err) {
-        console.warn('Turnstile check non-blocking warning:', err);
-      }
-
+      if (!pricingLoaded || !passAvailable) throw new Error('Checkout is not currently available.');
+      if (import.meta.env.PROD && !firebaseUser) throw new Error('Please sign in with Google before checkout.');
       // 2. Obtain verified session token
       const token = firebaseUser
         ? await firebaseUser.getIdToken()
@@ -340,10 +350,12 @@ export const CheckoutPage: React.FC = () => {
           const rzp = new window.Razorpay(options);
           rzp.open();
         } catch (rzpErr) {
+          if (import.meta.env.PROD) throw new Error('The payment window could not open. Please allow popups and try again.');
           console.warn('[Razorpay] Script pop-up prevented, displaying sandbox verification portal:', rzpErr);
           setShowSandboxModal(true);
         }
       } else {
+        if (import.meta.env.PROD) throw new Error('The selected payment gateway is unavailable. Please try again later.');
         // In iframe preview or test mode where external popup is restricted
         setShowSandboxModal(true);
       }
@@ -366,27 +378,43 @@ export const CheckoutPage: React.FC = () => {
   }) => {
     setIsProcessing(true);
     setShowSandboxModal(false);
+    setErrorMsg('');
 
+    confirmationController.current?.abort();
+    const controller = new AbortController(); confirmationController.current = controller;
     try {
       const token = firebaseUser
         ? await firebaseUser.getIdToken()
         : user?.uid
         ? `dev-student-${user.uid}`
         : 'dev-student-mayf-student-1001';
-      const verifyRes = await fetch('/api/payments/verify-signature', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(verifyPayload),
-      });
-
-      const verifyData = await verifyRes.json();
-      if (!verifyData.success) {
-        throw new Error(verifyData.error || 'Server cryptographic payment verification failed');
-      }
-
+      if (import.meta.env.PROD && (!firebaseUser || currentAccount.current !== firebaseUser.uid)) return;
+      if (controller.signal.aborted) return;
+      const timeout = setTimeout(() => controller.abort(), 45000);
+      let verifyData: any;
+      try {
+        if (import.meta.env.PROD) {
+          setAwaitingConfirmation(true);
+          const confirmed = await waitForPaymentConfirmation(verifyPayload.orderId, async () => {
+            const response = await fetch(`/api/student/orders/${encodeURIComponent(verifyPayload.orderId)}/confirmation`, {
+              headers: { Authorization: `Bearer ${await firebaseUser!.getIdToken()}` }, signal: controller.signal,
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success || !data.order) throw new Error(data.error || 'Payment confirmation is unavailable. Do not pay again; check your purchase history.');
+            return data.order;
+          }, controller.signal);
+          verifyData = { success: true, order: confirmed };
+        } else {
+          const response = await fetch('/api/payments/verify-signature', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify(verifyPayload), signal: controller.signal,
+          });
+          verifyData = await response.json();
+          if (!response.ok || !verifyData.success) throw new Error(verifyData.error || 'Payment confirmation failed');
+        }
+      } finally { clearTimeout(timeout); }
+      if (confirmationController.current !== controller || controller.signal.aborted || (import.meta.env.PROD && currentAccount.current !== firebaseUser?.uid)) return;
+      setAwaitingConfirmation(false);
       // Authoritative verification succeeded! Entitlement confirmed by server.
       setVerificationSuccess(verifyData);
 
@@ -421,13 +449,13 @@ export const CheckoutPage: React.FC = () => {
       });
 
       // Transition to purchases after brief review
-      setTimeout(() => {
-        navigate('/dashboard/purchases');
+      redirectTimer.current = setTimeout(() => {
+        if (!import.meta.env.PROD || currentAccount.current === firebaseUser?.uid) navigate('/dashboard/purchases');
       }, 2500);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Cryptographic verification failed on server.');
+      if (confirmationController.current === controller && (!import.meta.env.PROD || currentAccount.current === firebaseUser?.uid)) setErrorMsg(err.message === 'Payment confirmation cancelled' ? 'Payment confirmation timed out. Do not pay again; check your purchase history.' : (err.message || 'Payment confirmation unavailable. Do not pay again; check your purchase history.'));
     } finally {
-      setIsProcessing(false);
+      if (confirmationController.current === controller) setIsProcessing(false);
     }
   };
 
@@ -475,6 +503,13 @@ export const CheckoutPage: React.FC = () => {
         </div>
 
         {/* Success Banner */}
+        {awaitingConfirmation && isProcessing && <p role="status" className="text-sm text-slate-600">Waiting for payment confirmation. Please do not pay again.</p>}
+        {awaitingConfirmation && !isProcessing && pendingOrderData && (
+          <Button type="button" variant="outline" onClick={() => executeServerVerification({
+            orderId: pendingOrderData.order.orderId, provider: pendingOrderData.checkoutData.provider,
+            providerOrderId: pendingOrderData.checkoutData.providerOrderId, providerPaymentId: '',
+          })}>Check payment confirmation again</Button>
+        )}
         {verificationSuccess && (
           <div className="p-5 rounded-xl bg-[#ECFDF5] border border-[#6EE7B7] flex items-start gap-4">
             <CheckCircle2 className="w-6 h-6 text-[#10B981] shrink-0 mt-0.5" />
@@ -483,7 +518,7 @@ export const CheckoutPage: React.FC = () => {
                 Payment Authoritatively Reconciled & Annual Pass Granted!
               </h3>
               <p className="text-xs text-[#047857]">
-                Order <span className="font-mono font-bold">{verificationSuccess.order?.orderId}</span> verified via server-side HMAC signature. Redirecting to your Student Dashboard...
+                Order <span className="font-mono font-bold">{verificationSuccess.order?.orderId}</span> confirmed. Redirecting to your Student Dashboard...
               </p>
             </div>
           </div>
@@ -533,18 +568,14 @@ export const CheckoutPage: React.FC = () => {
                     UPI (Google Pay, PhonePe, Paytm, BHIM), Indian NetBanking & RuPay / Visa / MC
                   </p>
                   <span className="font-mono font-bold text-sm text-[#00687A]">
-                    ₹{appliedCoupon.toUpperCase() === 'BOARD2026' ? '899' : '999'} INR
+                    ₹{pricingLoaded ? configuredPriceINR : '—'} INR
                   </span>
                 </div>
 
-                {/* Stripe International Option */}
+                {/* Keep international plans visible, but do not offer unsupported checkout. */}
                 <div
-                  onClick={() => setSelectedProvider('stripe')}
-                  className={`p-4 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between space-y-2 ${
-                    selectedProvider === 'stripe'
-                      ? 'border-[#00687A] bg-[#F0F9FF]'
-                      : 'border-[#E2E8F0] bg-white hover:border-[#CBD5E1]'
-                  }`}
+                  aria-disabled="true"
+                  className="p-4 rounded-xl border-2 border-[#E2E8F0] bg-slate-50 opacity-70 cursor-not-allowed flex flex-col justify-between space-y-2"
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-heading font-bold text-sm text-[#0F172A] flex items-center gap-1.5">
@@ -552,14 +583,14 @@ export const CheckoutPage: React.FC = () => {
                       <span>Stripe (International)</span>
                     </span>
                     <span className="text-[10px] bg-[#F1F5F9] text-[#64748B] font-bold px-1.5 py-0.5 rounded">
-                      GLOBAL
+                      COMING SOON
                     </span>
                   </div>
                   <p className="text-[11px] text-[#64748B]">
-                    International Cards (US, UK, UAE, Singapore) with multi-currency conversion
+                    International payments will be available after Stripe sandbox and settlement testing
                   </p>
                   <span className="font-mono font-bold text-sm text-[#635BFF]">
-                    ${appliedCoupon.toUpperCase() === 'BOARD2026' ? '24' : '29'} USD
+                    International checkout unavailable
                   </span>
                 </div>
               </div>
@@ -723,16 +754,16 @@ export const CheckoutPage: React.FC = () => {
                 )}
 
                 <div className="flex justify-between text-[#475569]">
-                  <span>Taxes & GST (Included)</span>
+                  <span>Tax ({taxRate}%)</span>
                   <span className="font-mono tabular-nums text-[#059669]">
-                    Included
+                    {isINR ? `₹${taxAmount}` : `$${taxAmount}`}
                   </span>
                 </div>
 
                 <div className="pt-3 border-t border-[#E2E8F0] flex justify-between text-sm font-bold text-[#0F172A]">
                   <span>Total Payable</span>
                   <span className="font-mono tabular-nums text-lg text-[#00687A]">
-                    {isINR ? `₹${netAmount}.00` : `$${netAmount}.00`}
+                    {new Intl.NumberFormat('en-IN', { style: 'currency', currency: isINR ? 'INR' : 'USD' }).format(netAmount)}
                   </span>
                 </div>
               </div>
@@ -741,9 +772,9 @@ export const CheckoutPage: React.FC = () => {
               <div className="mt-6 p-3 rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] text-[11px] text-[#1E3A8A] space-y-1">
                 <div className="font-bold flex items-center gap-1.5">
                   <ShieldCheck className="w-3.5 h-3.5 text-[#1D4ED8]" />
-                  <span>7-Day Academic Satisfaction Guarantee</span>
+                  <span>Refund requests</span>
                 </div>
-                <div>No lock-in contracts. Instant refund if unsatisfied.</div>
+                <div>Refund requests are reviewed under our <a href="/refund-policy" className="underline">refund policy</a>. Provider processing times apply.</div>
               </div>
             </div>
 
@@ -755,10 +786,11 @@ export const CheckoutPage: React.FC = () => {
                 fullWidth
                 size="lg"
                 isLoading={isProcessing}
+                disabled={awaitingConfirmation || Boolean(verificationSuccess) || !pricingLoaded || !passAvailable}
                 className="font-bold text-sm shadow-md"
               >
                 <span>
-                  Pay {isINR ? `₹${netAmount}` : `$${netAmount}`} & Start Learning
+                  {!pricingLoaded ? 'Loading pricing…' : !passAvailable ? 'Checkout currently unavailable' : `Pay ${isINR ? `₹${netAmount}` : `$${netAmount}`} & Start Learning`}
                 </span>
                 <ArrowRight className="w-4 h-4 ml-1.5" />
               </Button>
@@ -858,7 +890,7 @@ export const CheckoutPage: React.FC = () => {
               </div>
 
               <p className="text-[11px] text-[#64748B] leading-relaxed">
-                Submitting executes the full cryptographic flow: payment tokens return to the server for authoritative HMAC signature verification. <strong>Entitlement will be granted only upon server verification.</strong>
+                Your access will be activated after the payment provider confirms your payment. <strong>If confirmation takes time, check your purchase history before paying again.</strong>
               </p>
 
               <div className="flex gap-2 pt-2">

@@ -1,9 +1,12 @@
+import { readStudentOrders, readStudentActivity } from './studentHistory';
 /**
  * Server-Side Admin User Management Controller.
  * Powered by Firebase Admin SDK custom claims and token revocation.
  */
 
 import {
+  getAdminAuth,
+  getAdminFirestore,
   adminSetCustomUserClaims,
   adminRevokeRefreshTokens,
   adminUpdateUserDisabledStatus,
@@ -77,7 +80,7 @@ class AdminUserManager {
     cloudflareAccessAud: '566895799712-cfaccess-aud-mayf-2026',
     cloudflareTeamDomain: 'mayf.cloudflareaccess.com',
     requireCloudflareAccess: false,
-    authorizedAdminEmails: (process.env.ADMIN_AUTHORIZED_EMAILS || '2026vivekkushwah@gmail.com,ntnagrawal146@gmail.com,admin@mayf.co.in')
+    authorizedAdminEmails: (process.env.ADMIN_AUTHORIZED_EMAILS || '2026vivekkushwah@gmail.com,ntnagrawal146@gmail.com,admin@mayf.co.in,mayfbackup@gmail.com')
       .split(',')
       .map((e) => e.trim().toLowerCase()),
     emergencyMaintenanceMode: false,
@@ -87,7 +90,46 @@ class AdminUserManager {
   };
 
   constructor() {
-    this.seedInitialData();
+    if (process.env.NODE_ENV !== 'production') this.seedInitialData();
+  }
+
+  private profileFromRecord(record: any, profile: Record<string, any> = {}): AdminStudentProfile {
+    const claims = record.customClaims || {};
+    const email = (record.email || '').toLowerCase();
+    const allowed = this.securityConfig.authorizedAdminEmails.includes(email) && record.emailVerified;
+    const owner = allowed && ['ntnagrawal146@gmail.com', '2026vivekkushwah@gmail.com'].includes(email);
+    const role = owner || claims.superAdmin || claims.role === 'superAdmin' ? 'superAdmin' : allowed || claims.admin || claims.role === 'admin' ? 'admin' : 'student';
+    const passExpiry = claims.annualPassExpiry;
+    const activePass = Boolean(claims.annualPass && (!passExpiry || new Date(passExpiry).getTime() >= Date.now()));
+    return {
+      uid: record.uid, displayName: record.displayName || profile.displayName || '', email: record.email || '',
+      phoneNumber: record.phoneNumber || profile.phoneNumber, studentClass: profile.studentClass || '', board: profile.board || '',
+      hasAnnualPass: activePass, passExpiry, isPro: Boolean(claims.pro || activePass), disabled: Boolean(record.disabled), role,
+      streakDays: Number(profile.streakDays) || 0, lastActiveDate: profile.lastActiveDate || '',
+      createdAt: record.metadata?.creationTime || '', lastLoginAt: record.metadata?.lastSignInTime || '',
+    };
+  }
+  public async refreshUsers(): Promise<void> {
+    const auth = getAdminAuth();
+    if (!auth) throw new Error('Firebase user management is unavailable');
+    const db = getAdminFirestore();
+    const profiles = db ? new Map((await db.list('users')).map(doc => [doc.id, doc.data])) : new Map();
+    const fresh = new Map<string, AdminStudentProfile>();
+    let pageToken: string | undefined;
+    do {
+      const page = await auth.listUsers(1000, pageToken);
+      for (const record of page.users) fresh.set(record.uid, this.profileFromRecord(record, profiles.get(record.uid)));
+      pageToken = page.pageToken;
+    } while (pageToken);
+    this.students = fresh;
+  }
+  private async loadUser(uid: string): Promise<AdminStudentProfile> {
+    const auth = getAdminAuth();
+    if (!auth) throw new Error('Firebase user management is unavailable');
+    const record = await auth.getUser(uid);
+    const db = getAdminFirestore();
+    const profile = db ? (await db.collection('users').doc(uid).get()).data() : undefined;
+    return this.profileFromRecord(record, profile);
   }
 
   private seedInitialData() {
@@ -274,13 +316,14 @@ class AdminUserManager {
     disabled: boolean,
     actor: { uid: string; email: string; role: 'admin' | 'superAdmin' }
   ): Promise<{ success: boolean; student?: AdminStudentProfile; error?: string }> {
-    const student = this.students.get(uid);
+    const student = await this.loadUser(uid);
+    if (student && student.role !== 'student' && actor.role !== 'superAdmin') return { success: false, error: 'Only a super administrator can modify an administrator account' };
     if (!student) {
       return { success: false, error: 'Student not found' };
     }
 
     student.disabled = disabled;
-    this.students.set(uid, student);
+
 
     // Call Firebase Admin SDK
     await adminUpdateUserDisabledStatus(uid, disabled);
@@ -308,7 +351,8 @@ class AdminUserManager {
     policyReason: string,
     actor: { uid: string; email: string; role: 'admin' | 'superAdmin' }
   ): Promise<{ success: boolean; error?: string }> {
-    const student = this.students.get(uid);
+    const student = await this.loadUser(uid);
+    if (student && student.role !== 'student' && actor.role !== 'superAdmin') return { success: false, error: 'Only a super administrator can modify an administrator account' };
     if (!student) {
       return { success: false, error: 'Student not found' };
     }
@@ -321,7 +365,7 @@ class AdminUserManager {
       deletedBy: actor.email,
     };
     student.disabled = true;
-    this.students.set(uid, student);
+
 
     // Invoke Firebase Admin SDK to revoke and delete Auth account
     await adminDeleteAuthUser(uid);
@@ -350,13 +394,14 @@ class AdminUserManager {
     actor: { uid: string; email: string; role: 'admin' | 'superAdmin' },
     reason: string = 'Admin dashboard modification'
   ): Promise<{ success: boolean; student?: AdminStudentProfile; error?: string }> {
-    const student = this.students.get(uid);
+    const student = await this.loadUser(uid);
+    if (student && student.role !== 'student' && actor.role !== 'superAdmin') return { success: false, error: 'Only a super administrator can modify an administrator account' };
     if (!student) {
       return { success: false, error: 'Student not found' };
     }
 
     student.isPro = grant;
-    this.students.set(uid, student);
+
 
     // Set custom claims & force token refresh
     await adminSetCustomUserClaims(uid, {
@@ -391,7 +436,8 @@ class AdminUserManager {
     actor: { uid: string; email: string; role: 'admin' | 'superAdmin' },
     reason: string = 'Admin pass adjustment'
   ): Promise<{ success: boolean; student?: AdminStudentProfile; error?: string }> {
-    const student = this.students.get(uid);
+    const student = await this.loadUser(uid);
+    if (student && student.role !== 'student' && actor.role !== 'superAdmin') return { success: false, error: 'Only a super administrator can modify an administrator account' };
     if (!student) {
       return { success: false, error: 'Student not found' };
     }
@@ -405,7 +451,7 @@ class AdminUserManager {
     if (grant) {
       student.isPro = true;
     }
-    this.students.set(uid, student);
+
 
     // Set custom claims & force token refresh
     await adminSetCustomUserClaims(uid, {
@@ -439,7 +485,8 @@ class AdminUserManager {
     actor: { uid: string; email: string; role: 'admin' | 'superAdmin' },
     reason: string = 'Admin expiry date extension'
   ): Promise<{ success: boolean; student?: AdminStudentProfile; error?: string }> {
-    const student = this.students.get(uid);
+    const student = await this.loadUser(uid);
+    if (student && student.role !== 'student' && actor.role !== 'superAdmin') return { success: false, error: 'Only a super administrator can modify an administrator account' };
     if (!student) {
       return { success: false, error: 'Student not found' };
     }
@@ -448,7 +495,7 @@ class AdminUserManager {
     student.passExpiry = newExpiry;
     student.hasAnnualPass = true;
     student.isPro = true;
-    this.students.set(uid, student);
+
 
     // Update custom claim & force token refresh
     await adminSetCustomUserClaims(uid, {
@@ -476,13 +523,9 @@ class AdminUserManager {
   }
 
   // --- Student Orders & Activity ---
-  public getStudentOrders(uid: string): StudentOrderItem[] {
-    return this.orders.get(uid) || [];
-  }
+  public getStudentOrders(uid: string) { return readStudentOrders(getAdminFirestore(), uid); }
 
-  public getStudentActivity(uid: string): StudentActivityLogItem[] {
-    return this.activityLogs.get(uid) || [];
-  }
+  public getStudentActivity(uid: string) { return readStudentActivity(getAdminFirestore(), uid); }
 
   // --- Admin Role Assignment (Strict RBAC Hierarchy) ---
   public async setUserRole(
@@ -490,7 +533,8 @@ class AdminUserManager {
     targetRole: 'admin' | 'superAdmin' | 'student',
     actor: { uid: string; email: string; role: 'admin' | 'superAdmin' }
   ): Promise<{ success: boolean; student?: AdminStudentProfile; error?: string }> {
-    const student = this.students.get(uid);
+    const student = await this.loadUser(uid);
+    if (student && student.role !== 'student' && actor.role !== 'superAdmin') return { success: false, error: 'Only a super administrator can modify an administrator account' };
     if (!student) {
       return { success: false, error: 'User not found' };
     }
@@ -511,7 +555,7 @@ class AdminUserManager {
     }
 
     student.role = targetRole;
-    this.students.set(uid, student);
+
 
     const isSuper = targetRole === 'superAdmin';
     const isAdmin = isSuper || targetRole === 'admin';

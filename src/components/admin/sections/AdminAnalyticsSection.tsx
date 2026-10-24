@@ -28,22 +28,28 @@ import { adminService } from '../../../services/adminService';
 import { DashboardAnalyticsData } from '../../../lib/analytics/analyticsTypes';
 import { Button } from '../../ui/Button';
 
+const metric = (value: number | null | undefined): string => value == null ? 'Not measured' : value.toLocaleString('en-IN');
+const rate = (value: number | null | undefined): string => value == null ? 'Not measured' : `${value}%`;
+const ratio = (numerator: number, denominator: number): string => denominator > 0 ? `${Math.round(numerator / denominator * 100)}%` : 'Not measured';
+
 export const AdminAnalyticsSection: React.FC = () => {
   const [data, setData] = useState<DashboardAnalyticsData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [timeframe, setTimeframe] = useState<'today' | '7d' | '30d' | 'all'>('30d');
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const fetchAnalytics = async (tf: 'today' | '7d' | '30d' | 'all' = timeframe) => {
     setIsRefreshing(true);
     try {
       const res = await adminService.getAnalyticsDashboard(tf);
-      if (res.success && res.data) {
-        setData(res.data);
-      }
+      if (!res.success || !res.data) throw new Error(res.error || 'Measured analytics are unavailable.');
+      setData(res.data);
+      setLoadError(null);
     } catch (err) {
-      console.error('[AdminAnalytics] Fetch error:', err);
+      setData(null);
+      setLoadError(err instanceof Error ? err.message : 'Measured analytics are unavailable.');
     } finally {
       setIsRefreshing(false);
       setLoading(false);
@@ -90,11 +96,11 @@ export const AdminAnalyticsSection: React.FC = () => {
             </h1>
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
               <Zap className="w-3 h-3 text-emerald-600" />
-              O(1) Aggregated Rollup
+              Firestore measurements
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Authoritative product analytics, conversion funnels, and academic engagement without scanning raw activity tables.
+            Recorded product analytics, paid-order reporting and engagement. Unmeasured values are explicitly labelled.
           </p>
         </div>
 
@@ -146,6 +152,10 @@ export const AdminAnalyticsSection: React.FC = () => {
         </div>
       )}
 
+      {loadError && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        Analytics unavailable: {loadError}. No demonstration figures are shown.
+      </div>}
+      {data && <p className="text-xs text-slate-500">Values reflect measured records only. Traffic represents recorded page views, not unique visitors. INR revenue excludes other currencies.</p>}
       {/* Architecture & Privacy Guarantee Notice */}
       <div className="p-4 rounded-xl bg-slate-900 text-white border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
         <div className="flex items-start sm:items-center gap-2.5">
@@ -155,9 +165,9 @@ export const AdminAnalyticsSection: React.FC = () => {
               Zero Raw Event Scanning & Student Privacy Invariant
             </p>
             <p className="text-slate-400 text-[11px] leading-relaxed">
-              All dashboard metrics resolve in{' '}
-              <span className="text-emerald-400 font-mono font-bold">{architecture?.queryTimeMs || 1.2}ms</span>{' '}
-              with <span className="text-emerald-400 font-mono font-bold">0 records scanned</span>. Student names, emails, and homework questions are strictly prohibited from analytics events.
+              The recorded data was loaded in{' '}
+              <span className="text-emerald-400 font-mono font-bold">{architecture?.queryTimeMs ?? '—'}ms</span>{' '}
+              across <span className="text-emerald-400 font-mono font-bold">{metric(architecture?.scannedRecords)} source records</span>. Unmeasured data is not estimated; raw student identities and homework are not analytics inputs.
             </p>
           </div>
         </div>
@@ -179,11 +189,11 @@ export const AdminAnalyticsSection: React.FC = () => {
               <Users className="w-4 h-4 text-blue-600" />
             </div>
             <p className="text-xl font-heading font-extrabold text-slate-900">
-              {summary.totalUsers.toLocaleString()}
+              {metric(summary.totalUsers)}
             </p>
             <p className="text-[11px] text-emerald-600 font-semibold flex items-center gap-0.5">
               <ArrowUpRight className="w-3 h-3" />
-              +{summary.newUsersToday} today
+              +{metric(summary.newUsersToday)} today
             </p>
           </div>
 
@@ -194,10 +204,10 @@ export const AdminAnalyticsSection: React.FC = () => {
               <Zap className="w-4 h-4 text-amber-500" />
             </div>
             <p className="text-xl font-heading font-extrabold text-slate-900">
-              {summary.activeUsers.dau.toLocaleString()}
+              {metric(summary.activeUsers.dau)}
             </p>
             <p className="text-[11px] text-slate-500">
-              WAU: {summary.activeUsers.wau.toLocaleString()}
+              WAU: {metric(summary.activeUsers.wau)}
             </p>
           </div>
 
@@ -281,7 +291,7 @@ export const AdminAnalyticsSection: React.FC = () => {
               {summary.annualPassSubscriptions.activePasses.toLocaleString()}
             </p>
             <p className="text-[11px] text-amber-700 font-semibold">
-              {summary.annualPassSubscriptions.renewalRate}% renewal
+              {rate(summary.annualPassSubscriptions.renewalRate)} renewal
             </p>
           </div>
         </div>
@@ -299,15 +309,15 @@ export const AdminAnalyticsSection: React.FC = () => {
                 <span>E-Commerce & Subscription Conversion Funnel</span>
               </h3>
               <p className="text-xs text-slate-500">
-                End-to-end journey from initial public pageview to Annual Pass subscription completion.
+                A page-view-based approximation. These counts do not identify unique customers.
               </p>
             </div>
             <div className="flex items-center gap-3 text-xs">
               <div className="px-3 py-1 bg-emerald-50 text-emerald-800 rounded-lg font-semibold border border-emerald-200">
-                Overall Conversion: {summary.conversion.overallConversionRate}%
+                Purchases / page views: {ratio(summary.conversion.purchases, summary.conversion.visitors)}
               </div>
               <div className="px-3 py-1 bg-blue-50 text-blue-800 rounded-lg font-semibold border border-blue-200">
-                Checkout Completion: {summary.conversion.checkoutCompletionRate}%
+                Checkout completion: {ratio(summary.conversion.purchases, summary.conversion.checkoutStarts)}
               </div>
             </div>
           </div>
@@ -316,11 +326,11 @@ export const AdminAnalyticsSection: React.FC = () => {
             {/* Stage 1: Public Traffic */}
             <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-1 relative">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Stage 1</span>
-              <p className="font-semibold text-slate-700 text-xs">Public Visitors</p>
+              <p className="font-semibold text-slate-700 text-xs">Recorded Page Views</p>
               <p className="text-lg font-heading font-extrabold text-slate-900">
                 {summary.conversion.visitors.toLocaleString()}
               </p>
-              <div className="text-[11px] text-slate-500">100% of reach</div>
+              <div className="text-[11px] text-slate-500">Measured page views</div>
             </div>
 
             {/* Stage 2: Content Viewed */}
@@ -331,7 +341,7 @@ export const AdminAnalyticsSection: React.FC = () => {
                 {summary.conversion.contentViews.toLocaleString()}
               </p>
               <div className="text-[11px] text-blue-600 font-semibold">
-                {Math.round((summary.conversion.contentViews / summary.conversion.visitors) * 100)}% viewed modules
+                {ratio(summary.conversion.contentViews, summary.conversion.visitors)} viewed modules
               </div>
             </div>
 
@@ -343,7 +353,7 @@ export const AdminAnalyticsSection: React.FC = () => {
                 {summary.conversion.checkoutStarts.toLocaleString()}
               </p>
               <div className="text-[11px] text-amber-600 font-semibold">
-                {Math.round((summary.conversion.checkoutStarts / summary.conversion.contentViews) * 100)}% intent rate
+                {ratio(summary.conversion.checkoutStarts, summary.conversion.contentViews)} intent rate
               </div>
             </div>
 
@@ -596,7 +606,7 @@ export const AdminAnalyticsSection: React.FC = () => {
             <div className="p-3 rounded-lg bg-slate-50 border border-slate-100 space-y-0.5">
               <span className="text-slate-500 text-[11px]">Renewal Retention Rate</span>
               <p className="font-heading font-bold text-base text-slate-900">
-                {summary?.annualPassSubscriptions.renewalRate}%
+                {rate(summary?.annualPassSubscriptions.renewalRate)}
               </p>
             </div>
             <div className="p-3 rounded-lg bg-slate-50 border border-slate-100 space-y-0.5">

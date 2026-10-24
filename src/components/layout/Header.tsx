@@ -152,6 +152,13 @@ export const Header: React.FC = () => {
         </div>
 
       </div>
+      <details className="md:hidden border-t border-slate-100 px-3">
+        <summary className="min-h-11 flex items-center cursor-pointer font-semibold text-sm text-slate-700">Browse learning tools</summary>
+        <nav aria-label="Mobile learning navigation" className="grid grid-cols-2 gap-2 pb-3">
+          {navLinks.map(link => <Link key={link.href} href={link.href} className="min-h-11 rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-800">{link.label}</Link>)}
+          <Link href={user ? '/dashboard' : '/login'} className="min-h-11 rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-800">{user ? 'My dashboard' : 'Log In'}</Link>
+        </nav>
+      </details>
     </header>
   );
 };

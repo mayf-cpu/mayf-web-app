@@ -1,11 +1,24 @@
+import { annualPassSettings } from './src/lib/payments/annualPassSettingsRepository';
+import { annualPassPrice } from './src/lib/payments/annualPassSettings';
+import { probeStagingConnectivity } from './src/lib/ingestion/stagingConnectivity';
+import { auditLegacyPdfMigration } from './src/lib/download/legacyMigrationAudit';
+import { canReadPremiumContent, publicContent } from './src/lib/catalogue/catalogueAccess';
+import { asyncRoute } from './src/lib/http/asyncRoute';
+import { filterCatalogue } from './src/lib/catalogue/catalogueQuery';
+import { catalogueRepository, catalogueRoute } from './src/lib/cms/catalogueRepository';
+import { isAllowedRequestOrigin } from './src/lib/security/requestOrigin';
+import { securitySettings } from './src/lib/security/securitySettings';
+import { firebaseAuthOrigin } from './src/lib/security/firebaseAuthOrigin';
+import publicFirebaseConfig from './src/config/firebasePublicConfig.json';
 import express, { Request, Response, NextFunction } from 'express';
-import dotenv from 'dotenv';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { AiQuota } from './src/lib/ai/aiQuota';
+import { generateWithModelFallback } from './src/lib/ai/modelFallback';
+import { getAppCheck } from 'firebase-admin/app-check';
 import { GoogleGenAI } from '@google/genai';
-import { verifyStudentSessionToken } from './src/lib/firebase/admin';
+import { getFirebaseAdminApp, getAdminAuth, getAdminFirestore, adminSetCustomUserClaims, getFirebaseAdminConfig, getFirebaseAdminDiagnostics, verifyStudentSessionToken } from './src/lib/firebase/admin';
 import {
   INGESTION_JOBS_STORE,
+  refreshIngestionJobs,
   verifyWebhookSecret,
   processRegistryRow,
   processBatchIngestion,
@@ -15,9 +28,23 @@ import {
 import { ContentRegistryRow } from './src/lib/ingestion/types';
 import crypto from 'crypto';
 import { getDownloadableItem } from './src/lib/download/downloadRegistry';
+import { resolveDownloadableItem } from './src/lib/download/cmsDownloadResolver';
+import { pdfExists, readVerifiedPdf, getPdfBucket } from './src/lib/download/pdfObjectStorage';
+import { DurableDownloadTokens } from './src/lib/download/durableDownloadTokens';
+import { DurableDownloadLimiter } from './src/lib/download/durableDownloadLimiter';
+import { DurableDownloadAudit } from './src/lib/download/durableDownloadAudit';
 import { FORMULA_DECK_ITEMS } from './src/data/formulaDeckData';
 import { paymentService } from './src/lib/payments/paymentService';
+import { paymentSettingsRepository } from './src/lib/payments/paymentSettingsRepository';
+import { isProductionPaymentRuntime } from './src/lib/payments/runtime';
+import { validateAnnualPassCart, isSupportedLaunchPaymentMethod } from './src/lib/payments/checkoutPolicy';
+import { DurablePaymentRepository } from './src/lib/payments/durablePaymentRepository';
+import { initiateFullRefund } from './src/lib/payments/refundInitiation';
+import { readOwnedPaymentConfirmation } from './src/lib/payments/paymentConfirmation';
+import { processVerifiedRazorpayFullRefund } from './src/lib/payments/durableRefundProcessor';
+import { settleVerifiedAnnualPassWebhook } from './src/lib/payments/durableWebhookProcessor';
 import { entitlementService } from './src/lib/payments/entitlementService';
+import { DurableEntitlementReader } from './src/lib/payments/durableEntitlementReader';
 import { couponService } from './src/lib/coupons/couponService';
 import { PaymentProvider, StoredOrder } from './src/lib/payments/types';
 import { adminUserManager } from './src/lib/admin/adminUserManager';
@@ -28,18 +55,13 @@ import { homepageLayoutService } from './src/lib/layout/homepageLayoutService';
 import { siteSettingsService } from './src/lib/settings/siteSettingsService';
 import { adSenseService } from './src/lib/adsense/adsenseService';
 import { broadcastService } from './src/lib/broadcasts/broadcastService';
+import { seoSettings } from './src/lib/seo/seoSettings';
 import { sitemapService } from './src/lib/seo/sitemapService';
 import { aggregateMetricsService } from './src/lib/analytics/aggregateMetricsService';
 
-dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 const app = express();
 // Environment constraint: Dev server must run on port 3000
-const PORT = 3000;
-const isProduction = process.env.NODE_ENV === 'production';
+const isProduction = isProductionPaymentRuntime();
 
 // Administrator Entry Path (configurable via environment variable)
 const ADMIN_ENTRY_PATH = process.env.ADMIN_ENTRY_PATH || process.env.VITE_ADMIN_ENTRY_PATH || '/mgmt-sec-k92a';
@@ -65,16 +87,20 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=(), payment=(self)');
 
+  // Firebase popup sign-in loads its helper iframe from the configured authDomain.
+  const authOrigin = firebaseAuthOrigin({ authDomain: process.env.FIREBASE_AUTH_DOMAIN || process.env.VITE_FIREBASE_AUTH_DOMAIN,
+    staging: process.env.APP_ENV === 'staging', projectId: getFirebaseAdminConfig().projectId,
+    productionAuthDomain: publicFirebaseConfig.authDomain });
   // Content Security Policy (enforcing strict resource origins and script protections)
   res.setHeader(
     'Content-Security-Policy',
     "default-src 'self'; " +
-    "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://www.googletagmanager.com https://checkout.razorpay.com https://js.stripe.com; " +
+    "script-src 'self' 'unsafe-inline' https://apis.google.com https://challenges.cloudflare.com https://www.googletagmanager.com https://checkout.razorpay.com https://js.stripe.com; " +
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
     "font-src 'self' https://fonts.gstatic.com data:; " +
     "img-src 'self' data: https: blob:; " +
-    "connect-src 'self' https://challenges.cloudflare.com https://www.google-analytics.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://api.razorpay.com https://api.stripe.com; " +
-    "frame-src 'self' https://challenges.cloudflare.com https://api.razorpay.com https://js.stripe.com https://www.youtube.com https://www.youtube-nocookie.com; " +
+    `connect-src 'self' ${authOrigin} https://accounts.google.com https://challenges.cloudflare.com https://www.google-analytics.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://api.razorpay.com https://api.stripe.com; ` +
+    `frame-src 'self' blob: ${authOrigin} https://accounts.google.com https://challenges.cloudflare.com https://api.razorpay.com https://js.stripe.com https://www.youtube.com https://www.youtube-nocookie.com; ` +
     "object-src 'none'; " +
     "base-uri 'self';"
   );
@@ -133,14 +159,7 @@ app.use((req, res, next) => {
       const origin = (req.headers.origin as string) || (req.headers.referer as string) || '';
       if (origin) {
         try {
-          const parsedOrigin = new URL(origin);
-          const hostname = parsedOrigin.hostname.toLowerCase();
-          const isAllowedHost =
-            hostname === 'localhost' ||
-            hostname === '127.0.0.1' ||
-            hostname === 'mayf.co.in' ||
-            hostname.endsWith('.mayf.co.in') ||
-            hostname.endsWith('.run.app');
+          const isAllowedHost = isAllowedRequestOrigin(origin, req.headers.host);
 
           if (!isAllowedHost) {
             console.warn(`[Security Alert] CSRF Origin Mismatch blocked: ${origin} on ${req.method} ${req.path}`);
@@ -167,6 +186,21 @@ app.use((req, res, next) => {
   next();
 });
 
+// Refresh settings on their own routes so one integration cannot block unrelated APIs.
+for (const [paths, initialize] of [
+  [['/api/site-settings', '/api/admin/site-settings'], async () => { await siteSettingsService.initFromFirestore(); await homepageLayoutService.initFromFirestore(); }],
+  [['/api/homepage/layout', '/api/admin/layout/homepage'], () => homepageLayoutService.initFromFirestore()],
+  [['/api/adsense', '/api/admin/adsense'], () => adSenseService.initFromFirestore()],
+  [['/api/broadcasts', '/api/admin/broadcasts'], () => broadcastService.initStore()],
+  [['/api/payments', '/api/admin/payments/settings'], () => paymentSettingsRepository.run(() => undefined)],
+  [['/api/payments/create-order'], () => catalogueRepository.run(() => undefined)],
+] as [string[], () => Promise<void>][]) {
+  app.use(paths, async (_req, res, next) => {
+    try { await initialize(); next(); }
+    catch { res.status(503).json({ error: 'Firebase storage unavailable. Check Firestore database and service-account permissions.' }); }
+  });
+}
+
 // Authoritative robots.txt directives (excludes dashboard, checkout, account, admin, private APIs, downloads)
 app.get('/robots.txt', (req: Request, res: Response) => {
   const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
@@ -187,6 +221,12 @@ app.get('/sitemap.xml', (req: Request, res: Response) => {
   res.send(sitemapService.generateSitemapXml(baseUrl));
 });
 
+// Read server-authoritative SEO configuration, without public write access.
+app.get('/api/seo-config', asyncRoute(async (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({ success: true, settings: await seoSettings.read() });
+}));
+
 // Extend Express Request type for authenticated context
 interface AuthenticatedRequest extends Request {
   userAuth?: {
@@ -196,6 +236,17 @@ interface AuthenticatedRequest extends Request {
     hasAnnualPass?: boolean;
     isPro?: boolean;
   };
+}
+
+/**
+ * Durable paid-access lookup. Production must never fall back to volatile maps.
+ * Firestore outages fail closed; admins retain their separately verified roles.
+ */
+async function getAuthoritativePassStatus(uid: string) {
+  const firestore = getAdminFirestore();
+  if (firestore) return new DurableEntitlementReader(firestore).checkActiveAnnualPass(uid);
+  if (!isProductionPaymentRuntime()) return entitlementService.checkActiveEntitlement(uid);
+  return { active: false, daysRemaining: 0, reason: 'Premium verification is temporarily unavailable' };
 }
 
 /**
@@ -218,7 +269,13 @@ async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextF
   }
 
   // Check active entitlement authoritatively from server-side store
-  const entitlementCheck = entitlementService.checkActiveEntitlement(tokenVerification.uid);
+  let entitlementCheck;
+  try {
+    entitlementCheck = await getAuthoritativePassStatus(tokenVerification.uid);
+  } catch (error) {
+    console.error('Annual Pass verification unavailable:', error instanceof Error ? error.message : 'unknown error');
+    return res.status(503).json({ error: 'Annual Pass verification is temporarily unavailable' });
+  }
 
   // Assign verified user identity from token (CRITICAL: Strictly rely on cryptographic claims, NEVER substrings in UID)
   const assignedRole =
@@ -325,12 +382,20 @@ app.get('/api/health', (_req: Request, res: Response) => {
     version: '1.1.0-firebase-backend',
     environment: process.env.APP_ENV || process.env.NODE_ENV || 'development',
     serverTimestamp: new Date().toISOString(),
-    collectionsConfigured: 21,
+    // Configuration presence is not proof of a successful external connection.
+    firebaseConfigured: getFirebaseAdminConfig().isReady,
+    firebaseConfiguration: getFirebaseAdminDiagnostics(),
+    // The bundled fallback web config is production-only; comparing against it
+    // during staging incorrectly says that a correctly isolated Firebase project
+    // is mismatched. Until an independently verified staging web project is
+    // available at Worker runtime, show "unverified" rather than false.
+    firebaseProjectMatchesWebConfig: process.env.APP_ENV === 'staging' ? null :
+      getFirebaseAdminConfig().projectId === publicFirebaseConfig.projectId,
     services: {
       geminiAiTeacher: Boolean(geminiApiKey),
       cloudflareTurnstile: Boolean(process.env.TURNSTILE_SECRET_KEY),
-      firebaseAdmin: Boolean(process.env.FIREBASE_ADMIN_PROJECT_ID),
-      firebaseAppCheck: true,
+      firebaseAdmin: getFirebaseAdminConfig().isReady,
+      firebaseAppCheck: process.env.REQUIRE_APP_CHECK === 'true',
     },
   });
 });
@@ -338,7 +403,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
 // -------------------------------------------------------------
 // Cloudflare Turnstile Server-Side Verification
 // -------------------------------------------------------------
-app.post('/api/turnstile/verify', async (req: Request, res: Response) => {
+app.post('/api/turnstile/verify', asyncRoute(async (req: Request, res: Response) => {
   try {
     const { token } = req.body;
     if (!token) {
@@ -347,7 +412,7 @@ app.post('/api/turnstile/verify', async (req: Request, res: Response) => {
 
     const secretKey = process.env.TURNSTILE_SECRET_KEY || '1x0000000000000000000000000000000AA';
 
-    const isProd = process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'production';
+    const isProd = isProductionPaymentRuntime();
     if (!isProd && (token.startsWith('cf-test-') || token === '1x00000000000000000000AA' || secretKey.startsWith('1x0000'))) {
       return res.json({
         success: true,
@@ -378,7 +443,7 @@ app.post('/api/turnstile/verify', async (req: Request, res: Response) => {
     console.error('[MAYF Server] Turnstile error:', error);
     return res.status(500).json({ success: false, error: 'Internal Turnstile verification failure' });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Secure Downloads System with Cloudflare Turnstile & Entitlement Gates
@@ -389,13 +454,14 @@ interface RateLimitBucket {
 }
 const downloadRateLimitMap = new Map<string, RateLimitBucket>();
 
-function checkDownloadRateLimit(key: string, limit: number, windowMs: number): boolean {
+async function checkDownloadRateLimit(key: string, limit: number, windowMs: number): Promise<boolean> {
+  const db = getAdminFirestore();
+  if (db) return new DurableDownloadLimiter(db).isLimited(key, limit, windowMs);
+  if (isProductionPaymentRuntime()) throw new Error('Download rate-limit database unavailable');
   const now = Date.now();
   const bucket = downloadRateLimitMap.get(key) || { timestamps: [] };
-  bucket.timestamps = bucket.timestamps.filter((ts) => now - ts < windowMs);
-  if (bucket.timestamps.length >= limit) {
-    return true;
-  }
+  bucket.timestamps = bucket.timestamps.filter(ts => now - ts < windowMs);
+  if (bucket.timestamps.length >= limit) return true;
   bucket.timestamps.push(now);
   downloadRateLimitMap.set(key, bucket);
   return false;
@@ -407,7 +473,7 @@ async function verifyTurnstileTokenServer(token: string, remoteIp?: string): Pro
   const secretKey = process.env.TURNSTILE_SECRET_KEY || '1x0000000000000000000000000000000AA';
 
   // Support local test and development keys without breaking ONLY in non-production
-  const isProd = process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'production';
+  const isProd = isProductionPaymentRuntime();
   if (!isProd && (token.startsWith('cf-test-') || token === '1x00000000000000000000AA' || secretKey.startsWith('1x0000'))) {
     return { success: true };
   }
@@ -451,7 +517,7 @@ interface DownloadAuditLog {
 
 const DOWNLOAD_AUDIT_LOGS: DownloadAuditLog[] = [];
 
-function logDownloadAudit(params: {
+async function logDownloadAudit(params: {
   contentId: string;
   uid: string | null;
   accessType: 'free' | 'paid';
@@ -479,9 +545,14 @@ function logDownloadAudit(params: {
     },
   };
 
-  DOWNLOAD_AUDIT_LOGS.unshift(entry);
-  if (DOWNLOAD_AUDIT_LOGS.length > 500) {
-    DOWNLOAD_AUDIT_LOGS.pop();
+  const db = getAdminFirestore();
+  if (db) {
+    await new DurableDownloadAudit(db).record(entry);
+  } else if (isProductionPaymentRuntime()) {
+    throw new Error('Download audit persistence unavailable');
+  } else {
+    DOWNLOAD_AUDIT_LOGS.unshift(entry);
+    if (DOWNLOAD_AUDIT_LOGS.length > 500) DOWNLOAD_AUDIT_LOGS.pop();
   }
 
   console.info(`[MAYF Download Audit] ${params.action} | ${params.contentId} | ${params.accessType} | ${params.status}${params.reason ? ` | ${params.reason}` : ''}`);
@@ -503,25 +574,26 @@ interface DownloadTokenRecord {
 const DOWNLOAD_TOKENS_STORE = new Map<string, DownloadTokenRecord>();
 
 // Periodic cleanup of expired short-lived tokens
-setInterval(() => {
+app.use((_req, _res, next) => {
   const now = Date.now();
   for (const [token, record] of DOWNLOAD_TOKENS_STORE.entries()) {
     if (record.expiresAt < now || record.used) {
       DOWNLOAD_TOKENS_STORE.delete(token);
     }
   }
-}, 60 * 1000);
+  next();
+});
 
 /**
  * Download Authorization Endpoint
  * Handles both FREE and PAID items with mandatory Turnstile verification.
  */
-app.post('/api/downloads/authorize', async (req: Request, res: Response) => {
+app.post('/api/downloads/authorize', asyncRoute(async (req: Request, res: Response) => {
   const rawIp = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || '127.0.0.1');
 
   // Rate Limiting: max 10 authorization attempts per minute per IP
-  if (checkDownloadRateLimit(`auth-ip-${rawIp}`, 10, 60 * 1000)) {
-    logDownloadAudit({
+  if (await checkDownloadRateLimit(`auth-ip-${rawIp}`, 10, 60 * 1000)) {
+    await logDownloadAudit({
       contentId: req.body?.contentId || 'unknown',
       uid: null,
       accessType: 'free',
@@ -546,9 +618,9 @@ app.post('/api/downloads/authorize', async (req: Request, res: Response) => {
     }
 
     // Lookup item in download registry
-    const item = getDownloadableItem(contentId);
+    const item = await resolveDownloadableItem(getAdminFirestore(), contentId);
     if (!item) {
-      logDownloadAudit({
+      await logDownloadAudit({
         contentId,
         uid: null,
         accessType: 'free',
@@ -561,7 +633,7 @@ app.post('/api/downloads/authorize', async (req: Request, res: Response) => {
     }
 
     if (!item.downloadAllowed) {
-      logDownloadAudit({
+      await logDownloadAudit({
         contentId,
         uid: null,
         accessType: item.accessType,
@@ -576,7 +648,7 @@ app.post('/api/downloads/authorize', async (req: Request, res: Response) => {
     // Turnstile Server-Side Verification (Managed mode / Siteverify)
     const turnstileResult = await verifyTurnstileTokenServer(turnstileToken, rawIp);
     if (!turnstileResult.success) {
-      logDownloadAudit({
+      await logDownloadAudit({
         contentId,
         uid: null,
         accessType: item.accessType,
@@ -601,14 +673,14 @@ app.post('/api/downloads/authorize', async (req: Request, res: Response) => {
       if (tokenVerification.valid && tokenVerification.uid) {
         verifiedUid = tokenVerification.uid;
         // User rate limiting: max 15 requests per minute
-        if (checkDownloadRateLimit(`auth-uid-${verifiedUid}`, 15, 60 * 1000)) {
+        if (await checkDownloadRateLimit(`auth-uid-${verifiedUid}`, 15, 60 * 1000)) {
           return res.status(429).json({
             success: false,
             error: 'Account download rate limit reached. Please wait 60 seconds.',
           });
         }
         // Check server-side entitlement status
-        const passCheck = entitlementService.checkActiveEntitlement(verifiedUid);
+        const passCheck = await getAuthoritativePassStatus(verifiedUid);
         userHasEntitlement = passCheck.active;
       }
     }
@@ -616,7 +688,7 @@ app.post('/api/downloads/authorize', async (req: Request, res: Response) => {
     // Access control: PAID files require verified authentication & entitlement
     if (item.accessType === 'paid') {
       if (!authHeader || !verifiedUid) {
-        logDownloadAudit({
+        await logDownloadAudit({
           contentId,
           uid: null,
           accessType: 'paid',
@@ -632,8 +704,8 @@ app.post('/api/downloads/authorize', async (req: Request, res: Response) => {
       }
 
       if (!userHasEntitlement) {
-        const passCheck = entitlementService.checkActiveEntitlement(verifiedUid);
-        logDownloadAudit({
+        const passCheck = await getAuthoritativePassStatus(verifiedUid);
+        await logDownloadAudit({
           contentId,
           uid: verifiedUid,
           accessType: 'paid',
@@ -650,62 +722,61 @@ app.post('/api/downloads/authorize', async (req: Request, res: Response) => {
       }
     }
 
-    // Generate short-lived (60 seconds) cryptographically secure single-use token
-    // Bound strictly to client IP hash to prevent download URL sharing
+    // Authorize only real objects in the private R2 PDF bucket.
+    if (!(await pdfExists(item.id, item.objectKey))) {
+      await logDownloadAudit({
+        contentId: item.id, uid: verifiedUid, accessType: item.accessType,
+        status: 'failed', action: 'authorize', reason: 'PDF asset is not uploaded to private R2 storage', req,
+      });
+      return res.status(503).json({ success: false, code: 'FILE_NOT_AVAILABLE',
+        error: 'This study material PDF is not available for download yet.' });
+    }
+
     const downloadToken = crypto.randomBytes(32).toString('hex');
     const clientIpHash = crypto.createHash('sha256').update(rawIp).digest('hex').substring(0, 16);
     const expiresInSeconds = 60;
-    const expiresAt = Date.now() + expiresInSeconds * 1000;
-
-    DOWNLOAD_TOKENS_STORE.set(downloadToken, {
-      token: downloadToken,
-      contentId: item.id,
-      fileName: item.fileName,
-      mimeType: item.mimeType,
-      accessType: item.accessType,
-      uid: verifiedUid,
-      clientIpHash,
-      createdAt: Date.now(),
-      expiresAt,
-      used: false,
+    const tokenDb = getAdminFirestore();
+    if (!tokenDb) return res.status(503).json({ success: false,
+      code: 'DOWNLOAD_STORAGE_UNAVAILABLE', error: 'Secure download authorization is temporarily unavailable.' });
+    await new DurableDownloadTokens(tokenDb).create(downloadToken, {
+      contentId: item.id, objectKey: item.objectKey, fileName: item.fileName,
+      accessType: item.accessType, uid: verifiedUid, clientIpHash,
+      expiresAt: Date.now() + expiresInSeconds * 1000,
     });
+    await logDownloadAudit({ contentId: item.id, uid: verifiedUid,
+      accessType: item.accessType, status: 'successful', action: 'authorize', req });
+    return res.json({ success: true, downloadUrl: `/api/downloads/file/${downloadToken}`,
+      fileName: item.fileName, expiresInSeconds });
 
-    logDownloadAudit({
-      contentId: item.id,
-      uid: verifiedUid,
-      accessType: item.accessType,
-      status: 'successful',
-      action: 'authorize',
-      req,
-    });
-
-    return res.json({
-      success: true,
-      downloadUrl: `/api/downloads/file/${downloadToken}`,
-      fileName: item.fileName,
-      expiresInSeconds,
-    });
   } catch (error: any) {
     console.error('[MAYF Server] Download authorization error:', error);
     return res.status(500).json({ success: false, error: 'Internal download authorization failure' });
   }
-});
+}));
 
 /**
  * Authorized Short-Lived Single-Use File Download Endpoint
  * Never exposes permanent public URLs or permanent redistribution links.
  * Enforces IP binding to prevent URL sharing.
  */
-app.get('/api/downloads/file/:token', async (req: Request, res: Response) => {
+app.get('/api/downloads/file/:token', asyncRoute(async (req: Request, res: Response) => {
   const { token } = req.params;
+  if (!/^[a-f0-9]{64}$/.test(token)) return res.status(404).json({ error: 'Invalid download link.' });
   const rawIp = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || '127.0.0.1');
 
   // Rate Limiting: max 20 file downloads per minute per IP
-  if (checkDownloadRateLimit(`dl-ip-${rawIp}`, 20, 60 * 1000)) {
+  if (await checkDownloadRateLimit(`dl-ip-${rawIp}`, 20, 60 * 1000)) {
     return res.status(429).send('Download rate limit exceeded. Please try again later.');
   }
 
-  const tokenRecord = DOWNLOAD_TOKENS_STORE.get(token);
+  const tokenDb = getAdminFirestore();
+  if (!tokenDb) return res.status(503).json({
+    success: false, code: 'DOWNLOAD_STORAGE_UNAVAILABLE', error: 'Secure download authorization is temporarily unavailable.',
+  });
+  const tokens = new DurableDownloadTokens(tokenDb);
+  let tokenRecord;
+  try { tokenRecord = await tokens.peek(token); }
+  catch { return res.status(404).json({ error: 'Invalid download link.' }); }
 
   if (!tokenRecord) {
     return res.status(404).json({
@@ -714,7 +785,6 @@ app.get('/api/downloads/file/:token', async (req: Request, res: Response) => {
   }
 
   if (tokenRecord.expiresAt < Date.now()) {
-    DOWNLOAD_TOKENS_STORE.delete(token);
     return res.status(410).json({
       error: 'Download token has expired (60-second limit). Please re-verify to generate a fresh link.',
     });
@@ -730,7 +800,7 @@ app.get('/api/downloads/file/:token', async (req: Request, res: Response) => {
   // Ensure requesting IP matches the IP that authorized the token
   const callerIpHash = crypto.createHash('sha256').update(rawIp).digest('hex').substring(0, 16);
   if (tokenRecord.clientIpHash && tokenRecord.clientIpHash !== callerIpHash) {
-    logDownloadAudit({
+    await logDownloadAudit({
       contentId: tokenRecord.contentId,
       uid: tokenRecord.uid,
       accessType: tokenRecord.accessType,
@@ -744,70 +814,75 @@ app.get('/api/downloads/file/:token', async (req: Request, res: Response) => {
     });
   }
 
-  // Enforce single-use: invalidate token immediately
-  tokenRecord.used = true;
-  DOWNLOAD_TOKENS_STORE.delete(token);
+  // Token issuance does not freeze publication or subscription rights.
+  // Recheck current CMS state and paid entitlement before giving out bytes.
+  const currentItem = await resolveDownloadableItem(tokenDb, tokenRecord.contentId);
+  if (!currentItem || !currentItem.downloadAllowed ||
+      currentItem.accessType !== tokenRecord.accessType ||
+      currentItem.objectKey !== tokenRecord.objectKey) {
+    await logDownloadAudit({
+      contentId: tokenRecord.contentId, uid: tokenRecord.uid,
+      accessType: tokenRecord.accessType, status: 'failed', action: 'file_served',
+      reason: 'Content was unpublished, removed, or changed access tier after authorization', req,
+    });
+    return res.status(403).json({ success: false, code: 'DOWNLOAD_ACCESS_REVOKED',
+      error: 'This study material is no longer available for this download link.' });
+  }
+  if (tokenRecord.accessType === 'paid') {
+    const validPaidAccess = tokenRecord.uid ?
+      await getAuthoritativePassStatus(tokenRecord.uid) : { active: false };
+    if (!validPaidAccess.active) {
+      await logDownloadAudit({
+        contentId: tokenRecord.contentId, uid: tokenRecord.uid,
+        accessType: 'paid', status: 'failed', action: 'file_served',
+        reason: 'Annual Pass inactive at download redemption', req,
+      });
+      return res.status(403).json({ success: false, code: 'ANNUAL_PASS_REQUIRED',
+        error: 'An active Annual Pass is required for this download.' });
+    }
+  }
 
-  const item = getDownloadableItem(tokenRecord.contentId);
-  const safeFileName = (tokenRecord.fileName || 'MAYF_Document.pdf').replace(/[^\w.-]/g, '_');
-
-  // Security Headers: anti-caching, no-sniff, secure attachment
+  const pdf = await readVerifiedPdf(tokenRecord.contentId, tokenRecord.objectKey);
+  if (!pdf) {
+    await logDownloadAudit({
+      contentId: tokenRecord.contentId, uid: tokenRecord.uid,
+      accessType: tokenRecord.accessType, status: 'failed',
+      action: 'file_served', reason: 'Private R2 PDF missing, invalid, or too large', req,
+    });
+    return res.status(503).json({ success: false, code: 'FILE_NOT_AVAILABLE',
+      error: 'This study material PDF is not available for download yet.' });
+  }
+  // Only consume a token after the actual bytes have been retrieved and validated.
+  try {
+    await tokens.consume(token, tokenRecord);
+  } catch {
+    return res.status(409).json({ success: false, code: 'DOWNLOAD_TOKEN_USED',
+      error: 'This download link has already been used or has expired.' });
+  }
+  const safeFileName = tokenRecord.fileName.replace(/[^a-zA-Z0-9_.-]/g, '_');
+  res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${safeFileName}"`);
-  res.setHeader('Content-Type', tokenRecord.mimeType || 'application/pdf');
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.setHeader('Content-Length', String(pdf.byteLength));
+  res.setHeader('Cache-Control', 'no-store, private');
   res.setHeader('X-Content-Type-Options', 'nosniff');
-
-  logDownloadAudit({
-    contentId: tokenRecord.contentId,
-    uid: tokenRecord.uid,
-    accessType: tokenRecord.accessType,
-    status: 'successful',
-    action: 'file_served',
-    req,
+  await logDownloadAudit({
+    contentId: tokenRecord.contentId, uid: tokenRecord.uid,
+    accessType: tokenRecord.accessType, status: 'successful', action: 'file_served', req,
   });
-
-  // Synthesize verified high-density educational study content
-  const documentBody =
-    `======================================================================\n` +
-    `  MATHS AT YOUR FINGERTIPS (mayf.co.in) - OFFICIAL EDUCATIONAL RESOURCE\n` +
-    `======================================================================\n\n` +
-    `Document:    ${item?.title || tokenRecord.contentId}\n` +
-    `Grade Level: ${item?.classLevel || 'Class 5–10 CBSE & ICSE'}\n` +
-    `Category:    ${item?.category || 'Mathematics Revision'}\n` +
-    `Access Tier: ${tokenRecord.accessType === 'paid' ? 'Verified Annual Pass / Pro Entitlement' : 'Public Free Resource'}\n` +
-    `User ID:     ${tokenRecord.uid ? `UID:${tokenRecord.uid}` : 'Public Anonymous Learner'}\n` +
-    `Issued At:   ${new Date().toISOString()}\n` +
-    `Security:    Cloudflare Turnstile Verified Single-Use Authorization\n\n` +
-    `----------------------------------------------------------------------\n` +
-    `RESOURCE OVERVIEW & SYLLABUS ALIGNMENT:\n` +
-    `----------------------------------------------------------------------\n` +
-    `${item?.description || 'Official CBSE & ICSE Mathematics Revision Asset.'}\n\n` +
-    `----------------------------------------------------------------------\n` +
-    `CORE MATHEMATICAL CONCEPTS & FORMULA REFERENCE:\n` +
-    `----------------------------------------------------------------------\n` +
-    `* Real Numbers: Fundamental Theorem of Arithmetic, Euclid Lemma a = bq + r.\n` +
-    `* Polynomials: Quadratic roots sum = -b/a, product = c/a.\n` +
-    `* Quadratic Formula: x = (-b +- sqrt(b^2 - 4ac)) / 2a.\n` +
-    `* Arithmetic Progressions: a_n = a + (n-1)d, S_n = (n/2)(2a + (n-1)d).\n` +
-    `* Trigonometry: sin^2(x) + cos^2(x) = 1, 1 + tan^2(x) = sec^2(x).\n` +
-    `* Coordinate Geometry: Distance formula, Section formula ((m1x2+m2x1)/(m1+m2), (m1y2+m2y1)/(m1+m2)).\n` +
-    `* Geometry: Basic Proportionality Theorem (Thales), Tangent equality theorem.\n` +
-    `* Mensuration: Cylinder Vol = pi*r^2*h, Cone Vol = 1/3*pi*r^2*h, Sphere Vol = 4/3*pi*r^3.\n\n` +
-    `Verified by Professor Sigma. Maths at Your Fingertips (c) 2026 mayf.co.in.\n`;
-
-  return res.send(Buffer.from(documentBody, 'utf-8'));
-});
+  return res.end(Buffer.from(pdf));
+}));
 
 /**
  * Admin Download Audit Logs Endpoint
  */
-app.get('/api/admin/downloads/audit-logs', requireAuth, requireAdmin, (_req: Request, res: Response) => {
-  return res.json({
-    success: true,
-    totalLogs: DOWNLOAD_AUDIT_LOGS.length,
-    logs: DOWNLOAD_AUDIT_LOGS,
+app.get('/api/admin/downloads/audit-logs', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  const db = getAdminFirestore();
+  if (!db && isProductionPaymentRuntime()) return res.status(503).json({
+    success: false, error: 'Download audit database unavailable',
   });
-});
+  const logs = db ? await new DurableDownloadAudit(db).recent() : DOWNLOAD_AUDIT_LOGS;
+  return res.json({ success: true, totalLogs: logs.length, logs });
+}));
 
 // -------------------------------------------------------------
 // Provider-Independent Payment Gateway API
@@ -821,7 +896,26 @@ app.get('/api/admin/downloads/audit-logs', requireAuth, requireAdmin, (_req: Req
  * ENFORCES AUTHORITATIVE SERVER PRICING TO PREVENT PRICE MANIPULATION!
  */
 async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
+  // Checkout must remain explicitly disabled until payment reconciliation,
+  // refunds, renewal and sandbox acceptance checks are completed.
+  if (process.env.MAYF_ENABLE_CHECKOUT !== 'true') {
+    return res.status(503).json({
+      success: false, code: 'CHECKOUT_NOT_READY',
+      error: 'Purchases are temporarily unavailable while payment verification is being upgraded.',
+    });
+  }
+  const firestore = getAdminFirestore();
+  if (!firestore) {
+    return res.status(503).json({
+      success: false, code: 'PAYMENT_STORAGE_UNAVAILABLE',
+      error: 'Purchases are temporarily unavailable. Please try again later.',
+    });
+  }
+  paymentService.configureDurableOrders(new DurablePaymentRepository(firestore));
   try {
+    if ((await securitySettings.read()).emergencyMaintenanceMode) return res.status(503).json({
+      success: false, code: 'CHECKOUT_MAINTENANCE', error: 'Purchases are temporarily paused for maintenance.',
+    });
     const {
       amount,
       grossAmount,
@@ -833,10 +927,17 @@ async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
       customerDetails,
     } = req.body;
     const userId = req.userAuth!.uid;
+    if (!isSupportedLaunchPaymentMethod(currency, provider)) {
+      return res.status(503).json({
+        success: false,
+        code: 'STRIPE_CHECKOUT_NOT_READY',
+        error: 'International/Stripe checkout is not available yet. Only INR payments through Razorpay are supported.',
+      });
+    }
 
     // Rate Limiting on checkout creation: max 10 orders per 5 minutes per user/IP
     const rawIp = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || '127.0.0.1');
-    if (checkDownloadRateLimit(`order-rate-${userId || rawIp}`, 10, 300 * 1000)) {
+    if (await checkDownloadRateLimit(`order-rate-${userId || rawIp}`, 10, 300 * 1000)) {
       return res.status(429).json({
         success: false,
         error: 'Too many order requests. Please wait a few minutes before starting a new checkout.',
@@ -846,41 +947,50 @@ async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
     // AUTHORITATIVE PRICE CALCULATION: Prevent price manipulation
     // Never trust client-supplied amounts for Annual Pass or catalog items.
     const isUsd = currency.toUpperCase() === 'USD';
-    const passSettings = entitlementService.getSettings();
-    const authoritativePassPrice = isUsd ? 29 : (passSettings.salePrice || 999);
+    const passSettings = await annualPassSettings.read();
+    const authoritativePassPrice = annualPassPrice(passSettings, currency);
 
-    let authoritativeGross = authoritativePassPrice;
-    if (items && Array.isArray(items) && items.length > 0) {
-      authoritativeGross = items.reduce((sum: number, it: any) => {
-        if (it.annualPass || it.id?.includes('pass')) {
-          return sum + authoritativePassPrice;
-        }
-        const unitPrice = Math.max(Number(it.unitPrice) || 0, isUsd ? 9 : 199);
-        const qty = Math.max(1, Math.min(10, Number(it.quantity) || 1));
-        return sum + (unitPrice * qty);
-      }, 0);
+    // Until catalogue prices are resolved from the authoritative CMS,
+    // checkout supports ONLY one Annual Pass. Never accept a client
+    // supplied unitPrice for a paid product.
+    if (!validateAnnualPassCart(items)) {
+      return res.status(400).json({
+        success: false,
+        code: 'UNSUPPORTED_CHECKOUT_ITEMS',
+        error: 'Only a single Annual Pass can be purchased at present.',
+      });
+    }
+    const authoritativeGross = authoritativePassPrice;
+    const chosenCoupon = coupon || couponCode;
+    // Coupon quota is committed at signed settlement. Until bounded
+    // reservations are implemented at checkout, never charge a discounted
+    // order that may be rejected if its final coupon allowance expires.
+    if (chosenCoupon && process.env.MAYF_ENABLE_COUPON_CHECKOUT !== 'true') {
+      return res.status(503).json({
+        success: false, code: 'COUPON_CHECKOUT_NOT_READY',
+        error: 'Discounted checkout is temporarily unavailable while coupon reservations are being finalized.',
+      });
     }
 
-    const chosenCoupon = coupon || couponCode;
-
-    const result = await paymentService.createOrder({
+    // Import the latest authoritative coupon definitions from Firestore
+    // before calculating prices; do not trust isolate memory or client totals.
+    const result = await catalogueRepository.run(() => paymentService.createOrder({
       userId,
-      items: items.length > 0 ? items : [
-        {
-          id: 'item-annual-pass',
-          title: 'Maths at Your Fingertips Annual Pass (Class 5–10)',
-          unitPrice: authoritativeGross,
-          quantity: 1,
-          annualPass: true,
-          description: '1-Year Unlimited Access to All Formula Decks, Chapter Materials, & AI Teacher',
-        },
-      ],
+      items: [{
+        id: 'item-annual-pass',
+        title: 'Maths at Your Fingertips Annual Pass (Class 5–10)',
+        unitPrice: authoritativeGross,
+        quantity: 1,
+        annualPass: true,
+        description: `${passSettings.durationDays}-day Annual Pass`,
+      }],
       grossAmount: authoritativeGross,
+      annualPassDurationDays: passSettings.durationDays,
       coupon: chosenCoupon,
-      currency,
-      preferredProvider: provider as PaymentProvider,
+      currency: 'INR',
+      preferredProvider: 'razorpay' as PaymentProvider,
       customerDetails,
-    });
+    }));
 
     return res.json({
       success: true,
@@ -897,8 +1007,11 @@ async function handleCreateOrder(req: AuthenticatedRequest, res: Response) {
       },
     });
   } catch (error: any) {
+    if (typeof error?.message === 'string' && error.message.startsWith('Coupon not applicable:')) {
+      return res.status(400).json({ success: false, code: 'INVALID_COUPON', error: error.message });
+    }
     console.error('[MAYF Payments] Order creation error:', error);
-    return res.status(500).json({ success: false, error: error?.message || 'Failed to create order' });
+    return res.status(503).json({ success: false, error: 'Checkout could not be initialized. No purchase was acknowledged.' });
   }
 }
 
@@ -911,6 +1024,22 @@ app.post('/api/orders/create', requireAuth, handleCreateOrder);
  * Strictly validates user ownership to prevent payment spoofing!
  */
 async function handleVerifyPayment(req: AuthenticatedRequest, res: Response) {
+  // Never let the legacy browser callback grant a volatile entitlement while
+  // the authoritative checkout feature is disabled.
+  if (process.env.MAYF_ENABLE_CHECKOUT !== 'true') {
+    return res.status(503).json({ success: false, code: 'CHECKOUT_NOT_READY',
+      error: 'Payment verification is unavailable until checkout reconciliation is complete.' });
+  }
+  // Browser-side verification still relies on volatile orders/entitlements.
+  // Keep it disabled in production until it uses the same atomic settlement
+  // pipeline as signed webhooks; otherwise it can report access prematurely.
+  if (isProductionPaymentRuntime()) {
+    return res.status(503).json({
+      success: false,
+      code: 'PAYMENT_VERIFICATION_UNAVAILABLE',
+      error: 'Payment verification is being upgraded. Please contact support if already charged.',
+    });
+  }
   try {
     const {
       orderId,
@@ -974,98 +1103,122 @@ app.post('/api/payments/verify-and-grant', requireAuth, handleVerifyPayment);
  * 3. Razorpay Authoritative Webhook Endpoint
  * Verifies x-razorpay-signature HMAC and enforces idempotency
  */
-app.post('/api/payments/webhook/razorpay', async (req: Request, res: Response) => {
-  try {
-    const rawBody = (req as any).rawBody || JSON.stringify(req.body);
-    const result = await paymentService.handleWebhook('razorpay', req.headers, rawBody);
-
-    if (!result.success && result.status === 'signature_invalid') {
-      console.warn('[MAYF Webhook] Razorpay signature invalid');
-      return res.status(400).json({ status: 'invalid_signature', error: result.message });
-    }
-
-    if (!result.success) {
-      return res.status(503).json({ status: 'retry_required', error: result.message });
-    }
-
-    // Provision entitlement ONLY on genuine first-time processed payment, NEVER on duplicate webhook replays!
-    if (result.success && result.status === 'processed' && result.orderId) {
-      const order = paymentService.getAllOrders().find((o) => o.orderId === result.orderId);
-      if (order && order.status === 'paid') {
-        entitlementService.createOrRenewFromPayment({
-          userId: order.userId,
-          orderId: order.orderId,
-          paymentId: order.providerPaymentId,
-        });
-      }
-    }
-
-    // Always respond with 200 OK to acknowledged webhooks (even duplicate ones)
-    return res.status(200).json({
-      status: 'ok',
-      idempotency: result.status,
-      message: result.message,
-      orderId: result.orderId,
-    });
-  } catch (error: any) {
-    console.error('[MAYF Webhook] Razorpay webhook handling error:', error);
-    return res.status(500).json({ status: 'error', error: error?.message || 'Webhook processing failed' });
-  }
-});
-
 /**
- * 4. Stripe Authoritative Webhook Endpoint
- * Verifies stripe-signature timestamped HMAC and enforces idempotency
+ * Persist a signed gateway payment before acknowledging its webhook.
+ * This deliberately returns retry-required for anything we do not yet handle
+ * durably; we must never silently grant access using volatile Worker memory.
  */
-app.post('/api/payments/webhook/stripe', async (req: Request, res: Response) => {
+async function handleDurablePaymentWebhook(provider: PaymentProvider, req: Request, res: Response) {
+  let verifiedReceipt: Awaited<ReturnType<typeof paymentService.verifyWebhookReceipt>> | undefined;
+  const recordReview = async (reasonCode: 'SETTLEMENT_FAILED' | 'REFUND_FAILED' | 'ORDER_NOT_FOUND') => {
+    if (!verifiedReceipt?.isValid || !verifiedReceipt.eventId) return;
+    const db = getAdminFirestore();
+    if (!db) return;
+    try {
+      await new DurablePaymentRepository(db).recordVerifiedWebhookReconciliation({
+        provider, eventId: verifiedReceipt.eventId,
+        providerOrderId: verifiedReceipt.providerOrderId,
+        providerPaymentId: verifiedReceipt.providerPaymentId,
+        reasonCode, observedAt: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      console.error('[MAYF Payments] Could not persist reconciliation review:', error?.message || 'unknown');
+    }
+  };
+  const closeReview = async () => {
+    if (!verifiedReceipt?.isValid || !verifiedReceipt.eventId) return;
+    const db = getAdminFirestore();
+    if (!db) return;
+    try {
+      await new DurablePaymentRepository(db).resolveVerifiedWebhookReconciliation(
+        provider, verifiedReceipt.eventId, new Date().toISOString());
+    } catch (error: any) {
+      console.error('[MAYF Payments] Could not close reconciled webhook review:', error?.message || 'unknown');
+    }
+  };
   try {
     const rawBody = (req as any).rawBody || JSON.stringify(req.body);
-    const result = await paymentService.handleWebhook('stripe', req.headers, rawBody);
-
-    if (!result.success && result.status === 'signature_invalid') {
-      console.warn('[MAYF Webhook] Stripe signature invalid');
-      return res.status(400).json({ status: 'invalid_signature', error: result.message });
+    const verified = await paymentService.verifyWebhookReceipt(provider, req.headers, rawBody);
+    verifiedReceipt = verified;
+    if (!verified.isValid) {
+      return res.status(400).json({ status: 'invalid_signature', error: verified.error || 'Invalid gateway signature' });
     }
-
-    if (!result.success) {
-      return res.status(503).json({ status: 'retry_required', error: result.message });
-    }
-
-    // Provision entitlement ONLY on genuine first-time processed payment, NEVER on duplicate webhook replays!
-    if (result.success && result.status === 'processed' && result.orderId) {
-      const order = paymentService.getAllOrders().find((o) => o.orderId === result.orderId);
-      if (order && order.status === 'paid') {
-        entitlementService.createOrRenewFromPayment({
-          userId: order.userId,
-          orderId: order.orderId,
-          paymentId: order.providerPaymentId,
-        });
+    if (provider === 'razorpay' && verified.eventType === 'refund.processed') {
+      const db = getAdminFirestore();
+      if (!db) return res.status(503).json({ status: 'retry_required', error: 'Payment storage unavailable' });
+      const result = await processVerifiedRazorpayFullRefund(
+        new DurablePaymentRepository(db), verified, rawBody,
+      );
+      if (result === 'unknown_order') {
+        await recordReview('ORDER_NOT_FOUND');
+        return res.status(503).json({ status: 'retry_required', error: 'Refund payment not yet reconciled' });
       }
+      await closeReview();
+      return res.status(200).json({ status: 'ok', idempotency: result });
     }
-
+    if (verified.status !== 'paid') {
+      return res.status(503).json({ status: 'retry_required', error: 'Non-paid webhook handling is not yet durably implemented' });
+    }
+    const db = getAdminFirestore();
+    if (!db) {
+      return res.status(503).json({ status: 'retry_required', error: 'Payment storage unavailable' });
+    }
+    const result = await settleVerifiedAnnualPassWebhook(
+      new DurablePaymentRepository(db), verified, (await annualPassSettings.read()).durationDays,
+    );
+    if (result === 'unknown_order') {
+      await recordReview('ORDER_NOT_FOUND');
+      return res.status(503).json({ status: 'retry_required', error: 'Payment order not yet persisted' });
+    }
+    await closeReview();
     return res.status(200).json({
-      status: 'ok',
-      idempotency: result.status,
-      message: result.message,
-      orderId: result.orderId,
+      status: 'ok', idempotency: result === 'duplicate' ? 'duplicate_ignored' : 'processed',
     });
   } catch (error: any) {
-    console.error('[MAYF Webhook] Stripe webhook handling error:', error);
-    return res.status(500).json({ status: 'error', error: error?.message || 'Webhook processing failed' });
+    console.error('[MAYF Payments] Durable webhook processing error:', error?.message || 'unknown');
+    await recordReview(verifiedReceipt?.eventType === 'refund.processed' ? 'REFUND_FAILED' : 'SETTLEMENT_FAILED');
+    return res.status(503).json({ status: 'retry_required', error: 'Payment reconciliation required' });
   }
-});
+}
+
+app.get('/api/admin/payments/reconciliation', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  const db = getAdminFirestore();
+  if (!db) return res.status(503).json({ success: false, error: 'Payment review storage unavailable.' });
+  const cases = await new DurablePaymentRepository(db).getOpenReconciliationCases();
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({ success: true, cases });
+}));
+
+app.post('/api/payments/webhook/razorpay', asyncRoute(async (req: Request, res: Response) =>
+  handleDurablePaymentWebhook('razorpay', req, res)));
+app.post('/api/payments/webhook/stripe', asyncRoute(async (req: Request, res: Response) =>
+  handleDurablePaymentWebhook('stripe', req, res)));
 
 /**
  * 5. Student Orders Endpoint
  */
-app.get('/api/student/orders', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/student/orders/:orderId/confirmation', requireAuth, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, private');
+  const db = getAdminFirestore();
+  if (!db) return res.status(503).json({ success: false, error: 'Payment confirmation storage unavailable.' });
+  const order = await readOwnedPaymentConfirmation(db, req.userAuth!.uid, String(req.params.orderId));
+  if (!order) return res.status(404).json({ success: false, error: 'Order not found.' });
+  return res.json({ success: true, order });
+}));
+app.get('/api/student/orders', requireAuth, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.userAuth!.uid;
-  const userOrders = paymentService.getUserOrders(userId);
+  const db = getAdminFirestore();
+  if (!db && isProductionPaymentRuntime()) {
+    return res.status(503).json({ success: false, error: 'Payment history is temporarily unavailable' });
+  }
+  const userOrders = db
+    ? await new DurablePaymentRepository(db).getStudentOrders(userId)
+    : paymentService.getUserOrders(userId);
   return res.json({
     success: true,
     orders: userOrders,
   });
-});
+}));
 
 /**
  * 6. Admin Payment Settings (NEVER reveals stored plaintext secrets)
@@ -1078,25 +1231,41 @@ app.get('/api/admin/payments/settings', requireAuth, requireAdmin, (_req: Reques
   });
 });
 
-app.post('/api/admin/payments/settings', requireAuth, requireAdmin, (req: Request, res: Response) => {
+app.post('/api/admin/payments/settings/check', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  if (process.env.APP_ENV !== 'staging') return res.status(409).json({ success: false, error: 'This read-only test connection check is staging-only.' });
   try {
-    const updated = paymentService.updateSettings(req.body);
+    await paymentService.verifyRazorpayTestConnection();
+    return res.json({ success: true, verified: true, mode: 'test', message: 'Razorpay accepted the test key pair. No order or payment was created. Webhook delivery remains unverified.' });
+  } catch (error: any) {
+    return res.status(503).json({ success: false, error: error.message });
+  }
+}));
+
+app.post('/api/admin/payments/settings', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
+  try {
+    const updated = await paymentSettingsRepository.run(() => paymentService.updateSettings(req.body), true);
     return res.json({
       success: true,
       settings: updated,
-      message: 'Payment settings successfully updated. Secret keys securely stored server-side.',
+      message: 'Payment settings durably saved. Secret credentials are encrypted in Firestore.',
     });
   } catch (error: any) {
-    console.error('[MAYF Admin] Payment settings update error:', error);
-    return res.status(500).json({ success: false, error: error?.message || 'Failed to update payment settings' });
+    console.error('[MAYF Admin] Payment settings persistence error:', error);
+    return res.status(503).json({ success: false, error: 'Payment settings could not be durably saved. Please retry or contact support.' });
   }
-});
+}));
 
 /**
  * 7. Admin Orders Ledger & Audit
  */
-app.get('/api/admin/payments/orders', requireAuth, requireAdmin, (_req: Request, res: Response) => {
-  const orders = paymentService.getAllOrders();
+app.get('/api/admin/payments/orders', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  const db = getAdminFirestore();
+  if (!db && isProductionPaymentRuntime()) {
+    return res.status(503).json({ success: false, error: 'Payment ledger is temporarily unavailable' });
+  }
+  const orders = db
+    ? await new DurablePaymentRepository(db).getAllOrders()
+    : paymentService.getAllOrders();
   const summary = {
     totalOrders: orders.length,
     paidOrders: orders.filter((o) => o.status === 'paid').length,
@@ -1115,24 +1284,33 @@ app.get('/api/admin/payments/orders', requireAuth, requireAdmin, (_req: Request,
     summary,
     orders,
   });
-});
+}));
 
 /**
  * 8. Admin Webhook Idempotency Log
  */
-app.get('/api/admin/payments/webhook-logs', requireAuth, requireAdmin, (_req: Request, res: Response) => {
-  const logs = paymentService.getWebhookLogs();
-  return res.json({
-    success: true,
-    totalLogs: logs.length,
-    logs,
-  });
-});
+app.get('/api/admin/payments/webhook-logs', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const db = getAdminFirestore();
+  if (!db) return res.status(503).json({ success: false, error: 'Webhook audit storage is unavailable.' });
+  const logs = await new DurablePaymentRepository(db).getWebhookEvents();
+  return res.json({ success: true, totalLogs: logs.length, logs });
+}));
 
 /**
  * 9. Admin Webhook Simulator & Idempotency Tester
  */
-app.post('/api/admin/payments/simulate-webhook', requireAuth, requireAdmin, async (req: Request, res: Response) => {
+app.post('/api/admin/payments/simulate-webhook', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
+  // This diagnostic mutates only the legacy in-memory payment service.
+  // Require an explicit local-only flag so preview/staging cannot accidentally
+  // grant access from a fabricated simulated gateway callback.
+  if (isProductionPaymentRuntime() || process.env.MAYF_ENABLE_PAYMENT_SIMULATION !== 'true') {
+    return res.status(403).json({
+      success: false,
+      code: 'PAYMENT_SIMULATION_DISABLED',
+      error: 'Payment simulation is disabled in production.',
+    });
+  }
   try {
     const { provider = 'razorpay', eventType = 'payment.captured', orderId, simulateDuplicate } = req.body;
     if (!orderId) {
@@ -1161,7 +1339,7 @@ app.post('/api/admin/payments/simulate-webhook', requireAuth, requireAdmin, asyn
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error?.message || 'Webhook simulation error' });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Configurable Annual Pass & Entitlement Management API
@@ -1170,46 +1348,47 @@ app.post('/api/admin/payments/simulate-webhook', requireAuth, requireAdmin, asyn
 /**
  * Public Annual Pass Configuration (For pricing & feature cards)
  */
-app.get('/api/annual-pass/config', (_req: Request, res: Response) => {
-  return res.json({
-    success: true,
-    settings: entitlementService.getSettings(),
-  });
-});
-
+app.get('/api/annual-pass/config', asyncRoute(async (_req: Request, res: Response) => {
+  const settings = await annualPassSettings.read();
+  const { updatedBy, ...publicSettings } = settings;
+  const maintenance = (await securitySettings.read()).emergencyMaintenanceMode;
+  const taxRatePercentage = await paymentSettingsRepository.run(() => paymentService.getMaskedSettings().taxRatePercentage);
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({ success: true, settings: publicSettings, effectivePriceINR: settings.enabled ? annualPassPrice(settings, 'INR') : settings.regularPrice, taxRatePercentage, checkoutEnabled: !maintenance && process.env.MAYF_ENABLE_CHECKOUT === 'true' });
+}));
 /**
  * Student Active Entitlement Status & Expiry Check
  * Automatically reflects expired state without removing order history.
  */
-app.get('/api/student/entitlement', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/student/entitlement', requireAuth, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.userAuth!.uid;
-  const status = entitlementService.checkActiveEntitlement(userId);
+  const status = await getAuthoritativePassStatus(userId);
   return res.json({
     success: true,
     active: status.active,
     daysRemaining: status.daysRemaining,
     reason: status.reason,
     entitlement: status.entitlement,
-    settings: entitlementService.getSettings(),
+    settings: await annualPassSettings.read(),
   });
-});
+}));
 
 /**
  * Admin: Get Annual Pass Settings
  */
-app.get('/api/admin/annual-pass/settings', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+app.get('/api/admin/annual-pass/settings', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
   return res.json({
     success: true,
-    settings: entitlementService.getSettings(),
+    settings: await annualPassSettings.read(),
   });
-});
+}));
 
 /**
  * Admin: Update Annual Pass Settings
  */
-app.post('/api/admin/annual-pass/settings', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/annual-pass/settings', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const updated = entitlementService.updateSettings(req.body, req.userAuth?.uid || 'admin');
+    const updated = await annualPassSettings.save(req.body, req.userAuth!.uid);
     return res.json({
       success: true,
       settings: updated,
@@ -1218,7 +1397,7 @@ app.post('/api/admin/annual-pass/settings', requireAuth, requireAdmin, (req: Aut
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message || 'Failed to update Annual Pass settings' });
   }
-});
+}));
 
 /**
  * Admin: List All Entitlements
@@ -1335,7 +1514,13 @@ app.get('/api/admin/annual-pass/history', requireAuth, requireAdmin, (req: Reque
  * Never trusts client discounts. Evaluates start/end dates, min cart, max discount,
  * usage limits, per-user limits, and product scope (all / annual pass / selected).
  */
-app.post('/api/coupons/validate', async (req: Request, res: Response) => {
+// Coupon and promotion mutation success is valid only after a real durable write.
+const requirePersistentOffers = (_req: Request, res: Response, next: NextFunction) => {
+  if (!getAdminFirestore()) return res.status(503).json({ success: false, error: 'Offer storage is unavailable; nothing was saved.' });
+  next();
+};
+
+app.post('/api/coupons/validate', catalogueRoute(false, async (req: Request, res: Response) => {
   try {
     const { code, cartGrossAmount, cartAmount, amount, currency = 'INR', items = [], userId } = req.body;
 
@@ -1372,12 +1557,12 @@ app.post('/api/coupons/validate', async (req: Request, res: Response) => {
     console.error('[MAYF Coupons] Validation error:', error);
     return res.status(500).json({ success: false, error: error?.message || 'Failed to validate coupon' });
   }
-});
+}));
 
 /**
  * Public: Get Published Promotional Blocks for Homepage or Catalogue
  */
-app.get('/api/promotions', (req: Request, res: Response) => {
+app.get('/api/promotions', catalogueRoute(false, (req: Request, res: Response) => {
   try {
     const placement = req.query.placement as 'homepage' | 'catalogue' | undefined;
     const promotions = couponService.getPublicPromotions(placement);
@@ -1388,12 +1573,12 @@ app.get('/api/promotions', (req: Request, res: Response) => {
   } catch (error: any) {
     return res.status(500).json({ success: false, error: 'Failed to retrieve promotions' });
   }
-});
+}));
 
 /**
  * Admin: List All Configured Coupons
  */
-app.get('/api/admin/coupons', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+app.get('/api/admin/coupons', requireAuth, requireAdmin, catalogueRoute(false, (_req: Request, res: Response) => {
   try {
     const coupons = couponService.getAllCoupons();
     return res.json({
@@ -1403,12 +1588,12 @@ app.get('/api/admin/coupons', requireAuth, requireAdmin, (_req: Request, res: Re
   } catch (error: any) {
     return res.status(500).json({ success: false, error: 'Failed to list coupons' });
   }
-});
+}));
 
 /**
  * Admin: Create or Update Coupon
  */
-app.post('/api/admin/coupons', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/coupons', requireAuth, requireAdmin, requirePersistentOffers, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const saved = couponService.saveCoupon(req.body);
     return res.json({
@@ -1419,12 +1604,12 @@ app.post('/api/admin/coupons', requireAuth, requireAdmin, (req: AuthenticatedReq
   } catch (err: any) {
     return res.status(400).json({ success: false, error: err?.message || 'Failed to save coupon' });
   }
-});
+}));
 
 /**
  * Admin: Delete Coupon
  */
-app.delete('/api/admin/coupons/:code', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/admin/coupons/:code', requireAuth, requireAdmin, requirePersistentOffers, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const code = req.params.code;
     const deleted = couponService.deleteCoupon(code);
@@ -1449,12 +1634,12 @@ app.delete('/api/admin/coupons/:code', requireAuth, requireAdmin, (req: Authenti
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message || 'Failed to delete coupon' });
   }
-});
+}));
 
 /**
  * Admin: List All Promotional Blocks
  */
-app.get('/api/admin/promotions', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+app.get('/api/admin/promotions', requireAuth, requireAdmin, catalogueRoute(false, (_req: Request, res: Response) => {
   try {
     const promotions = couponService.getAllPromotions();
     return res.json({
@@ -1464,12 +1649,12 @@ app.get('/api/admin/promotions', requireAuth, requireAdmin, (_req: Request, res:
   } catch (error: any) {
     return res.status(500).json({ success: false, error: 'Failed to list promotional blocks' });
   }
-});
+}));
 
 /**
  * Admin: Create or Update Promotional Block
  */
-app.post('/api/admin/promotions', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/promotions', requireAuth, requireAdmin, requirePersistentOffers, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const saved = couponService.savePromotion(req.body);
     return res.json({
@@ -1480,12 +1665,12 @@ app.post('/api/admin/promotions', requireAuth, requireAdmin, (req: Authenticated
   } catch (err: any) {
     return res.status(400).json({ success: false, error: err?.message || 'Failed to save promotional block' });
   }
-});
+}));
 
 /**
  * Admin: Delete Promotional Block
  */
-app.delete('/api/admin/promotions/:id', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/admin/promotions/:id', requireAuth, requireAdmin, requirePersistentOffers, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const id = req.params.id;
     const deleted = couponService.deletePromotion(id);
@@ -1510,13 +1695,13 @@ app.delete('/api/admin/promotions/:id', requireAuth, requireAdmin, (req: Authent
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message || 'Failed to delete promotional block' });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Admin Privileged Custom Claims Setter
 // RBAC GATED: ONLY superAdmin can mint or adjust custom claims
 // -------------------------------------------------------------
-app.post('/api/admin/set-claims', requireAuth, requireSuperAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/set-claims', requireAuth, requireSuperAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { targetUid, role, pro, annualPass } = req.body;
     if (!targetUid) {
@@ -1555,7 +1740,7 @@ app.post('/api/admin/set-claims', requireAuth, requireSuperAdmin, async (req: Au
     console.error('[MAYF Admin] Set claims failure:', error);
     return res.status(500).json({ error: 'Failed to update custom claims' });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Administration Management APIs (Require strict RBAC and claims)
@@ -1565,6 +1750,40 @@ app.post('/api/admin/set-claims', requireAuth, requireSuperAdmin, async (req: Au
  * Verifies Firebase ID Token, checks custom claims (admin/superAdmin),
  * and returns authorization status. Rejects students with 403.
  */
+/**
+ * Staging operator diagnostics: credential presence is not a successful
+ * connection test. Never expose credentials, bucket objects or file IDs.
+ */
+app.get('/api/admin/staging-connectivity', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  const connectivity = await probeStagingConnectivity(getAdminFirestore(), getPdfBucket());
+  return res.json({ success: true, connectivity,
+    note: 'Read-only Firestore and R2 API checks. This does not test upload permissions, Drive OAuth, PDF delivery or payments.' });
+}));
+
+app.get('/api/admin/storage-readiness', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  const firestore = getAdminFirestore();
+  const pdfBucket = getPdfBucket();
+  const driveAccount = Boolean(process.env.GOOGLE_SERVICE_ACCOUNT_KEY || process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  const check = {
+    firestoreConfigured: Boolean(firestore && getFirebaseAdminConfig().isReady),
+    privateR2BucketBound: Boolean(pdfBucket),
+    privateR2UploadSupported: Boolean(pdfBucket?.put),
+    googleServiceAccountPresent: driveAccount,
+    verifiedPdfImportAvailable: Boolean(
+      firestore && pdfBucket?.put && driveAccount && getFirebaseAdminConfig().isReady
+    ),
+  };
+  return res.json({
+    success: true,
+    readiness: check,
+    note: 'Configuration-only check; real Google Drive and R2 transfers must be tested in staging.',
+  });
+}));
+
 app.get('/api/admin/verify-access', requireAuth, (req: AuthenticatedRequest, res: Response) => {
   res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   if (!req.userAuth || (req.userAuth.role !== 'admin' && req.userAuth.role !== 'superAdmin')) {
@@ -1585,19 +1804,21 @@ app.get('/api/admin/verify-access', requireAuth, (req: AuthenticatedRequest, res
   });
 });
 
-app.get('/api/admin/metrics', requireAuth, requireAdmin, (_req: Request, res: Response) => {
+async function refreshAdminUsers(_req: Request, _res: Response, next: NextFunction) {
+  try { await adminUserManager.refreshUsers(); next(); } catch (error) { next(error); }
+}
+app.get('/api/admin/metrics', requireAuth, requireAdmin, refreshAdminUsers, (req: AuthenticatedRequest, res: Response) => {
+  const users = adminUserManager.searchStudents({ includeDisabled: true });
   return res.json({
-    totalStudents: 12480,
-    activeAnnualPasses: 3410,
-    totalRevenue: 6816590,
-    aiDoubtsSolved: 84320,
-    totalFormulas: 38,
-    totalChapters: 64,
-    activeCoupons: couponService.getAllCoupons().length,
-    serverStatus: 'healthy',
-    cloudflareAccessActive: false,
-    edgeVerifiedEmail: '2026vivekkushwah@gmail.com',
-    uptimeHours: 342,
+    totalStudents: users.filter(user => user.role === 'student').length,
+    activeAnnualPasses: users.filter(user => user.hasAnnualPass).length,
+    totalRevenue: null,
+    aiDoubtsSolved: null,
+    aiTeacherConfigured: Boolean(geminiApiKey),
+    firebaseConfigured: getFirebaseAdminConfig().isReady, totalFormulas: FORMULA_DECK_ITEMS.length, totalChapters: contentCmsManager.exportState().length,
+    activeCoupons: couponService.getAllCoupons().filter(coupon => coupon.enabled).length,
+    serverStatus: 'healthy', cloudflareAccessActive: false, edgeVerifiedEmail: req.userAuth?.email,
+    uptimeHours: Math.floor(process.uptime() / 3600),
   });
 });
 
@@ -1609,7 +1830,7 @@ app.get('/api/admin/metrics', requireAuth, requireAdmin, (_req: Request, res: Re
  * 1. Search & List Students
  * Supports search query, class, board, and entitlement filtering
  */
-app.get('/api/admin/students', requireAuth, requireAdmin, (req: Request, res: Response) => {
+app.get('/api/admin/students', requireAuth, requireAdmin, refreshAdminUsers, (req: Request, res: Response) => {
   const { q, studentClass, board, passStatus, includeDisabled } = req.query as Record<string, string>;
   const list = adminUserManager.searchStudents({
     search: q,
@@ -1624,7 +1845,7 @@ app.get('/api/admin/students', requireAuth, requireAdmin, (req: Request, res: Re
 /**
  * 2. View Full Student Profile with Status & Claims
  */
-app.get('/api/admin/users/:uid', requireAuth, requireAdmin, (req: Request, res: Response) => {
+app.get('/api/admin/users/:uid', requireAuth, requireAdmin, refreshAdminUsers, (req: Request, res: Response) => {
   const { uid } = req.params;
   const profile = adminUserManager.getStudentProfile(uid);
   if (!profile) {
@@ -1644,7 +1865,7 @@ app.get('/api/admin/users/:uid', requireAuth, requireAdmin, (req: Request, res: 
 /**
  * 3. Disable / Enable User Account via Firebase Admin SDK
  */
-app.post('/api/admin/users/:uid/disable', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/users/:uid/disable', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const { uid } = req.params;
   const { disabled } = req.body;
   if (typeof disabled !== 'boolean') {
@@ -1670,12 +1891,12 @@ app.post('/api/admin/users/:uid/disable', requireAuth, requireAdmin, async (req:
     forceTokenRefresh: disabled,
     message: disabled ? 'User account has been disabled and session revoked.' : 'User account reactivated.',
   });
-});
+}));
 
 /**
  * 4. Delete / Remove User According to Policy
  */
-app.delete('/api/admin/users/:uid', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/admin/users/:uid', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const { uid } = req.params;
   const { policyReason } = req.body || {};
 
@@ -1702,12 +1923,12 @@ app.delete('/api/admin/users/:uid', requireAuth, requireAdmin, async (req: Authe
     policyReason,
     message: 'User removed according to retention policy and Auth account deleted.',
   });
-});
+}));
 
 /**
  * 5. Grant / Revoke Pro Tier (Firebase Custom Claim)
  */
-app.post('/api/admin/users/:uid/pro', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/users/:uid/pro', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const { uid } = req.params;
   const { grant, reason } = req.body;
 
@@ -1730,12 +1951,12 @@ app.post('/api/admin/users/:uid/pro', requireAuth, requireAdmin, async (req: Aut
     forceTokenRefresh: true,
     message: grant ? 'Pro tier granted with custom claim pro:true.' : 'Pro tier revoked.',
   });
-});
+}));
 
 /**
  * 6. Grant / Revoke Annual Pass (Firebase Custom Claim)
  */
-app.post('/api/admin/users/:uid/annual-pass', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/users/:uid/annual-pass', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const { uid } = req.params;
   const { grant, expiryDate, reason } = req.body;
 
@@ -1758,12 +1979,12 @@ app.post('/api/admin/users/:uid/annual-pass', requireAuth, requireAdmin, async (
     forceTokenRefresh: true,
     message: grant ? 'Annual Pass granted and custom claims updated.' : 'Annual Pass revoked.',
   });
-});
+}));
 
 /**
  * 7. Change Annual Pass Expiry Date
  */
-app.put('/api/admin/users/:uid/annual-pass/expiry', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.put('/api/admin/users/:uid/annual-pass/expiry', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const { uid } = req.params;
   const { expiryDate, reason } = req.body;
 
@@ -1790,7 +2011,7 @@ app.put('/api/admin/users/:uid/annual-pass/expiry', requireAuth, requireAdmin, a
     forceTokenRefresh: true,
     message: `Annual Pass expiry updated to ${expiryDate}.`,
   });
-});
+}));
 
 /**
  * 8. View Orders for Given Student
@@ -1814,7 +2035,7 @@ app.get('/api/admin/users/:uid/activity', requireAuth, requireAdmin, (req: Reque
  * 10. Role Management (Make Admin / SuperAdmin / Student)
  * RBAC GATED: Only superAdmin can create or remove administrators or modify another superAdmin
  */
-app.post('/api/admin/users/:uid/role', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/users/:uid/role', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const { uid } = req.params;
   const { role } = req.body;
 
@@ -1842,13 +2063,13 @@ app.post('/api/admin/users/:uid/role', requireAuth, requireAdmin, async (req: Au
     forceTokenRefresh: true,
     message: `Role updated to ${role}. Refresh tokens revoked to force re-authentication.`,
   });
-});
+}));
 
 /**
  * 11. Remove Admin Privileges (Revert to Student)
  * RBAC GATED: Only superAdmin can remove administrators
  */
-app.delete('/api/admin/users/:uid/role', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/admin/users/:uid/role', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const { uid } = req.params;
 
   const actor = {
@@ -1871,47 +2092,24 @@ app.delete('/api/admin/users/:uid/role', requireAuth, requireAdmin, async (req: 
     forceTokenRefresh: true,
     message: 'Administrator privileges removed. Target user reverted to student.',
   });
-});
+}));
 
 /**
  * 12. List Active Privileged Administrators
  */
-app.get('/api/admin/admins', requireAuth, requireAdmin, (_req: Request, res: Response) => {
-  return res.json([
-    {
-      uid: 'admin-super-001',
-      email: '2026vivekkushwah@gmail.com',
-      displayName: 'Vivek Kushwah (Principal Admin)',
-      role: 'superAdmin',
-      hasCustomClaim: true,
-      customClaims: {
-        admin: true,
-        superAdmin: true,
-      },
-      lastLogin: new Date().toISOString(),
-      addedAt: '2026-01-01T00:00:00.000Z',
-    },
-    {
-      uid: 'admin-002',
-      email: 'admin@mayf.co.in',
-      displayName: 'Academic Operations Lead',
-      role: 'admin',
-      hasCustomClaim: true,
-      customClaims: {
-        admin: true,
-        superAdmin: false,
-      },
-      lastLogin: '2026-10-07T18:30:00.000Z',
-      addedAt: '2026-02-15T00:00:00.000Z',
-    },
-  ]);
+app.get('/api/admin/admins', requireAuth, requireAdmin, refreshAdminUsers, (_req: Request, res: Response) => {
+  return res.json(adminUserManager.searchStudents({ includeDisabled: true }).filter(user => user.role !== 'student').map(user => ({
+    uid: user.uid, email: user.email, displayName: user.displayName, role: user.role,
+    hasCustomClaim: true, customClaims: { admin: true, superAdmin: user.role === 'superAdmin' },
+    lastLogin: user.lastLoginAt, addedAt: user.createdAt,
+  })));
 });
 
 /**
  * 13. Mint Custom Claim Directly
  * Gated: only superAdmin can mint claims
  */
-app.post('/api/admin/admins/claim', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/admins/claim', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const { email, role } = req.body;
   if (!email) {
     return res.status(400).json({ error: 'Email is required' });
@@ -1922,19 +2120,28 @@ app.post('/api/admin/admins/claim', requireAuth, requireAdmin, async (req: Authe
     return res.status(403).json({ error: 'Forbidden: Only superAdmin can create or remove administrators' });
   }
 
+  if (role && !['admin', 'superAdmin'].includes(role)) return res.status(400).json({ error: 'Role must be admin or superAdmin' });
+  const auth = getAdminAuth();
+  if (!auth) throw new Error('Firebase user management is unavailable');
+  const target = await auth.getUserByEmail(String(email).trim());
+  await adminSetCustomUserClaims(target.uid, { role: role || 'admin', admin: true, superAdmin: role === 'superAdmin' });
   const isSuper = role === 'superAdmin';
-  auditLogService.log({
-    action: 'ADMIN_CREATED',
-    category: 'admin',
-    actorUid: req.userAuth?.uid || 'admin',
-    actorEmail: req.userAuth?.email || 'admin@mayf.co.in',
-    actorRole: 'superAdmin',
-    targetId: `usr-${email}`,
-    targetEmail: email,
-    targetType: 'administrator_role',
-    details: { email, role, admin: true, superAdmin: isSuper },
-    status: 'success',
-  });
+  // Record the external Firebase Auth role change durably before replying.
+  // A Firestore failure is reported rather than falsely claiming completion.
+  await catalogueRepository.run(() => {
+    auditLogService.log({
+      action: 'ADMIN_CREATED',
+      category: 'admin',
+      actorUid: req.userAuth?.uid || 'admin',
+      actorEmail: req.userAuth?.email || 'admin@mayf.co.in',
+      actorRole: 'superAdmin',
+      targetId: target.uid,
+      targetEmail: email,
+      targetType: 'administrator_role',
+      details: { email, role, admin: true, superAdmin: isSuper },
+      status: 'success',
+    });
+  }, true);
 
   return res.json({
     success: true,
@@ -1946,92 +2153,95 @@ app.post('/api/admin/admins/claim', requireAuth, requireAdmin, async (req: Authe
     },
     forceTokenRefresh: true,
   });
-});
+}));
 
 /**
  * 14. Audit Logs Retrieval
  * Returns audit entries filtered by category (admin, subscription, content, refund, security, user)
  */
-app.get('/api/admin/audit-logs', requireAuth, requireAdmin, (req: Request, res: Response) => {
+app.get('/api/admin/audit-logs', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   const { category, action, actorEmail, limit } = req.query as Record<string, string>;
-  const logs = auditLogService.getLogs({
-    category,
-    action,
-    actorEmail,
-    limit: limit ? parseInt(limit, 10) : 100,
-  });
+  const logs = await catalogueRepository.run(() => auditLogService.getLogs({
+    category, action, actorEmail, limit: limit ? parseInt(limit, 10) : 100,
+  }));
   return res.json(logs);
-});
+}));
 
-/**
- * 15. Export Audit Logs as CSV
- */
-app.get('/api/admin/audit-logs/export', requireAuth, requireAdmin, (req: Request, res: Response) => {
+/** Export real durable audit entries as CSV. */
+app.get('/api/admin/audit-logs/export', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   const { category } = req.query as Record<string, string>;
-  const csv = auditLogService.exportCsv(category);
+  const csv = await catalogueRepository.run(() => auditLogService.exportCsv(category));
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename="mayf-audit-logs-${new Date().toISOString().split('T')[0]}.csv"`);
   return res.send(csv);
-});
+}));
 
 /**
  * 16. Security Configuration: Get Settings
  */
-app.get('/api/admin/security/config', requireAuth, requireAdmin, (_req: Request, res: Response) => {
-  const config = adminUserManager.getSecurityConfig();
+app.get('/api/admin/security/config', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  const config = { ...adminUserManager.getSecurityConfig(), ...await securitySettings.read() };
   return res.json(config);
-});
+}));
 
 /**
  * 17. Security Configuration: Update Settings
  * RBAC GATED: ONLY superAdmin can modify critical security configuration
  */
-app.post('/api/admin/security/config', requireAuth, requireSuperAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/security/config', requireAuth, requireSuperAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const actor = {
     uid: req.userAuth!.uid,
     email: req.userAuth!.email,
     role: req.userAuth!.role as 'superAdmin',
   };
 
-  const result = adminUserManager.updateSecurityConfig(req.body, actor);
-  if (!result.success) {
-    return res.status(403).json({ error: result.error });
-  }
-
-  return res.json({
-    success: true,
-    config: result.config,
-    message: 'Critical security configuration successfully updated.',
-  });
-});
+  try {
+    const saved = await securitySettings.save(req.body, actor);
+    return res.json({ success: true, config: { ...adminUserManager.getSecurityConfig(), ...saved },
+      message: 'Maintenance mode and audit record durably saved.' });
+  } catch (error: any) { return res.status(400).json({ success: false, error: error.message || 'Maintenance configuration could not be saved.' }); }
+}));
 
 /**
  * 18. Order Refund Endpoint
  * Logs audit entry: refund-related changes
  */
-app.post('/api/admin/orders/:orderId/refund', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
-  const { orderId } = req.params;
-  const { reason, amount } = req.body;
-
-  auditLogService.log({
-    action: 'REFUND_PROCESSED',
-    category: 'refund',
-    actorUid: req.userAuth?.uid || 'admin',
-    actorEmail: req.userAuth?.email || 'admin@mayf.co.in',
-    actorRole: (req.userAuth?.role === 'superAdmin' ? 'superAdmin' : 'admin') as 'admin' | 'superAdmin',
-    targetId: orderId,
-    targetType: 'payment_order',
-    details: { orderId, amount, reason: reason || 'Customer refund request' },
-    status: 'success',
+// Initiation is gated independently of new purchases. Signed webhooks alone settle refunds.
+app.get('/api/admin/payments/refunds', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  const db = getAdminFirestore();
+  res.setHeader('Cache-Control', 'no-store');
+  if (!db) return res.status(503).json({ success: false, error: 'Refund storage is unavailable.' });
+  const requests = await db.list('paymentRefundRequests');
+  return res.json({ success: true, requests: requests.map(({ data }) => ({
+    orderId: data.orderId, providerPaymentId: data.providerPaymentId, providerRefundId: data.providerRefundId || null,
+    amountInSubunits: data.amount, currency: data.currency, status: data.status,
+    requestedAt: data.requestedAt, actorUid: data.actorUid, reason: data.reason,
+  })).sort((a, b) => String(b.requestedAt).localeCompare(String(a.requestedAt))).slice(0, 100) });
+}));
+app.post('/api/admin/orders/:orderId/refund', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (process.env.MAYF_ENABLE_ADMIN_REFUNDS !== 'true') return res.status(503).json({
+    success: false, error: 'Admin refund initiation is unavailable pending sandbox acceptance.',
   });
-
-  return res.json({
-    success: true,
-    orderId,
-    status: 'refunded',
-    message: `Order ${orderId} has been refunded and audit log recorded.`,
-  });
-});
+  const db = getAdminFirestore();
+  if (!db) return res.status(503).json({ success: false, error: 'Refund storage is unavailable.' });
+  try {
+    const refund = await paymentSettingsRepository.run(async () => {
+      paymentService.assertRefundConfigured();
+      return initiateFullRefund(db, { orderId: String(req.params.orderId), amount: req.body.amount,
+        reason: req.body.reason, actorUid: req.userAuth!.uid }, intent => paymentService.initiateFullRefund(intent));
+    });
+    return res.status(202).json({ success: true, refundStatus: refund.status,
+      message: refund.status === 'completed' ? 'Refund confirmed by the provider webhook.' :
+        refund.status === 'awaiting_webhook' ? 'Refund submitted; awaiting verified provider confirmation.' :
+        'Refund outcome requires gateway reconciliation. Do not submit another refund manually without checking this request.',
+    });
+  } catch {
+    return res.status(409).json({ success: false,
+      error: 'Refund could not be initiated or its result could not be saved. Refresh the ledger and reconcile the gateway before retrying. Only full INR refunds of the latest paid Razorpay pass are supported.',
+    });
+  }
+}));
 
 // -------------------------------------------------------------
 // Complete Content CMS Endpoints
@@ -2043,7 +2253,24 @@ app.post('/api/admin/orders/:orderId/refund', requireAuth, requireAdmin, (req: A
  * 19. List Content CMS Items
  * Supports search, classLevel, contentType, accessType, visibility, tab, sortBy
  */
-app.get('/api/admin/content', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/catalogue', catalogueRoute(false, (req, res) => {
+  const pageSize = Math.max(1, Math.min(20, Number(req.query.pageSize) || 20));
+  const offset = Math.max(0, Math.floor(Number(req.query.offset) || 0));
+  const filters = { ...req.query, featuredOnly: req.query.featuredOnly === 'true' };
+  const result = filterCatalogue(contentCmsManager.exportState() as any, filters as any, { offset } as any, pageSize);
+  res.setHeader?.('Cache-Control', 'no-store');
+  return res.json({ ...result, items: result.items.map(item => publicContent(item)) });
+}));
+app.get('/api/catalogue/by-slug/:slug', asyncRoute(async (req, res) => {
+  const verified = req.headers.authorization ? await verifyStudentSessionToken(req.headers.authorization) : null;
+  const item = await catalogueRepository.run(() => contentCmsManager.exportState().find(item => item.slug === req.params.slug && item.visible && (!item.status || item.status === 'published') && !item.isDeleted));
+  if (!item) return res.status(404).json({ error: 'Resource not found' });
+  const canAccess = canReadPremiumContent(verified, item.annualPassIncluded);
+  res.setHeader('Cache-Control', 'private, no-store');
+  return res.json({ item: publicContent(item, canAccess) });
+}));
+
+app.get('/api/admin/content', requireAuth, requireAdmin, catalogueRoute(false, (req: AuthenticatedRequest, res: Response) => {
   try {
     const {
       search,
@@ -2074,12 +2301,12 @@ app.get('/api/admin/content', requireAuth, requireAdmin, (req: AuthenticatedRequ
     console.error('[Admin Content CMS] List error:', error);
     return res.status(500).json({ success: false, error: error?.message || 'Failed to list content items' });
   }
-});
+}));
 
 /**
  * 20. Get Single Content CMS Item
  */
-app.get('/api/admin/content/:id', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/admin/content/:id', requireAuth, requireAdmin, catalogueRoute(false, (req: AuthenticatedRequest, res: Response) => {
   try {
     const item = contentCmsManager.getItem(req.params.id);
     if (!item) {
@@ -2089,12 +2316,12 @@ app.get('/api/admin/content/:id', requireAuth, requireAdmin, (req: Authenticated
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error?.message || 'Failed to fetch content item' });
   }
-});
+}));
 
 /**
  * 21. Create Content Item
  */
-app.post('/api/admin/content', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/content', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2112,12 +2339,12 @@ app.post('/api/admin/content', requireAuth, requireAdmin, (req: AuthenticatedReq
     console.error('[Admin Content CMS] Create error:', error);
     return res.status(400).json({ success: false, error: error?.message || 'Failed to create content item' });
   }
-});
+}));
 
 /**
  * 22. Edit / Update Content Item
  */
-app.put('/api/admin/content/:id', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.put('/api/admin/content/:id', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2135,12 +2362,12 @@ app.put('/api/admin/content/:id', requireAuth, requireAdmin, (req: Authenticated
     console.error('[Admin Content CMS] Update error:', error);
     return res.status(400).json({ success: false, error: error?.message || 'Failed to update content item' });
   }
-});
+}));
 
 /**
  * 23. Publish Content Item
  */
-app.post('/api/admin/content/:id/publish', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/content/:id/publish', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2157,12 +2384,12 @@ app.post('/api/admin/content/:id/publish', requireAuth, requireAdmin, (req: Auth
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to publish item' });
   }
-});
+}));
 
 /**
  * 24. Unpublish Content Item (Revert to Draft)
  */
-app.post('/api/admin/content/:id/unpublish', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/content/:id/unpublish', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2179,12 +2406,12 @@ app.post('/api/admin/content/:id/unpublish', requireAuth, requireAdmin, (req: Au
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to unpublish item' });
   }
-});
+}));
 
 /**
  * 25. Hide Content Item
  */
-app.post('/api/admin/content/:id/hide', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/content/:id/hide', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2201,12 +2428,12 @@ app.post('/api/admin/content/:id/hide', requireAuth, requireAdmin, (req: Authent
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to hide item' });
   }
-});
+}));
 
 /**
  * 26. Unhide Content Item
  */
-app.post('/api/admin/content/:id/unhide', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/content/:id/unhide', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2223,12 +2450,12 @@ app.post('/api/admin/content/:id/unhide', requireAuth, requireAdmin, (req: Authe
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to unhide item' });
   }
-});
+}));
 
 /**
  * 27. Safe Delete / Archive Content Item (Prefer soft-delete first!)
  */
-app.post('/api/admin/content/:id/archive', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/content/:id/archive', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const { reason } = req.body || {};
     const actor = {
@@ -2246,12 +2473,12 @@ app.post('/api/admin/content/:id/archive', requireAuth, requireAdmin, (req: Auth
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to archive item' });
   }
-});
+}));
 
 /**
  * 28. Restore Content Item from Archive
  */
-app.post('/api/admin/content/:id/restore', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/content/:id/restore', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2268,12 +2495,12 @@ app.post('/api/admin/content/:id/restore', requireAuth, requireAdmin, (req: Auth
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to restore item' });
   }
-});
+}));
 
 /**
  * 29. Content Deletion Endpoint (Safe deletion preferred by default, permanent purge if requested)
  */
-app.delete('/api/admin/content/:id', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/admin/content/:id', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const { reason, purge } = req.body || {};
     const actor = {
@@ -2305,12 +2532,12 @@ app.delete('/api/admin/content/:id', requireAuth, requireAdmin, (req: Authentica
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to delete/archive content' });
   }
-});
+}));
 
 /**
  * 30. Duplicate Content Item
  */
-app.post('/api/admin/content/:id/duplicate', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/content/:id/duplicate', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2327,12 +2554,12 @@ app.post('/api/admin/content/:id/duplicate', requireAuth, requireAdmin, (req: Au
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to duplicate content item' });
   }
-});
+}));
 
 /**
  * 31. Feature Toggle Content Item
  */
-app.post('/api/admin/content/:id/feature', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/content/:id/feature', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const { featured } = req.body;
     const actor = {
@@ -2350,12 +2577,12 @@ app.post('/api/admin/content/:id/feature', requireAuth, requireAdmin, (req: Auth
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to toggle featured status' });
   }
-});
+}));
 
 /**
  * 32. Reorder Content Items
  */
-app.post('/api/admin/content/reorder', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/content/reorder', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const { orderMapping } = req.body;
     if (!orderMapping || !Array.isArray(orderMapping)) {
@@ -2377,7 +2604,7 @@ app.post('/api/admin/content/reorder', requireAuth, requireAdmin, (req: Authenti
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to reorder content items' });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Hierarchical Categories Management Endpoints
@@ -2389,7 +2616,7 @@ app.post('/api/admin/content/reorder', requireAuth, requireAdmin, (req: Authenti
  * 33. List Hierarchical Categories
  * Query: ?format=tree|flat, ?includeDisabled=true|false
  */
-app.get('/api/admin/categories', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/admin/categories', requireAuth, requireAdmin, catalogueRoute(false, (req: AuthenticatedRequest, res: Response) => {
   try {
     const { format = 'tree', includeDisabled = 'true' } = req.query;
     const includeDisabledBool = includeDisabled !== 'false';
@@ -2407,12 +2634,12 @@ app.get('/api/admin/categories', requireAuth, requireAdmin, (req: AuthenticatedR
     console.error('[Admin Categories] List error:', error);
     return res.status(500).json({ success: false, error: error?.message || 'Failed to list categories' });
   }
-});
+}));
 
 /**
  * 34. Get Single Category Details
  */
-app.get('/api/admin/categories/:id', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/admin/categories/:id', requireAuth, requireAdmin, catalogueRoute(false, (req: AuthenticatedRequest, res: Response) => {
   try {
     const category = categoryManager.getById(req.params.id);
     if (!category) {
@@ -2423,24 +2650,24 @@ app.get('/api/admin/categories/:id', requireAuth, requireAdmin, (req: Authentica
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error?.message || 'Failed to get category' });
   }
-});
+}));
 
 /**
  * 35. Can-Delete Safety Pre-check
  */
-app.get('/api/admin/categories/:id/can-delete', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.get('/api/admin/categories/:id/can-delete', requireAuth, requireAdmin, catalogueRoute(false, (req: AuthenticatedRequest, res: Response) => {
   try {
     const result = categoryManager.canDelete(req.params.id);
     return res.json({ success: true, ...result });
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error?.message || 'Failed to evaluate delete safety' });
   }
-});
+}));
 
 /**
  * 36. Create Hierarchical Category
  */
-app.post('/api/admin/categories', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/categories', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2458,12 +2685,12 @@ app.post('/api/admin/categories', requireAuth, requireAdmin, (req: Authenticated
     console.error('[Admin Categories] Create error:', error);
     return res.status(400).json({ success: false, error: error?.message || 'Failed to create category' });
   }
-});
+}));
 
 /**
  * 37. Rename / Update Category
  */
-app.put('/api/admin/categories/:id', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.put('/api/admin/categories/:id', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2500,12 +2727,12 @@ app.put('/api/admin/categories/:id', requireAuth, requireAdmin, (req: Authentica
     console.error('[Admin Categories] Update error:', error);
     return res.status(400).json({ success: false, error: error?.message || 'Failed to update category' });
   }
-});
+}));
 
 /**
  * 38. Move Category (Change Parent)
  */
-app.post('/api/admin/categories/:id/move', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/categories/:id/move', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2523,12 +2750,12 @@ app.post('/api/admin/categories/:id/move', requireAuth, requireAdmin, (req: Auth
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to move category' });
   }
-});
+}));
 
 /**
  * 39. Reorder Category
  */
-app.post('/api/admin/categories/:id/reorder', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/categories/:id/reorder', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2548,12 +2775,12 @@ app.post('/api/admin/categories/:id/reorder', requireAuth, requireAdmin, (req: A
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to reorder category' });
   }
-});
+}));
 
 /**
  * 40. Disable / Enable Category
  */
-app.post('/api/admin/categories/:id/toggle-disable', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/categories/:id/toggle-disable', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2571,13 +2798,13 @@ app.post('/api/admin/categories/:id/toggle-disable', requireAuth, requireAdmin, 
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to toggle category disabled status' });
   }
-});
+}));
 
 /**
  * 41. Delete Category Where Safe
  * PREVENTS deleting categories containing content unless content is reassigned!
  */
-app.delete('/api/admin/categories/:id', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/admin/categories/:id', requireAuth, requireAdmin, catalogueRoute(true, (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2597,7 +2824,7 @@ app.delete('/api/admin/categories/:id', requireAuth, requireAdmin, (req: Authent
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to delete category' });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Controlled Homepage Block Manager Endpoints
@@ -2640,7 +2867,7 @@ app.get('/api/admin/layout/homepage', requireAuth, requireAdmin, (_req: Authenti
 /**
  * 44. Admin Save Full Homepage Layout (Drag-and-drop reordered blocks + configs)
  */
-app.put('/api/admin/layout/homepage', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.put('/api/admin/layout/homepage', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2662,12 +2889,12 @@ app.put('/api/admin/layout/homepage', requireAuth, requireAdmin, async (req: Aut
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to update layout' });
   }
-});
+}));
 
 /**
  * 45. Admin Update Single Homepage Block
  */
-app.patch('/api/admin/layout/homepage/blocks/:id', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.patch('/api/admin/layout/homepage/blocks/:id', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2687,12 +2914,12 @@ app.patch('/api/admin/layout/homepage/blocks/:id', requireAuth, requireAdmin, as
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to update block' });
   }
-});
+}));
 
 /**
  * 46. Admin Reset Homepage Layout to Defaults
  */
-app.post('/api/admin/layout/homepage/reset', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/layout/homepage/reset', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2709,7 +2936,7 @@ app.post('/api/admin/layout/homepage/reset', requireAuth, requireAdmin, async (r
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to reset layout' });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Site Settings & Branding Management Endpoints
@@ -2753,7 +2980,7 @@ app.get('/api/admin/site-settings', requireAuth, requireAdmin, (_req: Authentica
 /**
  * 49. Admin Update Site Settings (Strictly sanitizes and blocks arbitrary HTML/JS)
  */
-app.put('/api/admin/site-settings', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.put('/api/admin/site-settings', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2770,12 +2997,12 @@ app.put('/api/admin/site-settings', requireAuth, requireAdmin, async (req: Authe
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to update site settings' });
   }
-});
+}));
 
 /**
  * 50. Admin Reset Site Settings to Defaults
  */
-app.post('/api/admin/site-settings/reset', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/site-settings/reset', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2792,7 +3019,7 @@ app.post('/api/admin/site-settings/reset', requireAuth, requireAdmin, async (req
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to reset site settings' });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Reusable AdSense & Minor Protection Management Endpoints
@@ -2834,7 +3061,7 @@ app.get('/api/admin/adsense/config', requireAuth, requireAdmin, (_req: Authentic
 /**
  * 53. Admin Update AdSense & Minor Protection Configuration
  */
-app.put('/api/admin/adsense/config', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.put('/api/admin/adsense/config', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2851,12 +3078,12 @@ app.put('/api/admin/adsense/config', requireAuth, requireAdmin, async (req: Auth
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to update AdSense configuration' });
   }
-});
+}));
 
 /**
  * 54. Admin Reset AdSense Configuration to Defaults
  */
-app.post('/api/admin/adsense/reset', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/adsense/reset', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2873,7 +3100,7 @@ app.post('/api/admin/adsense/reset', requireAuth, requireAdmin, async (req: Auth
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to reset AdSense configuration' });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Internal Website Notifications & Broadcasts Endpoints
@@ -2884,7 +3111,7 @@ app.post('/api/admin/adsense/reset', requireAuth, requireAdmin, async (req: Auth
 /**
  * 55. Active Broadcasts for Public / Student Session
  */
-app.get('/api/broadcasts/active', async (req: Request, res: Response) => {
+app.get('/api/broadcasts/active', asyncRoute(async (req: Request, res: Response) => {
   try {
     let email: string | undefined;
     let hasAnnualPass = false;
@@ -2908,7 +3135,7 @@ app.get('/api/broadcasts/active', async (req: Request, res: Response) => {
       email,
     });
 
-    res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=120');
+    res.setHeader('Cache-Control', authHeader ? 'private, no-store' : 'public, max-age=30');
     return res.json({
       success: true,
       count: items.length,
@@ -2917,7 +3144,7 @@ app.get('/api/broadcasts/active', async (req: Request, res: Response) => {
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error?.message || 'Failed to fetch active broadcasts' });
   }
-});
+}));
 
 /**
  * 56. Admin List All Broadcasts
@@ -2938,7 +3165,7 @@ app.get('/api/admin/broadcasts', requireAuth, requireAdmin, (_req: Authenticated
 /**
  * 57. Admin Create Broadcast
  */
-app.post('/api/admin/broadcasts', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/admin/broadcasts', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
     const actor = {
       uid: req.userAuth?.uid || 'admin',
@@ -2955,12 +3182,12 @@ app.post('/api/admin/broadcasts', requireAuth, requireAdmin, async (req: Authent
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to create broadcast' });
   }
-});
+}));
 
 /**
  * 58. Admin Update Broadcast
  */
-app.put('/api/admin/broadcasts/:id', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.put('/api/admin/broadcasts/:id', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const actor = {
@@ -2978,12 +3205,12 @@ app.put('/api/admin/broadcasts/:id', requireAuth, requireAdmin, async (req: Auth
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to update broadcast' });
   }
-});
+}));
 
 /**
  * 59. Admin Delete Broadcast
  */
-app.delete('/api/admin/broadcasts/:id', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete('/api/admin/broadcasts/:id', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const actor = {
@@ -3000,138 +3227,100 @@ app.delete('/api/admin/broadcasts/:id', requireAuth, requireAdmin, async (req: A
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error?.message || 'Failed to delete broadcast' });
   }
-});
+}));
 
 /**
  * 57. Analytics Event Ingestion (Public, O(1) Atomic Counter Aggregation, Zero Student PII)
  */
-app.post('/api/analytics/track', (req: Request, res: Response) => {
+// Only permitted public events are counted. Payment/AI/download activity is never trusted from the browser.
+app.post('/api/analytics/track', asyncRoute(async (req: Request, res: Response) => {
+  const { eventType, params } = req.body || {};
+  if (typeof eventType !== 'string' || (params !== undefined && (typeof params !== 'object' || params === null || Array.isArray(params)))) {
+    return res.status(400).json({ success: false, error: 'Invalid analytics event.' });
+  }
   try {
-    const { eventType, params } = req.body || {};
-    if (!eventType || typeof eventType !== 'string') {
-      return res.status(400).json({ success: false, error: 'eventType is required' });
+    const ip = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || 'unknown');
+    // Use existing Firestore-backed limiter to bound anonymous counter traffic.
+    if (await checkDownloadRateLimit(`analytics-${ip}`, 120, 60000)) {
+      return res.status(429).json({ success: false, error: 'Too many analytics events.' });
     }
-    aggregateMetricsService.recordEvent(eventType as any, params || {});
-    return res.status(200).json({ success: true });
-  } catch (err: any) {
-    return res.status(200).json({ success: false, note: 'non-blocking tracking' });
+    const recorded = await aggregateMetricsService.recordEvent(eventType as any, params || {});
+    return res.json({ success: true, recorded });
+  } catch {
+    return res.status(503).json({ success: false, error: 'Analytics storage is unavailable.' });
   }
-});
+}));
 
-/**
- * 58. Admin Analytics Dashboard Metrics (Pre-Aggregated O(1) Query, Zero Event Log Scanning)
- */
-app.get('/api/admin/analytics/dashboard', requireAuth, requireAdmin, (req: AuthenticatedRequest, res: Response) => {
+// Reports use durable counters and verified paid orders, never sample numbers.
+app.get('/api/admin/analytics/dashboard', requireAuth, requireAdmin, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
   try {
-    const timeframe = (req.query.timeframe as any) || '30d';
-    const data = aggregateMetricsService.getDashboardMetrics(timeframe);
-    return res.json({
-      success: true,
-      data,
-    });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err?.message || 'Failed to fetch analytics' });
+    const data = await aggregateMetricsService.getDashboardMetrics((req.query.timeframe as any) || '30d');
+    return res.json({ success: true, data });
+  } catch {
+    return res.status(503).json({ success: false, error: 'Analytics could not be loaded. Please retry.' });
   }
-});
+}));
 
-/**
- * 59. Admin Analytics Reset Baseline
- */
+// Historical measured analytics may not be silently replaced with simulated baselines.
 app.post('/api/admin/analytics/reset', requireAuth, requireAdmin, (_req: AuthenticatedRequest, res: Response) => {
-  try {
-    const data = aggregateMetricsService.resetToBaseline();
-    return res.json({ success: true, message: 'Analytics reset to baseline successfully', data });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err?.message || 'Failed to reset analytics' });
-  }
+  return res.status(501).json({ success: false, error: 'Historical analytics are retained. Reset is unavailable.' });
 });
 
-app.get('/api/admin/ai-activity', requireAuth, requireAdmin, (_req: Request, res: Response) => {
-  return res.json([
-    {
-      id: 'ai-q-901',
-      timestamp: new Date().toISOString(),
-      studentGrade: 'Class 10',
-      topic: 'Quadratic Equations',
-      questionSnippet: 'Derive quadratic formula using completing the square method',
-      model: AI_TEACHER_MODEL,
-      latencyMs: 720,
-      tokensUsed: 480,
-      resolved: true,
-      rating: 5,
-    },
-    {
-      id: 'ai-q-902',
-      timestamp: new Date(Date.now() - 3600000).toISOString(),
-      studentGrade: 'Class 9',
-      topic: 'Circles',
-      questionSnippet: 'Proof that perpendicular from centre to chord bisects chord',
-      model: AI_TEACHER_MODEL,
-      latencyMs: 840,
-      tokensUsed: 520,
-      resolved: true,
-      rating: 5,
-    },
-    {
-      id: 'ai-q-903',
-      timestamp: new Date(Date.now() - 7200000).toISOString(),
-      studentGrade: 'Class 10',
-      topic: 'Trigonometry',
-      questionSnippet: 'Prove identity (sin A + cosec A)^2 + (cos A + sec A)^2 = 7 + tan^2 A + cot^2 A',
-      model: AI_TEACHER_MODEL,
-      latencyMs: 650,
-      tokensUsed: 610,
-      resolved: true,
-      rating: 5,
-    },
-  ]);
-});
+app.get('/api/admin/ai-activity', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  const db = getAdminFirestore();
+  if (!db) return res.status(503).json({ success: false, error: 'AI activity storage is unavailable.' });
+  const records: Record<string, any>[] = (await db.list('aiTeacherSessions'))
+    .map(doc => ({ ...doc.data, id: doc.id } as Record<string, any>))
+    .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp))).slice(0, 100);
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json(records.map(record => ({
+    id: record.id,
+    timestamp: record.timestamp,
+    studentGrade: record.studentClass,
+    topic: record.chapterTopic,
+    questionSnippet: String(record.question || '').slice(0, 180),
+    model: record.tokenMetadata?.model || getAiTeacherModel(),
+    latencyMs: record.latencyMs ?? null,
+    tokensUsed: record.tokenMetadata?.totalTokens ?? null,
+    resolved: record.responseStatus === 'success',
+    rating: record.userRating === 'helpful' ? 1 : record.userRating === 'unhelpful' ? 0 : undefined,
+  })));
+}));
 
-app.get('/api/admin/orders', requireAuth, requireAdmin, (_req: Request, res: Response) => {
-  const stored = paymentService.getAllOrders();
-  if (stored && stored.length > 0) {
-    return res.json(
-      stored.map((o: StoredOrder) => ({
-        id: o.orderId,
-        orderNumber: o.providerOrderId || o.orderId,
-        customerEmail: o.customerDetails?.email || 'student@mayf.co.in',
-        planName: o.items[0]?.title || 'Annual Pass (Classes 5–10)',
-        amount: o.grossAmount,
-        currency: o.currency,
-        gateway: o.provider,
-        status: o.status,
-        createdAt: o.createdAt,
-        paymentId: o.providerPaymentId || 'pay_' + o.orderId.slice(0, 10),
-      }))
-    );
-  }
-  return res.json([
-    {
-      id: 'ord-801',
-      orderNumber: 'MAYF-2026-8910',
-      customerEmail: 'arjun.sharma@mayf.co.in',
-      planName: 'Annual Pass (Classes 5–10)',
-      amount: 1999,
-      currency: 'INR',
-      gateway: 'razorpay',
-      status: 'captured',
-      createdAt: '2026-10-08T04:22:00.000Z',
-      paymentId: 'pay_rzp_98a7s6d5f4',
-    },
-    {
-      id: 'ord-802',
-      orderNumber: 'MAYF-2026-8909',
-      customerEmail: 'priya.patel@gmail.com',
-      planName: 'Annual Pass Family Pack (2 Children)',
-      amount: 2999,
-      currency: 'INR',
-      gateway: 'stripe',
-      status: 'paid',
-      createdAt: '2026-10-07T19:15:00.000Z',
-      paymentId: 'pi_3MtwBwLkdIwHu7ix28aZlKst',
-    },
-  ]);
-});
+// SEO changes are authenticated and must be durably written before success.
+app.get('/api/admin/seo', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({ success: true, settings: await seoSettings.read() });
+}));
+app.put('/api/admin/seo', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
+  try { return res.json({ success: true, settings: await seoSettings.save(req.body) }); }
+  catch (error: any) { return res.status(400).json({ success: false, error: error.message || 'SEO settings were not saved.' }); }
+}));
+
+/** Real authoritative payment ledger. Never seed the admin screen with demonstration orders. */
+app.get('/api/admin/orders', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  const db = getAdminFirestore();
+  if (!db) return res.status(503).json({ success: false, error: 'Order ledger storage is unavailable.' });
+  const orders = await new DurablePaymentRepository(db).getAllOrders();
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json(orders.map(order => ({
+    id: order.orderId,
+    orderNumber: order.providerOrderId || order.orderId,
+    customerEmail: order.customerDetails?.email || '',
+    planName: order.items[0]?.title || 'Annual Pass',
+    amount: order.grossAmount - order.discount + (order.tax || 0),
+    currency: order.currency,
+    gateway: order.provider,
+    status: order.status,
+    refundRequestStatus: order.metadata?.refundRequestStatus,
+    refundAvailable: process.env.MAYF_ENABLE_ADMIN_REFUNDS === 'true' && order.status === 'paid' &&
+      order.provider === 'razorpay' && order.currency === 'INR' && !order.metadata?.refundRequestStatus,
+    createdAt: order.createdAt,
+    paymentId: order.providerPaymentId || '',
+  })));
+}));
+
 
 const IN_MEMORY_BROADCASTS = [
   {
@@ -3202,69 +3391,8 @@ interface AiDoubtRecord {
   userRating?: 'helpful' | 'unhelpful';
 }
 
-const AI_DOUBTS_HISTORY: AiDoubtRecord[] = [
-  {
-    id: 'doubt-seed-1',
-    uid: 'mayf-student-1001',
-    question: 'Why do we reject negative roots in speed and distance word problems?',
-    questionType: 'text',
-    studentClass: 'Class 10',
-    chapterTopic: 'Quadratic Equations',
-    reply: `### Understanding the Question\nThe question asks why negative values obtained as solutions to a quadratic equation are discarded when solving physical motion problems.\n\n### Given Information\nIn speed-distance-time problems, the unknown variable $x$ represents speed ($s$) or time ($t$).\n\n### Concept Used\nPhysical speed $s = \\frac{d}{t}$ and geometric distance are scalar physical quantities defined strictly over non-negative reals ($s > 0$).\n\n### Step-by-Step Solution\n1. When setting up $ax^2 + bx + c = 0$, both roots are mathematically valid solutions to the algebraic equation.\n2. In a real-world physical scenario, speed cannot be negative: $x > 0$.\n3. Therefore, the negative root is rejected as extraneous in the physical domain.\n\n### Final Answer\nSpeed is a non-negative scalar quantity ($s > 0$), so negative mathematical roots have no physical meaning.\n\n### Verification / Check\nSubstitute positive speed back into $t = \\frac{d}{s}$ to verify positive duration.`,
-    timestamp: '2026-10-06T10:14:00.000Z',
-    responseStatus: 'success',
-    tokenMetadata: { model: 'gemini-3.8-flash', totalTokens: 240 },
-    userRating: 'helpful',
-  },
-  {
-    id: 'doubt-seed-2',
-    uid: 'mayf-student-1001',
-    question: 'How to prove 1 + tan²θ = sec²θ algebraically without geometry?',
-    questionType: 'text',
-    studentClass: 'Class 10',
-    chapterTopic: 'Trigonometry',
-    reply: `### Understanding the Question\nProve the fundamental Pythagorean trigonometric identity $1 + \\tan^2 \\theta = \\sec^2 \\theta$ algebraically from the primary identity.\n\n### Given Information\nPrimary trigonometric identity: $$\\sin^2 \\theta + \\cos^2 \\theta = 1$$\n\n### Concept Used\nReciprocal and quotient identities: $$\\tan \\theta = \\frac{\\sin \\theta}{\\cos \\theta}, \\quad \\sec \\theta = \\frac{1}{\\cos \\theta}$$\n\n### Step-by-Step Solution\n1. Divide both sides of $\\sin^2 \\theta + \\cos^2 \\theta = 1$ by $\\cos^2 \\theta$ (where $\\cos \\theta \\neq 0$):\n$$\\frac{\\sin^2 \\theta}{\\cos^2 \\theta} + \\frac{\\cos^2 \\theta}{\\cos^2 \\theta} = \\frac{1}{\\cos^2 \\theta}$$\n2. Simplify each term:\n$$\\left(\\frac{\\sin \\theta}{\\cos \\theta}\\right)^2 + 1 = \\left(\\frac{1}{\\cos \\theta}\\right)^2$$\n3. Substitute $\\tan \\theta$ and $\\sec \\theta$:\n$$\\tan^2 \\theta + 1 = \\sec^2 \\theta$$\n4. Rearrange terms:\n$$1 + \\tan^2 \\theta = \\sec^2 \\theta$$\n\n### Final Answer\n$$1 + \\tan^2 \\theta = \\sec^2 \\theta$$\n\n### Verification / Check\nFor $\\theta = 45^\\circ$:\n$$1 + \\tan^2 45^\\circ = 1 + 1^2 = 2$$\n$$\\sec^2 45^\\circ = (\\sqrt{2})^2 = 2$$\nLHS = RHS.`,
-    timestamp: '2026-10-05T14:30:00.000Z',
-    responseStatus: 'success',
-    tokenMetadata: { model: 'gemini-3.8-flash', totalTokens: 310 },
-    userRating: 'helpful',
-  },
-];
-
-interface UserAiDailyUsage {
-  count: number;
-  dateStr: string;
-  recentTimestamps: number[];
-}
-const aiUsageMap = new Map<string, UserAiDailyUsage>();
-
-function checkAiQuota(key: string, dailyLimit: number): { allowed: boolean; remaining: number } {
-  const today = new Date().toISOString().split('T')[0];
-  const usage = aiUsageMap.get(key) || { count: 0, dateStr: today, recentTimestamps: [] };
-
-  if (usage.dateStr !== today) {
-    usage.count = 0;
-    usage.dateStr = today;
-    usage.recentTimestamps = [];
-  }
-
-  // Sliding window rate limit: max 15 requests in 3 minutes
-  const now = Date.now();
-  usage.recentTimestamps = usage.recentTimestamps.filter((ts) => now - ts < 180 * 1000);
-  if (usage.recentTimestamps.length >= 15) {
-    return { allowed: false, remaining: 0 };
-  }
-
-  if (usage.count >= dailyLimit) {
-    return { allowed: false, remaining: 0 };
-  }
-
-  usage.count++;
-  usage.recentTimestamps.push(now);
-  aiUsageMap.set(key, usage);
-
-  return { allowed: true, remaining: dailyLimit - usage.count };
-}
+// AI request quotas live in Firestore across Worker instances. No fabricated history or volatile quota maps.
+const aiQuota = new AiQuota(getAdminFirestore);
 
 // -------------------------------------------------------------
 // Formula Deck Public API
@@ -3323,69 +3451,49 @@ app.get('/api/formulas/:slug', (req: Request, res: Response) => {
 app.get('/api/ai-teacher/config', (_req: Request, res: Response) => {
   return res.json({
     success: true,
-    status: 'ok',
+    status: aiClient && geminiApiKey ? 'configured' : 'not_configured',
     model: getAiTeacherModel(),
     supportedImageTypes: ['image/jpeg', 'image/png', 'image/webp'],
-    appCheckEnforced: false,
-    quotas: {
-      anonymousDaily: 30,
-      authenticatedDaily: 100,
-      annualPassDaily: 1000,
-    },
+    appCheckEnforced: process.env.REQUIRE_APP_CHECK === 'true',
+    quotas: { anonymousDaily: 15, authenticatedDaily: 100, annualPassDaily: 1000 },
     version: '2.0.0-multimodal-pedagogy',
   });
 });
 
-/**
- * Fetch Student AI Doubt History
- */
-app.get('/api/ai-teacher/history', async (req: Request, res: Response) => {
-  const authHeader = req.headers.authorization;
-  let targetUid: string | null = null;
+/** Read only the authenticated student's real, persisted AI history. */
+app.get('/api/ai-teacher/history', requireAuth, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
+  const db = getAdminFirestore();
+  if (!db) return res.status(503).json({ success: false, error: 'AI history storage is unavailable.' });
+  const history = (await db.queryEqual('aiTeacherSessions', 'userId', req.userAuth!.uid))
+    .map(doc => ({ ...doc.data, id: doc.id }))
+    .sort((x, y) => String((y as any).timestamp).localeCompare(String((x as any).timestamp))).slice(0, 100);
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({ success: true, history, total: history.length });
+}));
 
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const verified = await verifyStudentSessionToken(authHeader);
-    if (verified.valid && verified.uid) {
-      targetUid = verified.uid;
-    }
+/** Ratings must belong to the authenticated student; conditional writes prevent stale overwrites. */
+app.post('/api/ai-teacher/rate', requireAuth, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
+  const { doubtId, rating } = req.body || {};
+  if (typeof doubtId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(doubtId) ||
+      !['helpful', 'unhelpful'].includes(rating)) {
+    return res.status(400).json({ success: false, error: 'A valid response ID and rating are required.' });
   }
-
-  // Default to student-1001 for dev or match by uid
-  const userHistory = AI_DOUBTS_HISTORY.filter(
-    (record) => record.uid === targetUid || (targetUid && record.uid === 'mayf-student-1001')
-  );
-
-  return res.json({
-    success: true,
-    history: userHistory,
-    total: userHistory.length,
-  });
-});
-
-/**
- * Rate an AI Teacher Response
- */
-app.post('/api/ai-teacher/rate', (req: Request, res: Response) => {
-  const { doubtId, rating } = req.body;
-  if (!doubtId || (rating !== 'helpful' && rating !== 'unhelpful')) {
-    return res.status(400).json({ error: 'Valid doubtId and rating (helpful/unhelpful) are required' });
-  }
-
-  const target = AI_DOUBTS_HISTORY.find((d) => d.id === doubtId);
-  if (target) {
-    target.userRating = rating;
-    return res.json({ success: true, doubtId, rating });
-  }
-
-  return res.json({ success: true, message: 'Rating noted' });
-});
+  const db = getAdminFirestore();
+  if (!db) return res.status(503).json({ success: false, error: 'AI history storage is unavailable.' });
+  const doc = db.collection('aiTeacherSessions').doc(doubtId);
+  const snapshot = await doc.get();
+  const record = snapshot.data();
+  if (!record || record.userId !== req.userAuth!.uid) return res.status(404).json({ success: false, error: 'AI response not found.' });
+  await doc.set({ ...record, userRating: rating }, { updateTime: snapshot.updateTime });
+  return res.json({ success: true, doubtId, rating });
+}));
 
 /**
  * Main AI Teacher Doubt Endpoint
  * Multimodal Gemini endpoint with rigorous pedagogical instructions,
  * App Check verification, and KaTeX math formatting.
  */
-app.post('/api/ai-teacher/ask', async (req: Request, res: Response) => {
+app.post('/api/ai-teacher/ask', asyncRoute(async (req: Request, res: Response) => {
   try {
     const rawIp = String(req.headers['cf-connecting-ip'] || req.socket.remoteAddress || '127.0.0.1');
     const { message, studentClass, chapterTopic, questionType = 'text', image } = req.body;
@@ -3394,10 +3502,19 @@ app.post('/api/ai-teacher/ask', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'A question message or math image is required' });
     }
 
-    // Optional Firebase App Check verification header
+    if (!aiClient || !geminiApiKey) {
+      return res.status(503).json({ success: false, error: 'AI Teacher is not configured yet.' });
+    }
+
+    // When enabled, verify the App Check signature, not merely header presence.
     const appCheckToken = req.headers['x-firebase-appcheck'];
-    if (process.env.REQUIRE_APP_CHECK === 'true' && !appCheckToken) {
-      return res.status(401).json({ error: 'App Check verification token is required' });
+    if (process.env.REQUIRE_APP_CHECK === 'true') {
+      const app = getFirebaseAdminApp();
+      if (!app || typeof appCheckToken !== 'string') {
+        return res.status(401).json({ success: false, error: 'A valid App Check token is required.' });
+      }
+      try { await getAppCheck(app).verifyToken(appCheckToken); }
+      catch { return res.status(401).json({ success: false, error: 'App Check verification failed.' }); }
     }
 
     // Identify user identity if logged in
@@ -3409,7 +3526,9 @@ app.post('/api/ai-teacher/ask', async (req: Request, res: Response) => {
       const tokenVerification = await verifyStudentSessionToken(authHeader);
       if (tokenVerification.valid && tokenVerification.uid) {
         verifiedUid = tokenVerification.uid;
-        userLimit = 100; // Authenticated free tier
+        // Paid access is read from the durable entitlement store rather than trusting client claims.
+        const pass = await getAuthoritativePassStatus(verifiedUid);
+        userLimit = pass.active || tokenVerification.admin || tokenVerification.superAdmin || tokenVerification.pro ? 1000 : 100;
       }
     }
 
@@ -3420,10 +3539,14 @@ app.post('/api/ai-teacher/ask', async (req: Request, res: Response) => {
 
     // Rate Limiting & Daily Quota Guard
     const quotaKey = verifiedUid ? `user-${verifiedUid}` : `ip-${rawIp}`;
-    const quotaCheck = checkAiQuota(quotaKey, userLimit);
+    if (await checkDownloadRateLimit(`ai-${quotaKey}`, 15, 180000)) {
+      return res.status(429).json({ success: false, error: 'Too many AI requests. Please wait a few minutes.' });
+    }
+    const quotaCheck = await aiQuota.consume(quotaKey, userLimit);
     if (!quotaCheck.allowed) {
       return res.status(429).json({
-        error: 'Question limit reached for this session. Please wait a few minutes or upgrade to the Annual Pass for unlimited access.',
+        success: false, code: 'AI_DAILY_LIMIT', quotaRemaining: 0, quotaLimit: userLimit,
+        error: 'Your daily AI question limit has been reached. It resets at midnight India Standard Time. Sign in or check your plan for your daily allowance.',
       });
     }
 
@@ -3541,39 +3664,6 @@ CRITICAL PEDAGOGICAL RULES:
       totalTokens?: number;
     } = { model: getAiTeacherModel(), totalTokens: 350 };
 
-    const pedagogicalFallback = (msg: string, grade: string, subjectTopic: string, hasImg: boolean) => {
-      const displayProb = (msg || '').trim() || (hasImg ? 'The problem shown in your uploaded diagram/photograph' : 'The given mathematical problem');
-      return `Hello there! I am Professor Sigma, your Mathematics Teacher. Let's solve this problem step-by-step with complete clarity!
-
-### Understanding the Question
-We are working on **${subjectTopic}** for **${grade}**.
-We need to analyze and solve: "${displayProb.slice(0, 160)}".
-
-### Given Information
-* Class Level: **${grade}** (CBSE & ICSE standards)
-* Chapter Topic: **${subjectTopic}**
-* Known Values: All given parameters and conditions from the problem statement.
-
-### Concept Used
-Standard algebraic properties and identities:
-$$(a + b)^2 = a^2 + 2ab + b^2, \\quad a^2 - b^2 = (a-b)(a+b), \\quad \\text{LHS} = \\text{RHS}$$
-
-### Step-by-Step Solution
-1. **Identify the unknown quantity** and label variables clearly according to standard mathematical notation.
-2. **Translate problem conditions** into a systematic equation or geometric relation.
-3. **Perform algebraic transformations** step-by-step without skipping intermediate calculations.
-4. **Simplify fractions, roots, and units** into their canonical mathematical form.
-
-### Final Answer
-The step-by-step solution has been methodically derived in accordance with the **${grade}** syllabus.
-
-### Verification / Check
-Substitute the calculated answer back into the original problem statement to verify that the solution satisfies all constraints.
-
-### Alternative Method
-You can also verify this using graphical visualization, factorisation, or tabular substitution where applicable.`;
-    };
-
     const userPrompt = message?.trim()
       ? `Student (${classLevel}, ${topic}) asks: "${message}"\nPlease provide your helpful step-by-step solution:`
       : `Student (${classLevel}, ${topic}) has uploaded the attached mathematics image/photo. Please solve the problem shown:`;
@@ -3589,55 +3679,34 @@ You can also verify this using graphical visualization, factorisation, or tabula
       new Set([getAiTeacherModel(), 'gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'])
     ).filter(Boolean);
 
-    let successfullyGenerated = false;
+    const generated = await generateWithModelFallback(candidateModels, model => aiClient!.models.generateContent({
+      model,
+      contents: { parts },
+      config: { systemInstruction, temperature: 0.2 },
+    }), failure => console.warn('[MAYF AI Teacher] Provider attempt failed:', failure));
+    const successfullyGenerated = generated.success;
     let selectedModel = getAiTeacherModel();
 
-    if (aiClient && geminiApiKey) {
-      for (const modelToTry of candidateModels) {
-        try {
-          const timeoutPromise = new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error(`Timeout after 12s on model ${modelToTry}`)), 12000)
-          );
-
-          const generatePromise = aiClient.models.generateContent({
-            model: modelToTry,
-            contents: { parts },
-            config: {
-              systemInstruction,
-              temperature: 0.2,
-            },
-          });
-
-          const response = await Promise.race([generatePromise, timeoutPromise]);
-
-          if (response && response.text) {
-            replyText = response.text;
-            selectedModel = modelToTry;
-            successfullyGenerated = true;
-
-            if (replyText.toLowerCase().includes('blurry') || replyText.toLowerCase().includes('unclear')) {
-              responseStatus = 'clarification_needed';
-            }
-
-            if (response.usageMetadata) {
-              tokenMetadata = {
-                model: selectedModel,
-                promptTokens: response.usageMetadata.promptTokenCount,
-                candidateTokens: response.usageMetadata.candidatesTokenCount,
-                totalTokens: response.usageMetadata.totalTokenCount,
-              };
-            }
-            break; // Successfully got answer from AI
-          }
-        } catch (modelErr: any) {
-          console.warn(`[MAYF Server] Model ${modelToTry} attempt unavailable (${modelErr?.status || modelErr?.message}). Trying next candidate...`);
-        }
+    if (generated.success) {
+      const response = generated.response;
+      replyText = response.text!;
+      selectedModel = generated.model;
+      if (replyText.toLowerCase().includes('blurry') || replyText.toLowerCase().includes('unclear')) {
+        responseStatus = 'clarification_needed';
+      }
+      if (response.usageMetadata) {
+        tokenMetadata = {
+          model: selectedModel,
+          promptTokens: response.usageMetadata.promptTokenCount,
+          candidateTokens: response.usageMetadata.candidatesTokenCount,
+          totalTokens: response.usageMetadata.totalTokenCount,
+        };
       }
     }
 
     if (!successfullyGenerated) {
-      replyText = pedagogicalFallback(message, classLevel, topic, Boolean(validImagePart));
-      selectedModel = 'professor-sigma-pedagogical-engine';
+      return res.status(503).json({ success: false, error: 'AI Teacher is temporarily unavailable. No answer was generated.',
+        code: generated.success === false ? generated.code : 'AI_PROVIDER_ERROR' });
     }
 
     const doubtId = `doubt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
@@ -3654,9 +3723,11 @@ You can also verify this using graphical visualization, factorisation, or tabula
       tokenMetadata,
     };
 
-    AI_DOUBTS_HISTORY.unshift(doubtRecord);
-    if (AI_DOUBTS_HISTORY.length > 500) {
-      AI_DOUBTS_HISTORY.pop();
+    // Anonymous questions are not attributed to any student's history.
+    if (verifiedUid) {
+      const db = getAdminFirestore();
+      if (!db) throw new Error('AI history storage is unavailable.');
+      await db.collection('aiTeacherSessions').doc(doubtId).set({ ...doubtRecord, userId: verifiedUid });
     }
 
     return res.json({
@@ -3668,47 +3739,16 @@ You can also verify this using graphical visualization, factorisation, or tabula
       timestamp: doubtRecord.timestamp,
     });
   } catch (error: any) {
-    console.warn('[MAYF Server] Handled AI Teacher generation notice:', error?.message || error);
-    const fallbackText = `Hello there! I am Professor Sigma, your Mathematics Teacher.
-
-### Understanding the Question
-Let's examine the mathematical problem carefully for **${req.body?.studentClass || 'Class 10'}** on **${req.body?.chapterTopic || 'General Mathematics'}**.
-
-### Given Information
-* Class: ${req.body?.studentClass || 'Class 10'}
-* Problem: "${(req.body?.message || 'Attached mathematical problem').slice(0, 100)}"
-
-### Concept Used
-Fundamental algebraic identities and syllabus theorem rules:
-$$(a + b)^2 = a^2 + 2ab + b^2, \\quad a^2 - b^2 = (a-b)(a+b)$$
-
-### Step-by-Step Solution
-1. Identify all given coefficients and isolate the targeted variable.
-2. Apply standard simplification rules and verify units.
-3. Check the solution against board syllabus standards.
-
-### Final Answer
-The step-by-step solution has been derived for your syllabus.
-
-### Verification / Check
-Substitute the answer back into the original equation to ensure consistency.`;
-
-    return res.json({
-      success: true,
-      doubtId: `doubt-${Date.now()}-fallback`,
-      reply: fallbackText,
-      model: 'professor-sigma-pedagogical-engine',
-      quotaRemaining: 25,
-      timestamp: new Date().toISOString(),
-    });
+    console.warn('[MAYF AI Teacher] Request failed:', error?.message || error);
+    return res.status(503).json({ success: false, error: 'AI Teacher request could not be completed. Please retry.' });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Content Ingestion Webhook (Google Apps Script Integration)
 // Authenticated endpoint triggered when status in Google Sheet is "Approved"
 // -------------------------------------------------------------
-app.post('/api/ingestion/webhook', async (req: Request, res: Response) => {
+app.post('/api/ingestion/webhook', asyncRoute(async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
     if (!verifyWebhookSecret(authHeader)) {
@@ -3728,6 +3768,7 @@ app.post('/api/ingestion/webhook', async (req: Request, res: Response) => {
     }
 
     // Process rows idempotently and copy approved files to production Cloud Storage
+    await refreshIngestionJobs();
     const response = await processBatchIngestion(items as ContentRegistryRow[], 'apps_script_webhook');
     return res.json(response);
   } catch (error: any) {
@@ -3737,14 +3778,34 @@ app.post('/api/ingestion/webhook', async (req: Request, res: Response) => {
       error: error?.message || 'Internal content ingestion pipeline error',
     });
   }
-});
+}));
 
 // -------------------------------------------------------------
 // Admin Ingestion Jobs API
 // Gated strictly with requireAuth, requireAdmin
 // -------------------------------------------------------------
-app.get('/api/admin/ingest/jobs', requireAuth, requireAdmin, (_req: Request, res: Response) => {
-  const jobs = INGESTION_JOBS_STORE;
+app.get('/api/admin/ingest/config', requireAuth, requireAdmin, asyncRoute(async (_req, res) => {
+  if (!getAdminFirestore()) return res.status(503).json({ success: false, error: 'Import database unavailable' });
+  const { registrySource } = await import('./src/lib/ingestion/registrySource');
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({ success: true, config: await registrySource.read(), serviceAccountEmail: getFirebaseAdminConfig().clientEmail });
+}));
+app.put('/api/admin/ingest/config', requireAuth, requireAdmin, asyncRoute(async (req, res) => {
+  if (!getAdminFirestore()) return res.status(503).json({ success: false, error: 'Import database unavailable' });
+  const { registrySource } = await import('./src/lib/ingestion/registrySource');
+  res.setHeader('Cache-Control', 'no-store');
+  try { return res.json({ success: true, config: await registrySource.save(req.body || {}) }); }
+  catch (error: any) { return res.status(400).json({ success: false, error: error.message }); }
+}));
+app.get('/api/admin/ingest/legacy-migration-audit', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const db = getAdminFirestore();
+  if (!db) return res.status(503).json({ success: false, error: 'CMS database unavailable' });
+  return res.json({ success: true, ...await auditLegacyPdfMigration(db) });
+}));
+
+app.get('/api/admin/ingest/jobs', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
+  const jobs = await refreshIngestionJobs();
   const summary = {
     all: jobs.length,
     pending: jobs.filter((j) => j.status === 'pending').length,
@@ -3759,15 +3820,16 @@ app.get('/api/admin/ingest/jobs', requireAuth, requireAdmin, (_req: Request, res
     summary,
     jobs,
   });
-});
+}));
 
-app.post('/api/admin/ingest/retry', requireAuth, requireAdmin, async (req: Request, res: Response) => {
+app.post('/api/admin/ingest/retry', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   try {
     const { jobId } = req.body;
     if (!jobId) {
       return res.status(400).json({ success: false, error: 'jobId is required to retry import.' });
     }
 
+    await refreshIngestionJobs();
     const updatedJob = await retryIngestionJob(jobId);
     return res.json({
       success: true,
@@ -3778,25 +3840,28 @@ app.post('/api/admin/ingest/retry', requireAuth, requireAdmin, async (req: Reque
     console.error('[MAYF Ingestion] Retry failure:', error);
     return res.status(500).json({ success: false, error: error?.message || 'Retry failed' });
   }
-});
+}));
 
-app.post('/api/admin/ingest/sync', requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+app.post('/api/admin/ingest/sync', requireAuth, requireAdmin, asyncRoute(async (_req: Request, res: Response) => {
   try {
+    await refreshIngestionJobs();
     const syncOutcome = await syncRegistryNow();
     return res.json({
-      success: true,
+      success: syncOutcome.failedCount === 0,
       totalProcessed: syncOutcome.totalProcessed,
-      message: `Synchronized ${syncOutcome.totalProcessed} pending/approved rows from Content Registry.`,
+      failedCount: syncOutcome.failedCount,
+      message: `Processed ${syncOutcome.totalProcessed} approved Google Sheets rows. Failed imports: ${syncOutcome.failedCount}.`,
     });
   } catch (error: any) {
     console.error('[MAYF Ingestion] Manual sync failure:', error);
     return res.status(500).json({ success: false, error: error?.message || 'Sync failed' });
   }
-});
+}));
 
-app.post('/api/admin/ingest/simulate-approval', requireAuth, requireAdmin, async (req: Request, res: Response) => {
+app.post('/api/admin/ingest/simulate-approval', requireAuth, requireAdmin, asyncRoute(async (req: Request, res: Response) => {
   try {
     const { content_id } = req.body;
+    await refreshIngestionJobs();
     const target = INGESTION_JOBS_STORE.find((j) => j.content_id === content_id);
     if (!target) {
       return res.status(404).json({ success: false, error: `Row with content_id "${content_id}" not found.` });
@@ -3815,52 +3880,15 @@ app.post('/api/admin/ingest/simulate-approval', requireAuth, requireAdmin, async
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error?.message || 'Simulation error' });
   }
+}));
+
+
+// API requests must never fall through to the SPA HTML.
+app.use("/api", (_req, res) => res.status(404).json({ error: "API endpoint not found" }));
+
+app.use((error: any, _req: Request, res: Response, _next: NextFunction) => {
+  console.error('[API operation failed]', error?.code || error?.message);
+  if (!res.headersSent) res.status(500).json({ success: false, error: 'The operation could not be completed. Please retry or check the service configuration.' });
 });
 
-// -------------------------------------------------------------
-// Vite Dev Integration & Production Static Serving
-// -------------------------------------------------------------
-async function startServer() {
-  if (!isProduction) {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.resolve(__dirname, 'dist');
-    // Serve static assets with granular, aggressive caching headers
-    app.use(
-      express.static(distPath, {
-        setHeaders: (res, filePath) => {
-          if (filePath.endsWith('.html')) {
-            // HTML entry point must always revalidate to pick up latest build hashes
-            res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
-          } else if (
-            filePath.includes('/assets/') ||
-            /\.(js|css|woff2|woff|ttf|eot|avif|webp|png|jpg|jpeg|gif|svg|ico)$/i.test(filePath)
-          ) {
-            // Immutable static assets: Cache aggressively for 1 year across browser and Cloudflare CDN
-            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-            res.setHeader('X-Cache-Rule', 'cloudflare-immutable-cdn');
-          }
-        },
-      })
-    );
-
-    app.get('*', (_req, res) => {
-      res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
-      res.sendFile(path.resolve(distPath, 'index.html'));
-    });
-  }
-
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[MAYF Server] Maths at Your Fingertips server running at http://0.0.0.0:${PORT}`);
-  });
-}
-
-startServer().catch((err) => {
-  console.error('[MAYF Server] Failed to start server:', err);
-  process.exit(1);
-});
+export { app };

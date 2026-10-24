@@ -28,6 +28,8 @@ export interface CouponItem {
   // Usage Tracking
   timesUsed: number;
   userUsageMap: Record<string, number>;
+  /** Bounded, expiring holds written before gateway checkout; managed server-side only. */
+  activeReservations?: Record<string, { userId: string; discount: number; expiresAt: string }>;
 
   createdAt: string;
   updatedAt: string;

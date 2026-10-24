@@ -8,6 +8,7 @@ import { useNavigation, Link } from '../context/NavigationContext';
 import { trackLogin } from '../lib/analytics/analyticsService';
 
 export const LoginPage: React.FC = () => {
+  const alternativesUnavailable = import.meta.env.PROD;
   const { user, entitlements, signInWithGoogle, loginWithEmail, logout } = useAuth();
   const { navigate } = useNavigation();
 
@@ -18,11 +19,13 @@ export const LoginPage: React.FC = () => {
   const [otpSent, setOtpSent] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
 
   // If already logged in, show quick dashboard access
   if (user) {
     return (
       <SharedLayout>
+      {loginError && <p role="alert" className="p-3 text-sm text-rose-700 bg-rose-50 rounded-lg">{loginError}</p>}
         <SeoHead
           title="Account Sign In"
           description="Student and parent authentication portal"
@@ -52,7 +55,8 @@ export const LoginPage: React.FC = () => {
               fullWidth
               size="sm"
               onClick={async () => {
-                await logout();
+                setLoginError(null);
+                try { await logout(); } catch { setLoginError('Sign-out failed. Please retry.'); }
               }}
               className="text-xs text-slate-500 hover:text-slate-800"
             >
@@ -65,11 +69,14 @@ export const LoginPage: React.FC = () => {
   }
 
   const handleGoogleSignIn = async () => {
+    setLoginError(null);
     setIsLoading(true);
     try {
       await signInWithGoogle();
       trackLogin('google');
       navigate('/dashboard');
+    } catch (error: any) {
+      setLoginError(error?.message || 'Sign-in failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -77,6 +84,10 @@ export const LoginPage: React.FC = () => {
 
   const handleSendOtp = (e: React.FormEvent) => {
     e.preventDefault();
+    if (alternativesUnavailable) {
+      setLoginError('Mobile sign-in is not configured. Please use Continue with Google.');
+      return;
+    }
     if (!phoneNumber) return;
     setIsLoading(true);
     setTimeout(() => {
@@ -87,11 +98,14 @@ export const LoginPage: React.FC = () => {
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoginError(null);
     setIsLoading(true);
     try {
       await loginWithEmail(phoneNumber.includes('@') ? phoneNumber : `student.${phoneNumber.slice(-4)}@mayf.co.in`);
       trackLogin('phone');
       navigate('/dashboard');
+    } catch (error: any) {
+      setLoginError(error?.message || 'Sign-in failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -100,6 +114,7 @@ export const LoginPage: React.FC = () => {
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
+    setLoginError(null);
     setIsLoading(true);
     try {
       await loginWithEmail(email);
@@ -110,6 +125,8 @@ export const LoginPage: React.FC = () => {
       } else {
         navigate('/dashboard');
       }
+    } catch (error: any) {
+      setLoginError(error?.message || 'Sign-in failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -117,6 +134,7 @@ export const LoginPage: React.FC = () => {
 
   return (
     <SharedLayout>
+      {loginError && <p role="alert" className="p-3 text-sm text-rose-700 bg-rose-50 rounded-lg">{loginError}</p>}
       <SeoHead
         title="Account Sign In & Student Access"
         description="Secure authentication portal for students and parents."
@@ -237,6 +255,12 @@ export const LoginPage: React.FC = () => {
             </button>
           </div>
 
+          {alternativesUnavailable && (
+            <p role="status" className="text-xs text-[#475569] bg-[#F8FAFC] rounded-lg p-3">
+              Use Continue with Google to sign in. Email, mobile OTP, and demo sign-in are not available on this site yet.
+            </p>
+          )}
+
           {method === 'otp' ? (
             !otpSent ? (
               <form onSubmit={handleSendOtp} className="space-y-4">
@@ -246,6 +270,7 @@ export const LoginPage: React.FC = () => {
                   </label>
                   <input
                     type="tel"
+                    disabled={alternativesUnavailable}
                     required
                     placeholder="98765 43210"
                     value={phoneNumber}
@@ -259,6 +284,7 @@ export const LoginPage: React.FC = () => {
                   fullWidth
                   size="md"
                   isLoading={isLoading}
+                  disabled={alternativesUnavailable}
                   className="font-bold"
                 >
                   Send OTP
@@ -309,6 +335,7 @@ export const LoginPage: React.FC = () => {
                 </label>
                 <input
                   type="email"
+                  disabled={alternativesUnavailable}
                   required
                   placeholder="student@example.com"
                   value={email}
@@ -322,6 +349,7 @@ export const LoginPage: React.FC = () => {
                 fullWidth
                 size="md"
                 isLoading={isLoading}
+                disabled={alternativesUnavailable}
                 className="font-bold"
               >
                 Log In
@@ -332,6 +360,7 @@ export const LoginPage: React.FC = () => {
           {/* Quick Demo Student Switcher */}
           <div className="pt-2 border-t border-[#F1F5F9] text-center">
             <button
+              disabled={alternativesUnavailable}
               onClick={() => {
                 loginWithEmail('arjun.sharma@mayf.co.in');
                 navigate('/dashboard');
@@ -344,7 +373,7 @@ export const LoginPage: React.FC = () => {
 
           <div className="flex items-center justify-center gap-1.5 text-[11px] text-[#64748B]">
             <ShieldCheck className="w-3.5 h-3.5 text-[#10B981]" />
-            <span>Firebase Authentication & App Check Protected</span>
+            <span>Firebase Authentication</span>
           </div>
 
         </div>

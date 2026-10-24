@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Download, Maximize2, Minimize2, ZoomIn, ZoomOut, Printer, FileText } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { TurnstileModal } from '../ui/TurnstileModal';
+import { savePdfBlob } from '../../lib/download/downloadClient';
 
 interface PdfViewerProps {
   pdfUrl: string;
@@ -23,8 +24,18 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   const [zoomLevel, setZoomLevel] = useState<number>(100);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [isTurnstileOpen, setIsTurnstileOpen] = useState(false);
+  const [preview, setPreview] = useState<{ source: string; url: string; blob: Blob } | null>(null);
+  const [previewRequested, setPreviewRequested] = useState(false);
+  const privatePdf = pdfUrl.startsWith('r2://');
+  const displayUrl = preview?.source === pdfUrl ? preview.url : privatePdf ? '' : pdfUrl;
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview.url); }, [preview]);
+  const showAuthorizedPdf = useCallback((pdf: Blob) => {
+    setPreview({ source: pdfUrl, url: URL.createObjectURL(pdf), blob: pdf });
+  }, [pdfUrl]);
 
   const handleDownload = () => {
+    if (preview?.source === pdfUrl) { savePdfBlob(preview.blob, fileName); return; }
+    setPreviewRequested(false);
     setIsTurnstileOpen(true);
   };
 
@@ -69,6 +80,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
           <button
             onClick={handlePrint}
+            disabled={!displayUrl}
             className="p-1.5 rounded hover:bg-white/10 text-white cursor-pointer transition-colors"
             title="Print Document"
             aria-label="Print Document"
@@ -100,17 +112,21 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           className="w-full h-full bg-white shadow-lg transition-transform duration-200 rounded"
           style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top center' }}
         >
-          <iframe
-            src={`${pdfUrl}#toolbar=0&navpanes=0`}
+          {displayUrl ? <iframe
+            src={`${displayUrl}#toolbar=0&navpanes=0`}
             title={title}
             className="w-full h-full rounded border-0"
-          />
+          /> : <div className="h-full flex flex-col items-center justify-center p-6 text-center gap-4">
+            <FileText className="w-10 h-10 text-blue-600" />
+            <p className="text-sm text-slate-700">{privatePdf && downloadAllowed ? 'Complete a security check to open this PDF.' : 'A PDF preview is not available yet.'}</p>
+            {privatePdf && downloadAllowed && contentId && <Button onClick={() => { setPreviewRequested(true); setIsTurnstileOpen(true); }}>Open secure PDF</Button>}
+          </div>}
         </div>
       </div>
 
       {/* Footer Info */}
       <div className="bg-[#FAFBFD] border-t border-[#E2E8F0] px-4 py-2 text-[11px] text-[#64748B] flex items-center justify-between">
-        <span>Verified Class 5–10 CBSE / ICSE Document</span>
+        <span>PDF document</span>
         <span>Scroll to read all pages</span>
       </div>
 
@@ -123,6 +139,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           title={title}
           accessType={accessType}
           fallbackFileName={fileName}
+          onPdfReady={previewRequested ? showAuthorizedPdf : undefined}
         />
       )}
     </div>

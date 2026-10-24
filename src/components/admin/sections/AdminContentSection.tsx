@@ -1,3 +1,4 @@
+import { prepareContentMetadata } from '../../../lib/cms/contentForm';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Search,
@@ -76,6 +77,7 @@ export const AdminContentSection: React.FC = () => {
     hidden: 0,
   });
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState('');
   const [statusMsg, setStatusMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   // Filters
@@ -89,6 +91,7 @@ export const AdminContentSection: React.FC = () => {
   // Modals state
   const [previewItem, setPreviewItem] = useState<CmsContentRecord | null>(null);
   const [editItem, setEditItem] = useState<Partial<CmsContentRecord> | null>(null);
+  const [saving, setSaving] = useState(false);
   const [isCreating, setIsCreating] = useState<boolean>(false);
   const [safeDeleteModal, setSafeDeleteModal] = useState<{
     item: CmsContentRecord;
@@ -110,9 +113,11 @@ export const AdminContentSection: React.FC = () => {
         tab: activeTab,
         sortBy,
       });
+      setLoadError('');
       setItems(res.items || []);
       setCounts(res.counts || { total: 0, active: 0, archived: 0, published: 0, draft: 0, hidden: 0 });
     } catch (e: any) {
+      setLoadError(e?.message || 'Content catalogue is unavailable. Retry shortly.');
       console.error('Failed to load content', e);
       showMessage('Failed to load content catalogue: ' + (e?.message || 'Server error'), 'error');
     } finally {
@@ -279,16 +284,18 @@ export const AdminContentSection: React.FC = () => {
 
   // Save Create / Edit
   const handleSaveItem = async () => {
-    if (!editItem) return;
+    if (!editItem || saving) return;
 
     if (!editItem.title?.trim()) {
       showMessage('Please enter a Resource Title', 'error');
       return;
     }
 
+    setSaving(true);
+    const payload = prepareContentMetadata(editItem, isCreating);
     try {
       if (isCreating) {
-        const res = await adminService.createContent(editItem);
+        const res = await adminService.createContent(payload);
         if (res.success) {
           showMessage(`"${res.item?.title}" created successfully.`);
           setEditItem(null);
@@ -298,7 +305,7 @@ export const AdminContentSection: React.FC = () => {
           showMessage(res.error || 'Failed to create resource', 'error');
         }
       } else if (editItem.id) {
-        const res = await adminService.updateContent(editItem.id, editItem);
+        const res = await adminService.updateContent(editItem.id, payload);
         if (res.success) {
           showMessage(`"${res.item?.title}" updated successfully.`);
           setEditItem(null);
@@ -309,6 +316,8 @@ export const AdminContentSection: React.FC = () => {
       }
     } catch (e: any) {
       showMessage(e?.message || 'Failed to save', 'error');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -331,7 +340,7 @@ export const AdminContentSection: React.FC = () => {
       visible: true,
       status: 'draft',
       featured: false,
-      sourceDriveId: `1dr_stg_${Date.now().toString().slice(-8)}`,
+      sourceDriveId: '',
       importStatus: 'direct',
       sortOrder: items.length + 1,
       thumbnail: 'https://images.unsplash.com/photo-1509228468518-180dd4864904?w=600&auto=format&fit=crop&q=80',
@@ -404,6 +413,7 @@ export const AdminContentSection: React.FC = () => {
         <div className="flex items-center gap-2.5">
           <button
             onClick={openCreateModal}
+            disabled={loading || Boolean(loadError)}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium shadow-xs transition-colors cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -422,7 +432,7 @@ export const AdminContentSection: React.FC = () => {
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
-          Active Catalogue ({counts.active})
+          Active Catalogue ({loadError ? 'unavailable' : counts.active})
         </button>
         <button
           onClick={() => setActiveTab('archived')}
@@ -433,7 +443,7 @@ export const AdminContentSection: React.FC = () => {
           }`}
         >
           <Archive className="w-3.5 h-3.5" />
-          <span>Safe Archive / Trash ({counts.archived})</span>
+          <span>Safe Archive / Trash ({loadError ? 'unavailable' : counts.archived})</span>
         </button>
 
         {activeTab === 'archived' && (
@@ -549,6 +559,8 @@ export const AdminContentSection: React.FC = () => {
             <div className="animate-spin w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full mx-auto mb-2" />
             Loading curriculum inventory...
           </div>
+        ) : loadError ? (
+          <div role="alert" className="p-6 space-y-3 text-sm text-red-800"><p>{loadError}</p><p>The catalogue could not be loaded. This is not an empty inventory.</p><button className="border rounded px-4 py-2" onClick={() => void loadContent()}>Retry catalogue</button></div>
         ) : items.length === 0 ? (
           <div className="p-12 text-center text-xs text-slate-500 space-y-2">
             <BookOpen className="w-8 h-8 text-slate-300 mx-auto" />
@@ -1267,9 +1279,10 @@ export const AdminContentSection: React.FC = () => {
               </button>
               <button
                 onClick={handleSaveItem}
+                disabled={saving}
                 className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium shadow-xs cursor-pointer"
               >
-                {isCreating ? 'Create Resource' : 'Save Changes'}
+                {saving ? 'Saving...' : isCreating ? 'Create Resource' : 'Save Changes'}
               </button>
             </div>
           </div>
