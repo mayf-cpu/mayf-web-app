@@ -1,3 +1,4 @@
+import { requestAdminCatalogue } from '../lib/cms/adminCatalogueClient';
 /**
  * Client-Side Admin Service
  *
@@ -597,27 +598,10 @@ class AdminService {
     tab?: 'active' | 'archived';
     sortBy?: string;
   }): Promise<ContentListResponse> {
-    try {
-      const headers = await this.getAuthHeaders();
-      const query = new URLSearchParams();
-      if (params?.search) query.append('search', params.search);
-      if (params?.classLevel) query.append('classLevel', params.classLevel);
-      if (params?.contentType) query.append('contentType', params.contentType);
-      if (params?.accessType) query.append('accessType', params.accessType);
-      if (params?.visibility) query.append('visibility', params.visibility);
-      if (params?.tab) query.append('tab', params.tab);
-      if (params?.sortBy) query.append('sortBy', params.sortBy);
-
-      const res = await fetch(`/api/admin/content?${query.toString()}`, { headers });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    } catch (e: any) {
-      console.error('[AdminService] getContentList error:', e);
-      return {
-        items: [],
-        counts: { total: 0, active: 0, archived: 0, published: 0, draft: 0, hidden: 0 },
-      };
-    }
+    const headers = await this.getAuthHeaders();
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params || {})) if (value) query.append(key, value);
+    return requestAdminCatalogue(`/api/admin/content?${query.toString()}`, headers);
   }
 
   async getContentItem(id: string): Promise<CmsContentRecord | null> {

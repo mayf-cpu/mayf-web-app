@@ -15,7 +15,7 @@ export class CatalogueRepository {
     const task = this.queue.then(async () => {
       const db = this.getStore();
       if (!db && process.env.NODE_ENV === 'production') throw new Error('Firebase storage is not configured');
-      const marker = db ? await db.collection('catalogueState').doc('initialized').get() : null;
+      const marker = db && write ? await db.collection('catalogueState').doc('initialized').get() : null;
       const loaded = db ? await Promise.all(this.states.map(({ collection }) => db.list(collection))) : null;
       const before = this.states.map(({ state }, i) => loaded ? loaded[i].map(doc => ({ ...doc.data, id: doc.id })) : state.exportState());
       // Configured Firestore is authoritative, including before the first write.
