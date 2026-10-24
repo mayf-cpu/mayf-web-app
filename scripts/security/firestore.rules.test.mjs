@@ -32,7 +32,7 @@ test('raw published attachments are private to authenticated administrators', as
 });
 test('even administrator browser tokens cannot bypass server financial invariants', async () => {
   for (const user of [db('one'), env.authenticatedContext('operator', { superAdmin: true }).firestore()]) {
-    for (const path of ['runtimeSecuritySettings/global', 'paymentRefundRequests/fake', 'paymentOrders/fake', 'paymentEntitlements/fake', 'paymentCouponReservations/fake', 'paymentCouponRedemptions/fake', 'orders/fake', 'payments/fake', 'entitlements/fake', 'annualPasses/fake', 'coupons/fake', 'paymentRuntimeSettings/gateway', 'commerceState/initialized', 'auditLogs/fake', 'downloadTickets/fake', 'analyticsDaily/fake']) {
+    for (const path of ['runtimeSecuritySettings/global', 'paymentRefundRequests/fake', 'paymentOrders/fake', 'paymentEntitlements/fake', 'paymentCouponReservations/fake', 'paymentCouponRedemptions/fake', 'orders/fake', 'payments/fake', 'entitlements/fake', 'annualPasses/fake', 'coupons/fake', 'paymentRuntimeSettings/gateway', 'paymentProductionRuntimeSettings/gateway', 'paymentProductionSettingsState/initialized', 'commerceState/initialized', 'auditLogs/fake', 'downloadTickets/fake', 'analyticsDaily/fake']) {
       await assertFails(setDoc(doc(user, path), { userId: 'one', status: 'paid' }));
     }
   }
@@ -79,5 +79,5 @@ test('saved items enforce owner and bounded schema while unknown server collecti
   await assertFails(updateDoc(doc(user, 'savedItems/saved'), { userId: 'two' }));
   await assertFails(getDoc(doc(db('two'), 'savedItems/saved')));
   await assertFails(setDoc(doc(user, 'savedItems/large'), { ...item, id: 'large', title: 'x'.repeat(201) }));
-  for (const path of ['runtimeSecuritySettings/global', 'paymentRefundRequests/private', 'paymentRuntimeSettings/gateway', 'downloadTickets/token', 'auditLogs/private', 'ingestionConnections/registry', 'aiDailyQuotas/private']) await assertFails(getDoc(doc(user, path)));
+  for (const path of ['runtimeSecuritySettings/global', 'paymentRefundRequests/private', 'paymentRuntimeSettings/gateway', 'paymentProductionRuntimeSettings/gateway', 'paymentProductionSettingsState/initialized', 'downloadTickets/token', 'auditLogs/private', 'ingestionConnections/registry', 'aiDailyQuotas/private']) await assertFails(getDoc(doc(user, path)));
 });
