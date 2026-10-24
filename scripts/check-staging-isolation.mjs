@@ -13,6 +13,7 @@ assert.equal(staging.r2_buckets[0].bucket_name,'mayf-staging-materials');
 assert.notEqual(staging.r2_buckets[0].bucket_name,production.r2_buckets?.[0]?.bucket_name);
 assert.equal(staging.routes,undefined,'Staging must not attach production routes');
 assert.equal(staging.vars?.APP_ENV,'staging');
+assert.equal(staging.vars?.PUBLIC_APP_URL,'https://staging-acceptance-mayf.sachinagrawal16.workers.dev','Staging callbacks must never advertise the production host');
 assert.equal(staging.vars?.MAYF_ENABLE_CHECKOUT,'false');
 assert.equal(staging.vars?.MAYF_ENABLE_COUPON_CHECKOUT,'false');
 assert.equal(staging.vars?.MAYF_ENABLE_PAYMENT_SIMULATION,'false');
@@ -32,6 +33,7 @@ assert.equal(staging.unsafe,undefined,'Staging must not contain unsafe Worker bi
 
 const approvedStagingFlags = [
   'APP_ENV',
+  'PUBLIC_APP_URL',
   'MAYF_ALLOW_SHARED_DEVELOPMENT_FIREBASE',
   'MAYF_ENABLE_CHECKOUT',
   'MAYF_ENABLE_ADMIN_REFUNDS',

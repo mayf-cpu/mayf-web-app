@@ -23,6 +23,7 @@
   },
   "vars": {
     "APP_ENV": "staging",
+    "PUBLIC_APP_URL": "https://staging-acceptance-mayf.sachinagrawal16.workers.dev",
     "MAYF_ENABLE_CHECKOUT": "false",
     "MAYF_ENABLE_ADMIN_REFUNDS": "false",
     "MAYF_ENABLE_COUPON_CHECKOUT": "false",

@@ -8,7 +8,8 @@ test('staging configuration remains isolated from production', () => {
  assert.equal(wrangler.name,'staging-acceptance-mayf');
  assert.equal(wrangler.r2_buckets[0].bucket_name,'mayf-staging-materials');
  assert.equal(wrangler.vars.MAYF_ENABLE_ADMIN_REFUNDS,'false');
- assert.deepEqual(Object.keys(wrangler.vars).sort(),['APP_ENV','MAYF_ALLOW_SHARED_DEVELOPMENT_FIREBASE','MAYF_ENABLE_CHECKOUT','MAYF_ENABLE_ADMIN_REFUNDS','MAYF_ENABLE_COUPON_CHECKOUT','MAYF_ENABLE_PAYMENT_SIMULATION'].sort());
+ assert.equal(wrangler.vars.PUBLIC_APP_URL,'https://staging-acceptance-mayf.sachinagrawal16.workers.dev');
+ assert.deepEqual(Object.keys(wrangler.vars).sort(),['APP_ENV','PUBLIC_APP_URL','MAYF_ALLOW_SHARED_DEVELOPMENT_FIREBASE','MAYF_ENABLE_CHECKOUT','MAYF_ENABLE_ADMIN_REFUNDS','MAYF_ENABLE_COUPON_CHECKOUT','MAYF_ENABLE_PAYMENT_SIMULATION'].sort());
  for (const key of ['route','routes','zone_id','env','services','d1_databases','kv_namespaces','unsafe','custom_domains','dispatch_namespaces','queues','durable_objects']) assert.equal(wrangler[key],undefined,`Unexpected staging binding: ${key}`);
 });
 test('manual workflow never targets production configuration', () => {
