@@ -1,4 +1,4 @@
-# MAYF commerce release gates — NOT AUTHORIZED FOR LIVE CHECKOUT
+# MAYF commerce release gates — NOT READY FOR LIVE CHECKOUT
 
 **Candidate:** `staging/consolidated-mayf-2026-10-21`, tracked by draft PR #77 and issue #78.
 
@@ -12,6 +12,10 @@
 - `/api/admin/payments/settings`: encrypted settings with a revision-checked Firestore save; stage-only secrets and gateway test credentials required.
 - Analytics must read `paymentOrders` and `paymentEntitlements`. It must not infer paid revenue from client events.
 - Verified but unsuccessful webhook settlements now create sanitized, idempotent `paymentReconciliationCases` records; `/api/admin/payments/reconciliation` exposes unresolved items to authenticated admins only. A later verified successful retry resolves the matching case. Unverified callbacks never enter this queue.
+
+## Completed isolated sandbox evidence
+
+See [payment acceptance evidence](PAYMENT_ACCEPTANCE_2026-10-24.md): one provider test capture, authentic paid settlement, student receipt download, reviewed full refund, authentic refund settlement, and normal-config redeployment preserving the records. Checkout and refund initiation were restored to false. Coupon, renewal, delayed/replayed delivery, mobile and rollback gates remain open.
 
 ## Blocking work before enabling checkout
 - [x] Commit coupon global/per-user counters and per-order redemption receipts in the **same** Firestore transaction as the verified paid order, webhook claim and entitlement. Tested duplicate events, two competing workers, exhausted limits and corrupted records. A failed limit/revision precondition causes retry/manual reconciliation rather than false success.

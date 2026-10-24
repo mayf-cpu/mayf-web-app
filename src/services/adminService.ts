@@ -571,8 +571,8 @@ class AdminService {
     amount: number,
     reason: string
   ): Promise<{ success: boolean; error?: string; refundStatus?: string; message?: string }> {
-    const headers = await this.getAuthHeaders();
     try {
+      const headers = await this.getAuthHeaders();
       const res = await fetch(`/api/admin/orders/${orderId}/refund`, {
         method: 'POST',
         headers,

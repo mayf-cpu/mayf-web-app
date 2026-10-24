@@ -104,7 +104,7 @@ export type DashboardTab =
   | 'notifications';
 
 export const StudentDashboard: React.FC = () => {
-  const { user, firebaseUser, entitlements, updateClass, logout, savedItemIds, toggleSavedItem, isAnnualPassActive } = useAuth();
+  const { user, firebaseUser, entitlements, updateClass, logout, savedItemIds, toggleSavedItem, isAnnualPassActive, loading: authLoading } = useAuth();
   const { currentRoute, navigate } = useNavigation();
   const { dashboardNotifications, dismissBroadcast } = useBroadcasts();
 
@@ -448,6 +448,9 @@ export const StudentDashboard: React.FC = () => {
     { id: 'notifications', label: 'Notifications', icon: Bell, badge: unreadCount },
   ];
 
+  if (authLoading) return <SharedLayout><LoadingSpinner message="Loading your verified account…" /></SharedLayout>;
+  if (!user) return <SharedLayout><p className="p-6">Sign in to view your learning account. <Link href="/login">Continue to sign in</Link></p></SharedLayout>;
+
   return (
     <SharedLayout>
       <SeoHead
@@ -490,7 +493,7 @@ export const StudentDashboard: React.FC = () => {
                   <h1 className="font-heading font-extrabold text-xl sm:text-2xl text-[#0F172A]">
                     {user?.displayName || 'Google Verified Student'}
                   </h1>
-                  {isAnnualPassActive ? (
+                  {entitlements.isAdmin ? <Badge variant="pro">ADMINISTRATOR ACCESS</Badge> : serverEntitlement === null ? <Badge variant="free">MEMBERSHIP UNVERIFIED</Badge> : isPassActive ? (
                     <Badge variant="pro">ANNUAL PASS ACTIVE</Badge>
                   ) : (
                     <Badge variant="free">FREE ACCESS</Badge>
@@ -754,7 +757,7 @@ export const StudentDashboard: React.FC = () => {
                       <h3 className="font-heading font-bold text-lg text-[#0F172A]">
                         Current Subscription Status
                       </h3>
-                      {isAnnualPassActive ? (
+                      {entitlements.isAdmin ? <Badge variant="pro">ADMINISTRATOR ACCESS</Badge> : serverEntitlement === null ? <Badge variant="free">MEMBERSHIP UNVERIFIED</Badge> : isPassActive ? (
                         <Badge variant="pro">ANNUAL PASS PRO</Badge>
                       ) : (
                         <Badge variant="free">FREE LEARNER</Badge>
