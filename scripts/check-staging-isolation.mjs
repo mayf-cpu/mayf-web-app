@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
+import { validatePaymentAcceptanceConfig } from './payment-acceptance-isolation.mjs';
 
 const production = JSON.parse(readFileSync(new URL('../wrangler.jsonc',import.meta.url),'utf8'));
 const staging = JSON.parse(readFileSync(new URL('../wrangler.staging.jsonc',import.meta.url),'utf8'));
@@ -51,3 +52,8 @@ assert.equal(staging.queues,undefined,'Staging must not bind queues');
 assert.equal(staging.durable_objects,undefined,'Staging must not bind Durable Objects');
 
 assert.equal(staging.vars?.MAYF_ALLOW_SHARED_DEVELOPMENT_FIREBASE,'true','Owner-approved shared development policy must be explicit');
+
+// Manual opt-in testing uses the exact same isolated resources. Normal deploys
+// always restore disabled commerce. Runtime adapters independently reject live keys.
+const acceptance = JSON.parse(readFileSync(new URL('../wrangler.acceptance.jsonc', import.meta.url), 'utf8'));
+validatePaymentAcceptanceConfig(acceptance, staging);

@@ -9,6 +9,12 @@ on:
         required: true
         default: false
 
+      enable_payment_acceptance:
+        description: 'TEMPORARY Razorpay sandbox checkout and refunds on isolated staging only'
+        type: boolean
+        required: false
+        default: false
+
 permissions:
   contents: read
 
@@ -64,8 +70,17 @@ jobs:
         run: npm run build
       - name: Verify isolated staging config
         run: node scripts/check-staging-isolation.mjs
+      - name: Select isolated staging configuration
+        env:
+          STAGING_PAYMENT_ACCEPTANCE: ${{ inputs.enable_payment_acceptance }}
+        run: |
+          if [ "$STAGING_PAYMENT_ACCEPTANCE" = "true" ]; then
+            echo "STAGING_WRANGLER_CONFIG=wrangler.acceptance.jsonc" >> "$GITHUB_ENV"
+          else
+            echo "STAGING_WRANGLER_CONFIG=wrangler.staging.jsonc" >> "$GITHUB_ENV"
+          fi
       - name: Compile isolated staging Worker without deployment
-        run: npx wrangler deploy --config wrangler.staging.jsonc --dry-run --outdir .worker-staging-test
+        run: npx wrangler deploy --config "$STAGING_WRANGLER_CONFIG" --dry-run --outdir .worker-staging-test
       - name: Confirm release candidate branch and explicit staging-only approval
         env:
           STAGING_BRANCH: ${{ github.ref_name }}
@@ -89,7 +104,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.MAYF_STAGING_CLOUDFLARE_ACCOUNT_ID }}
         run: node scripts/check-staging-cloudflare-resources.mjs
       - name: Deploy ONLY isolated staging Worker
-        run: npx wrangler deploy --config wrangler.staging.jsonc
+        run: npx wrangler deploy --config "$STAGING_WRANGLER_CONFIG"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.MAYF_STAGING_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.MAYF_STAGING_CLOUDFLARE_ACCOUNT_ID }}

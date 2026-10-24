@@ -27,7 +27,9 @@
 - [ ] Review all production/staging secrets, webhook URLs, domain/hostname guards and rollback steps; complete the user-authorized production deployment only after the remaining technical gates pass.
 
 ## Safety controls and rollback
-1. Leave `MAYF_ENABLE_CHECKOUT` **and `MAYF_ENABLE_COUPON_CHECKOUT`** unset or false (even in preview) while reconciliation is incomplete.
+The owner authorized completion of all sandbox acceptance work. After verifying the stored Razorpay test key pair and the exact enabled staging webhook, the manual staging workflow may opt into `enable_payment_acceptance` for a temporary test window. `wrangler.acceptance.jsonc` changes only checkout and admin-refund flags on `staging-acceptance-mayf`; all other resources and flags must match normal staging. Existing runtime adapters reject live keys on staging. This test window is not production approval. Restore the default workflow configuration immediately after testing or any failure; keep production checkout disabled until all release gates pass.
+
+1. Outside the temporary isolated sandbox acceptance window described above, leave `MAYF_ENABLE_CHECKOUT` and `MAYF_ENABLE_ADMIN_REFUNDS` unset or false while reconciliation is incomplete. Leave `MAYF_ENABLE_COUPON_CHECKOUT` false throughout acceptance.
 2. Leave `MAYF_ENABLE_PAYMENT_SIMULATION` unset in preview, staging and production.
 3. Never report a refund completed without verified provider settlement. Never write synthetic admin orders.
 4. On failed staging acceptance, restore the previous staging commit/Worker version; do not merge PR #77 to `main`.
