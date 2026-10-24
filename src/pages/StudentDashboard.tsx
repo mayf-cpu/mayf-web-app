@@ -1,3 +1,4 @@
+import { CourseProgress } from '../components/ui/CourseProgress';
 import { submitDoubtRating } from '../lib/ai/feedbackClient';
 import { downloadCards, type DownloadCard as DownloadResource } from '../lib/download/downloadCatalogue';
 import { orderReceipt } from '../lib/payments/orderReceipt';
@@ -1527,7 +1528,6 @@ export const StudentDashboard: React.FC = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {STUDENT_COURSES.map((course) => {
-                  const progressPct = Math.round((course.completedChapters / course.totalChapters) * 100);
                   return (
                     <div
                       key={course.id}
@@ -1549,19 +1549,7 @@ export const StudentDashboard: React.FC = () => {
                           {course.description}
                         </p>
 
-                        {/* Progress Bar */}
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-[11px] text-[#64748B]">
-                            <span>Progress ({course.completedChapters}/{course.totalChapters} Chapters)</span>
-                            <span className="font-bold text-[#1D4ED8]">{progressPct}%</span>
-                          </div>
-                          <div className="w-full h-2 bg-[#F1F5F9] rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-[#1D4ED8] rounded-full transition-all duration-500"
-                              style={{ width: `${progressPct}%` }}
-                            />
-                          </div>
-                        </div>
+                        <CourseProgress totalChapters={course.totalChapters} />
 
                         {/* Topics tags */}
                         <div className="flex flex-wrap gap-1 pt-1">

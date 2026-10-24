@@ -156,7 +156,7 @@ export const AnnualPassPage: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-2.5">
                   <Check className="w-4 h-4 text-[#10B981] shrink-0" />
-                  <span>5 AI Teacher questions per day</span>
+                  <span>Daily AI allowance; sign in for higher limits</span>
                 </div>
                 <div className="flex items-center gap-2.5 text-[#94A3B8]">
                   <span className="w-4 h-4 text-center shrink-0">—</span>

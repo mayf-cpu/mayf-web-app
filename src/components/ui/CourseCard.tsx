@@ -1,3 +1,4 @@
+import { CourseProgress } from './CourseProgress';
 import React from 'react';
 import { BookOpen, Layers, ArrowRight, ArrowUpRight, CheckCircle2 } from 'lucide-react';
 import { StudentCourse } from '../../lib/firebase/types';
@@ -9,6 +10,7 @@ export interface CourseCardProps {
   openInNewTab?: boolean;
   className?: string;
   showProgress?: boolean;
+  verifiedCompletedChapters?: number;
 }
 
 export const CourseCard: React.FC<CourseCardProps> = ({
@@ -16,9 +18,9 @@ export const CourseCard: React.FC<CourseCardProps> = ({
   openInNewTab = false,
   className = '',
   showProgress = true,
+  verifiedCompletedChapters,
 }) => {
   const { navigate } = useNavigation();
-  const progressPct = Math.round((course.completedChapters / course.totalChapters) * 100);
   const targetUrl = `/course/${course.slug}`;
 
   const handleCardClick = (e: React.MouseEvent) => {
@@ -104,20 +106,7 @@ export const CourseCard: React.FC<CourseCardProps> = ({
             </div>
           </div>
 
-          {showProgress && (
-            <div className="space-y-1">
-              <div className="flex justify-between text-[10px] text-[#64748B] font-mono">
-                <span>Completed: {course.completedChapters}/{course.totalChapters}</span>
-                <span className="font-bold text-[#1D4ED8]">{progressPct}%</span>
-              </div>
-              <div className="w-full h-1.5 bg-[#F1F5F9] rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-[#1D4ED8] rounded-full transition-all duration-500"
-                  style={{ width: `${progressPct}%` }}
-                />
-              </div>
-            </div>
-          )}
+          {showProgress && <CourseProgress totalChapters={course.totalChapters} completedChapters={verifiedCompletedChapters} />}
         </div>
       </div>
 

@@ -26,6 +26,12 @@ on:
         required: false
         default: false
 
+      prepare_production_bucket:
+        description: 'Create the named private production PDF bucket if missing; do not deploy production'
+        type: boolean
+        required: false
+        default: false
+
 permissions:
   contents: read
 
@@ -114,6 +120,12 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.MAYF_STAGING_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.MAYF_STAGING_CLOUDFLARE_ACCOUNT_ID }}
         run: node scripts/check-staging-cloudflare-resources.mjs
+      - name: Prepare named private production PDF bucket
+        if: inputs.prepare_production_bucket == true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.MAYF_STAGING_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.MAYF_STAGING_CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/provision-production-bucket.mjs
       - name: Read production hosting metadata without changes
         if: inputs.inspect_production_metadata == true
         continue-on-error: true

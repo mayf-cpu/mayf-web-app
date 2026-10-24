@@ -3545,7 +3545,8 @@ app.post('/api/ai-teacher/ask', asyncRoute(async (req: Request, res: Response) =
     const quotaCheck = await aiQuota.consume(quotaKey, userLimit);
     if (!quotaCheck.allowed) {
       return res.status(429).json({
-        error: 'Question limit reached for this session. Please wait a few minutes or upgrade to the Annual Pass for unlimited access.',
+        success: false, code: 'AI_DAILY_LIMIT', quotaRemaining: 0, quotaLimit: userLimit,
+        error: 'Your daily AI question limit has been reached. It resets at midnight India Standard Time. Sign in or check your plan for your daily allowance.',
       });
     }
 

@@ -21,5 +21,23 @@
   ],
   "define": {
     "process.env.NODE_ENV": "\"production\""
-  }
+  },
+  "vars": {
+    "APP_ENV": "production",
+    "PUBLIC_APP_URL": "https://mayf.co.in",
+    "MAYF_ENABLE_CHECKOUT": "false",
+    "MAYF_ENABLE_ADMIN_REFUNDS": "false",
+    "MAYF_ENABLE_COUPON_CHECKOUT": "false",
+    "MAYF_ENABLE_PAYMENT_SIMULATION": "false"
+  },
+  "routes": [
+    {
+      "pattern": "mayf.co.in",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.mayf.co.in",
+      "custom_domain": true
+    }
+  ]
 }
