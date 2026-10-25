@@ -5,10 +5,21 @@ export async function readStudentProfile(db:FirestoreDocumentStore,uid:string) {
  const data=snap.data()!;
  return Object.fromEntries(['uid','email','displayName','photoURL','studentClass','board','phoneNumber','streakDays','lastActiveDate','createdAt','updatedAt','lastLoginAt'].filter(k=>data[k]!==undefined).map(k=>[k,k==='uid'?uid:data[k]]));
 }
-export async function saveStudentGrade(db:FirestoreDocumentStore,uid:string,input:Record<string,unknown>) {
+export async function saveStudentGrade(db:FirestoreDocumentStore,uid:string,input:Record<string,unknown>,identity:{email?:string}={}) {
  if(!input||Object.keys(input).length!==1||!grades.includes(input.studentClass as string))throw Error('Select a grade from Class 5 to Class 10.');
- const snap=await db.collection('users').doc(uid).get();if(!snap.exists)throw Error('Your profile is unavailable. Sign in again before saving.');
+ for(let attempt=0;attempt<3;attempt++){
+ const snap=await db.collection('users').doc(uid).get();
  const updatedAt=new Date().toISOString();
- await db.commit([{collection:'users',id:uid,updateTime:snap.updateTime,data:{...snap.data(),studentClass:input.studentClass,updatedAt}}]);
+ // Patch only these fields: login metadata may change concurrently, and legacy
+ // fields must retain their original Firestore types. Missing browser-created
+ // profiles are initialized here using only the verified session identity.
+ try {await db.commit([{collection:'users',id:uid,
+  ...(snap.exists ? {updateTime:snap.updateTime,updateMask:['studentClass','updatedAt']} : {}),
+  data:{...(!snap.exists ? {uid,email:identity.email || '',displayName:'Student',board:'CBSE',createdAt:updatedAt} : {}),studentClass:input.studentClass,updatedAt}}]);}catch(error){
+  if(attempt<2 && error instanceof Error && error.message.includes('Another administrator changed'))continue;
+  throw error;
+ }
  return {studentClass:input.studentClass,updatedAt};
+ }
+ throw Error('Profile changed while saving. Please retry.');
 }

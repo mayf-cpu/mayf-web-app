@@ -68,7 +68,7 @@ export class FirestoreDocumentStore {
       updateTime: row.document.updateTime,
     }));
   }
-  async commit(changes: { collection: string; id: string; data?: Record<string, any>; updateTime?: string }[]): Promise<void> {
+  async commit(changes: { collection: string; id: string; data?: Record<string, any>; updateTime?: string; updateMask?: string[] }[]): Promise<void> {
     if (!changes.length) return;
     if (changes.length > 450) throw new Error('Too many catalogue changes in one operation');
     const writes = changes.map(change => {
@@ -76,6 +76,7 @@ export class FirestoreDocumentStore {
       const name = `projects/${this.projectId}/databases/(default)/documents/${change.collection}/${change.id}`;
       return {
         ...(change.data === undefined ? { delete: name } : { update: { name, fields: encodeFields(change.data) } }),
+        ...(change.data !== undefined && change.updateMask ? { updateMask: { fieldPaths: change.updateMask } } : {}),
         currentDocument: change.updateTime ? { updateTime: change.updateTime } : { exists: false },
       };
     });
