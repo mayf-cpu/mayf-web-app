@@ -101,7 +101,8 @@ app.use((req, res, next) => {
     "font-src 'self' https://fonts.gstatic.com data:; " +
     "img-src 'self' data: https: blob:; " +
     `connect-src 'self' ${authOrigin} https://accounts.google.com https://challenges.cloudflare.com https://www.google-analytics.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://api.razorpay.com https://api.stripe.com; ` +
-    `frame-src 'self' blob: ${authOrigin} https://accounts.google.com https://challenges.cloudflare.com https://api.razorpay.com https://js.stripe.com https://www.youtube.com https://www.youtube-nocookie.com; ` +
+    `frame-src 'self' blob: ${authOrigin} https://accounts.google.com https://challenges.cloudflare.com https://api.razorpay.com https://js.stripe.com https://www.youtube.com https://www.youtube-nocookie.com https://drive.google.com https://www.facebook.com https://facebook.com; ` +
+    "media-src 'self' blob: https:; " +
     "object-src 'none'; " +
     "base-uri 'self';"
   );

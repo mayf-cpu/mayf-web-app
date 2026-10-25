@@ -4,10 +4,10 @@ import crypto from 'node:crypto';
 import { configurePdfBucket } from '../src/lib/download/pdfObjectStorage';
 import { copyDriveFileToProductionStorage } from '../src/lib/ingestion/driveStorageAdapter';
 
-test('Drive import requires private upload configuration and rejects non-PDF types', async () => {
+test('Drive import requires private upload configuration and rejects unsupported types', async () => {
   configurePdfBucket(null);
   await assert.rejects(copyDriveFileToProductionStorage('drive-id-123', undefined, 'a', 'pdf', 'paid', 'cnt-pdf-a'), /R2 PDF bucket/);
-  await assert.rejects(copyDriveFileToProductionStorage('drive-id-123', undefined, 'a', 'video', 'paid', 'cnt-pdf-a'), /PDF content only/);
+  await assert.rejects(copyDriveFileToProductionStorage('drive-id-123', undefined, 'a', 'other', 'paid', 'cnt-pdf-a'), /PDF and video content only/);
 });
 
 test('Drive import verifies authenticated downloaded bytes before declaring an R2 upload successful', async () => {

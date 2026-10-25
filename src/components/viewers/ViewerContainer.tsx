@@ -1,9 +1,11 @@
+import { contentDriveVideo } from '../../lib/media/driveVideo';
 import React, { Suspense, lazy } from 'react';
 import { youtubeVideo } from '../../lib/media/youtube';
 import { ContentItem } from '../../lib/firebase/types';
 import { LoadingSpinner } from '../ui/LoadingState';
 
 // Lazy-load all heavy viewers
+const DriveVideoViewer = lazy(() => import('./DriveVideoViewer').then(m => ({default:m.DriveVideoViewer})));
 const PdfViewer = lazy(() => import('./PdfViewer').then((m) => ({ default: m.PdfViewer })));
 const MultiImageViewer = lazy(() => import('./MultiImageViewer').then((m) => ({ default: m.MultiImageViewer })));
 const SingleImageViewer = lazy(() => import('./SingleImageViewer').then((m) => ({ default: m.SingleImageViewer })));
@@ -23,6 +25,8 @@ export const ViewerContainer: React.FC<ViewerContainerProps> = ({ item }) => {
   return (
     <Suspense fallback={<LoadingSpinner message="Preparing responsive mathematics viewer..." />}>
       {(() => {
+        const drive = contentDriveVideo(item);
+        if (drive) return <DriveVideoViewer url={drive.previewUrl} title={item.title} />;
         switch (item.contentType) {
           case 'pdf':
           case 'worksheet':
