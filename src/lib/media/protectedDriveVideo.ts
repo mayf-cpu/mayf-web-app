@@ -9,7 +9,12 @@ export async function protectedDrivePlayer(item:Record<string,any>,fetcher:typeo
  const base='https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(video.id);
  const fields='mimeType,trashed,copyRequiresWriterPermission';
  const read=()=>fetcher(base+'?supportsAllDrives=true&fields='+encodeURIComponent(fields),{headers,redirect:'manual',signal:AbortSignal.timeout(10000)});
- let response=await read();if(!response.ok)throw new Error('Video protection could not be verified. The owner must share this file with the site service account.');
+ let response=await read();if(!response.ok){
+  const problem=await response.json().catch(()=>({})) as any;
+  const reasons=[...(problem.error?.errors||[]),...(problem.error?.details||[])].map((entry:any)=>entry.reason);
+  if(reasons.includes('SERVICE_DISABLED')||reasons.includes('accessNotConfigured'))throw new Error('Google Drive API is disabled for the site’s Google Cloud project. The administrator must enable it before protected video playback can be verified.');
+  throw new Error('Video protection could not be verified (Drive HTTP '+response.status+'). Check the file ID and the site service account’s access to this file.');
+ }
  let metadata=await response.json() as any;
  if(metadata.trashed||!metadata.mimeType?.startsWith('video/'))throw new Error('This video is unavailable.');
  if(metadata.copyRequiresWriterPermission!==!permitted){
