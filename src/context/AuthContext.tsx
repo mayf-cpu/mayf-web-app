@@ -39,7 +39,7 @@ const defaultInitialUser: UserProfileDoc = {
   uid: 'mayf-student-1001',
   email: 'arjun.sharma@mayf.co.in',
   displayName: 'Arjun Sharma',
-  studentClass: 'Class 10',
+  studentClass: 'Class 5',
   board: 'CBSE',
   streakDays: 14,
   lastActiveDate: new Date().toISOString().split('T')[0],
@@ -162,7 +162,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         try {
           const userDocRef = doc(db, 'users', fbUser.uid);
-          const snap = await getDoc(userDocRef);
+          const profileResponse = await fetch('/api/student/profile', {headers:{Authorization:'Bearer '+await fbUser.getIdToken()},cache:'no-store'});
+          if (!isCurrent()) return;
+          if (!profileResponse.ok && profileResponse.status !== 404) throw new Error('Profile could not be loaded');
+          const storedProfile = profileResponse.ok ? (await profileResponse.json()).profile : null;
+          const snap = storedProfile ? {exists:()=>true,data:()=>storedProfile} : await getDoc(userDocRef);
           if (!isCurrent()) return;
 
           if (snap.exists()) {
@@ -195,7 +199,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 updatedAt: now,
               },
               { merge: true }
-            );
+            ).catch(() => { console.warn('[MAYF Auth] Login metadata sync unavailable; retaining saved profile.'); });
           } else {
             // Initial login: automatically create Firestore profile without asking for unnecessary personal information
             const newProfile: UserProfileDoc = {
@@ -203,7 +207,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               displayName: googleName,
               email: googleEmail,
               photoURL: googlePhoto,
-              studentClass: 'Class 10', // Sensible default, zero personal info friction
+              studentClass: 'Class 5', // Initial grade; students can choose and save another grade.
               board: 'CBSE',
               streakDays: 1,
               lastActiveDate: now.split('T')[0],
@@ -228,7 +232,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             displayName: googleName,
             email: googleEmail,
             photoURL: googlePhoto,
-            studentClass: 'Class 10',
+            studentClass: 'Class 5',
             board: 'CBSE',
             streakDays: 1,
             lastActiveDate: now.split('T')[0],
@@ -270,7 +274,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: 'google.student@mayf.co.in',
         displayName: 'Google Verified Student',
         photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
-        studentClass: 'Class 10',
+        studentClass: 'Class 5',
         board: 'CBSE',
         streakDays: 7,
         lastActiveDate: now.split('T')[0],
@@ -314,7 +318,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         uid: isSuper ? 'admin-super-001' : isAdmin ? 'admin-002' : 'user-' + Math.random().toString(36).substring(2, 9),
         email: normalizedEmail,
         displayName: normalizedEmail === '2026vivekkushwah@gmail.com' ? 'Vivek Kushwah' : normalizedEmail.split('@')[0],
-        studentClass: 'Class 10',
+        studentClass: 'Class 5',
         board: 'CBSE',
         streakDays: 1,
         lastActiveDate: new Date().toISOString().split('T')[0],
@@ -347,7 +351,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         uid: 'admin-super-001',
         email: targetEmail,
         displayName: isVivek ? 'Vivek Kushwah' : targetEmail.split('@')[0],
-        studentClass: 'Class 10',
+        studentClass: 'Class 5',
         board: 'CBSE',
         streakDays: 100,
         lastActiveDate: new Date().toISOString().split('T')[0],
@@ -385,15 +389,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const updateClass = async (newClass: StudentClass) => {
-    if (user) {
-      const updated = { ...user, studentClass: newClass, updatedAt: new Date().toISOString() };
-      setUser(updated);
-      try {
-        await setDoc(doc(db, 'users', user.uid), { studentClass: newClass }, { merge: true });
-      } catch {
-        // Fallback for local sandbox
-      }
-    }
+    if (!user || !firebaseUser || auth.currentUser?.uid !== user.uid) throw new Error('Sign in before saving your grade.');
+    const uid=user.uid;
+    const response=await fetch('/api/student/profile',{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:'Bearer '+await firebaseUser.getIdToken()},body:JSON.stringify({studentClass:newClass})});
+    const data=await response.json();
+    if(!response.ok || data.success!==true || data.profile?.studentClass!==newClass) throw new Error(data.error || 'Grade could not be saved. Please retry.');
+    if(auth.currentUser?.uid!==uid)return;
+    setUser(previous=>previous?.uid===uid ? {...previous,...data.profile} : previous);
   };
 
   const toggleSavedItem = (itemId: string) => {

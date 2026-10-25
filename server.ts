@@ -1,3 +1,4 @@
+import { readStudentProfile, saveStudentGrade } from './src/lib/firebase/studentProfile';
 import { annualPassSettings } from './src/lib/payments/annualPassSettingsRepository';
 import { annualPassPrice } from './src/lib/payments/annualPassSettings';
 import { probeStagingConnectivity } from './src/lib/ingestion/stagingConnectivity';
@@ -1205,6 +1206,17 @@ app.get('/api/student/orders/:orderId/confirmation', requireAuth, asyncRoute(asy
   if (!order) return res.status(404).json({ success: false, error: 'Order not found.' });
   return res.json({ success: true, order });
 }));
+app.get('/api/student/profile', requireAuth, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
+  const db=getAdminFirestore(); if(!db)return res.status(503).json({success:false,error:'Profile storage unavailable.'});
+  const profile=await readStudentProfile(db,req.userAuth!.uid);
+  return res.status(profile?200:404).json({success:Boolean(profile),profile});
+}));
+app.patch('/api/student/profile', requireAuth, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
+  const db=getAdminFirestore(); if(!db)return res.status(503).json({success:false,error:'Profile storage unavailable.'});
+  try { const profile=await saveStudentGrade(db,req.userAuth!.uid,req.body);return res.json({success:true,profile}); }
+  catch {return res.status(400).json({success:false,error:'Grade could not be saved. Check your selection and retry.'});}
+}));
+
 app.get('/api/student/orders', requireAuth, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.userAuth!.uid;
   const db = getAdminFirestore();
