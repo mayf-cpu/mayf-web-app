@@ -5,7 +5,7 @@ import { getDownloadableItem } from './downloadRegistry';
 
 /** Shared eligibility for the public download button and authorization lookup. */
 export function downloadableCmsPdfFile(item: Record<string, any>): Record<string, any> | null {
-  if (item.isDeleted || item.visible !== true || item.downloadAllowed !== true ||
+  if (item.isDeleted || item.visible !== true || item.downloadAllowed !== true || item.downloadPermissionConfirmed !== true ||
       item.status !== 'published' || item.contentType !== 'pdf' ||
       (item.accessType !== 'paid' && item.accessType !== 'free')) return null;
   const prefix = 'r2://mayf-study-materials/';

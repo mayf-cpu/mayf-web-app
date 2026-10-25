@@ -1,4 +1,4 @@
-import { SUBJECT_TOPICS } from '../lib/cms/contentClassification';
+import {useClassification} from '../lib/cms/useClassification';
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Filter, BookOpen, ArrowUpRight, ArrowRight, Sparkles, FileText, Download, CheckCircle2, Eye, X, ArrowUpDown } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
@@ -18,14 +18,14 @@ import { ErrorState } from '../components/ui/ErrorState';
 import { trackSearch } from '../lib/analytics/analyticsService';
 
 export const StudyMaterialPage: React.FC = () => {
-  const [selectedClass, setSelectedClass] = useState<StudentClass | 'All'>('All');
+  const [selectedClass, setSelectedClass] = useState<string>('All');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedSubcategory, setSelectedSubcategory] = useState<string>('All');
   const [selectedAccessType, setSelectedAccessType] = useState<ContentAccessType | 'All'>('All');
   const [selectedContentType, setSelectedContentType] = useState<ContentType | 'All'>('All');
   const [selectedDifficulty, setSelectedDifficulty] = useState<DifficultyLevel | 'All'>('All');
   const [sortBy, setSortBy] = useState<CatalogueSortOption>('latest');
-  const [openInNewTab, setOpenInNewTab] = useState<boolean>(true);
+  const openInNewTab = false;
 
   // Debounced search state
   const [searchInput, setSearchInput] = useState('');
@@ -43,18 +43,10 @@ export const StudyMaterialPage: React.FC = () => {
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const classes: (StudentClass | 'All')[] = [
-    'All',
-    'Class 5',
-    'Class 6',
-    'Class 7',
-    'Class 8',
-    'Class 9',
-    'Class 10',
-  ];
-
-  const categories = ['All',...Object.keys(SUBJECT_TOPICS)];
-  const subcategoryMap: Record<string,string[]> = Object.fromEntries(Object.entries(SUBJECT_TOPICS).map(([subject,topics])=>[subject,['All',...topics]]));
+  const {settings:classification}=useClassification();
+  const classes=['All',...classification.grades];
+  const categories=['All',...Object.keys(classification.subjects)];
+  const subcategoryMap:Record<string,string[]>=Object.fromEntries(Object.entries(classification.subjects).map(([subject,topics])=>[subject,['All',...topics]]));
 
   const availableSubcategories = subcategoryMap[selectedCategory] || ['All'];
 
@@ -250,16 +242,7 @@ export const StudyMaterialPage: React.FC = () => {
               </select>
             </div>
 
-            {/* Config: Open cards in new tab */}
-            <label className="flex items-center gap-1.5 text-xs text-[#475569] font-medium cursor-pointer select-none px-2.5 py-1.5 rounded-lg border border-[#CBD5E1] bg-white hover:bg-[#F8FAFC] shadow-xs shrink-0">
-              <input
-                type="checkbox"
-                checked={openInNewTab}
-                onChange={(e) => setOpenInNewTab(e.target.checked)}
-                className="rounded border-[#CBD5E1] text-[#1D4ED8] focus:ring-[#1D4ED8] w-3.5 h-3.5 cursor-pointer"
-              />
-              <span>Open in new tab</span>
-            </label>
+
           </div>
         </div>
 

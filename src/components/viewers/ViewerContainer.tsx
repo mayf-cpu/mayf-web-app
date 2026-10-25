@@ -26,7 +26,7 @@ export const ViewerContainer: React.FC<ViewerContainerProps> = ({ item }) => {
     <Suspense fallback={<LoadingSpinner message="Preparing responsive mathematics viewer..." />}>
       {(() => {
         const drive = contentDriveVideo(item);
-        if (drive) return <DriveVideoViewer url={drive.previewUrl} title={item.title} />;
+        if (drive || item.protectedDriveVideo) return <DriveVideoViewer contentId={item.id} title={item.title} />;
         switch (item.contentType) {
           case 'pdf':
           case 'worksheet':

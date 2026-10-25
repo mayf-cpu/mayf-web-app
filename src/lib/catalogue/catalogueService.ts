@@ -21,7 +21,7 @@ export type DifficultyLevel = 'Foundation' | 'Standard' | 'Exemplar / Board';
 
 export interface CatalogueFilters {
   search?: string;
-  classLevel?: StudentClass | 'All';
+  classLevel?: string;
   categoryId?: string | 'All';
   subcategoryId?: string | 'All';
   accessType?: ContentAccessType | 'All';

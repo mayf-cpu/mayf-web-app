@@ -42,7 +42,7 @@ export const Footer: React.FC = () => {
               {social.youtube && (
                 <a
                   href={social.youtube}
-                  target="_blank"
+                  target="_self"
                   rel="noopener noreferrer"
                   className="w-10 h-10 min-w-[40px] min-h-[40px] inline-flex items-center justify-center rounded-lg bg-slate-100 hover:bg-red-50 hover:text-red-600 transition-colors font-bold text-xs"
                   title="YouTube"
@@ -54,7 +54,7 @@ export const Footer: React.FC = () => {
               {social.telegram && (
                 <a
                   href={social.telegram}
-                  target="_blank"
+                  target="_self"
                   rel="noopener noreferrer"
                   className="w-10 h-10 min-w-[40px] min-h-[40px] inline-flex items-center justify-center rounded-lg bg-slate-100 hover:bg-sky-50 hover:text-sky-600 transition-colors font-bold text-xs"
                   title="Telegram"
@@ -66,7 +66,7 @@ export const Footer: React.FC = () => {
               {social.whatsapp && (
                 <a
                   href={social.whatsapp}
-                  target="_blank"
+                  target="_self"
                   rel="noopener noreferrer"
                   className="w-10 h-10 min-w-[40px] min-h-[40px] inline-flex items-center justify-center rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-600 transition-colors font-bold text-xs"
                   title="WhatsApp"
@@ -78,7 +78,7 @@ export const Footer: React.FC = () => {
               {social.instagram && (
                 <a
                   href={social.instagram}
-                  target="_blank"
+                  target="_self"
                   rel="noopener noreferrer"
                   className="w-10 h-10 min-w-[40px] min-h-[40px] inline-flex items-center justify-center rounded-lg bg-slate-100 hover:bg-pink-50 hover:text-pink-600 transition-colors font-bold text-xs"
                   title="Instagram"

@@ -1,3 +1,4 @@
+import {ClassificationManager} from '../ClassificationManager';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Folder,
@@ -517,7 +518,7 @@ export const AdminCategoriesSection: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6"><ClassificationManager />
       {/* Toast Notification */}
       {statusMsg && (
         <div

@@ -9,7 +9,7 @@ export function canReadPremiumContent(verified: TokenVerificationResult | null, 
 export function publicContent(item: Record<string, any>, canAccess = false): Record<string, any> {
   const { sourceDriveId, sourceDriveFileId, sales, archivedBy, archivedReason, ...publicItem } = item;
   const drive=contentDriveVideo(item);
-  if(drive) publicItem.embedUrl=drive.previewUrl;
+  if(drive) {publicItem.embedUrl="";publicItem.files=[];publicItem.protectedDriveVideo=true;}
   publicItem.downloadAllowed = Boolean(downloadableCmsPdfFile(item));
   if (item.accessType !== 'free' && !canAccess) {
     publicItem.files = [];

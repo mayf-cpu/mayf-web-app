@@ -19,12 +19,12 @@ test('Facebook-labelled Drive videos use Drive and paid projections still hide p
  const item={id:'video-test',contentType:'facebook',sourceDriveId:id,accessType:'paid',files:[]};
  assert.equal(contentDriveVideo(item)?.id,id);
  const locked=publicContent(item);assert.equal(locked.embedUrl,'');assert.equal(locked.sourceDriveId,undefined);
- const unlocked=publicContent(item,true);assert.equal(unlocked.embedUrl,driveVideo(id)!.previewUrl);assert.equal(unlocked.sourceDriveId,undefined);
- assert.equal(publicContent({...item,accessType:'free'}).embedUrl,driveVideo(id)!.previewUrl);
+ const unlocked=publicContent(item,true);assert.equal(unlocked.embedUrl,'');assert.equal(unlocked.protectedDriveVideo,true);assert.equal(unlocked.sourceDriveId,undefined);
+ assert.equal(publicContent({...item,accessType:'free'}).embedUrl,'');
 });
 test('Drive video facade is landscape, waits for Play, and includes access/processing guidance',()=>{
- const html=renderToStaticMarkup(React.createElement(DriveVideoViewer,{url:id,title:'Landscape lesson'}));
- assert.match(html,/aspect-video/);assert.match(html,/Play video/);assert.match(html,/Google Drive/);assert.doesNotMatch(html,/<iframe/);
+ const html=renderToStaticMarkup(React.createElement(DriveVideoViewer,{contentId:id,title:'Landscape lesson'}));
+ assert.match(html,/aspect-video/);assert.match(html,/Play video/);assert.doesNotMatch(html,/href=|drive.google.com/);assert.doesNotMatch(html,/<iframe/);
 });
 test('video imports verify Drive metadata, reject non-videos and failures, and retain original permissions',async t=>{
  const previous=process.env.GOOGLE_SERVICE_ACCOUNT_KEY;

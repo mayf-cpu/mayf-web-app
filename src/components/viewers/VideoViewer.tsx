@@ -55,6 +55,9 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({ videoUrl, title, thumb
         ref={videoRef}
         src={videoUrl}
         poster={thumbnail}
+        controlsList="nodownload noremoteplayback"
+        disablePictureInPicture
+        onContextMenu={event=>event.preventDefault()}
         playsInline
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}

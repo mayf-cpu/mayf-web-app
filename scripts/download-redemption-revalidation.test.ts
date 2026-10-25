@@ -6,7 +6,7 @@ import type { FirestoreDocumentStore } from '../src/lib/firebase/documentStore';
 
 const active = {
   id: 'cnt-pdf-001', slug: 'algebra-pdf', title: 'Algebra',
-  visible: true, status: 'published', isDeleted: false, downloadAllowed: true,
+  visible: true, status: 'published', isDeleted: false, downloadAllowed: true, downloadPermissionConfirmed: true,
   contentType: 'pdf', accessType: 'paid',
   files: [{ url: 'r2://mayf-study-materials/pdf/cnt-pdf-001.pdf', sizeBytes: 1000 }],
 };

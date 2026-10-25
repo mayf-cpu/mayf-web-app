@@ -1,3 +1,4 @@
+import {useClassification} from '../../../lib/cms/useClassification';
 import { ViewerContainer } from '../../viewers/ViewerContainer';
 import { ContentClassificationFields } from '../ContentClassificationFields';
 import type { ContentItem } from '../../../lib/firebase/types';
@@ -69,6 +70,7 @@ const GRADE_LEVELS: StudentClass[] = [
 ];
 
 export const AdminContentSection: React.FC = () => {
+  const {settings:classification}=useClassification();
   // State
   const [activeTab, setActiveTab] = useState<'active' | 'archived'>('active');
   const [items, setItems] = useState<CmsContentRecord[]>([]);
@@ -347,7 +349,7 @@ export const AdminContentSection: React.FC = () => {
       accessType: 'free',
       price: 0,
       annualPassIncluded: true,
-      downloadAllowed: true,
+      downloadAllowed: false,
       visible: true,
       status: 'draft',
       featured: false,
@@ -488,7 +490,7 @@ export const AdminContentSection: React.FC = () => {
               className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-700 cursor-pointer focus:outline-hidden"
             >
               <option value="All">All Grades (5–10)</option>
-              {GRADE_LEVELS.map((g) => (
+              {classification.grades.map((g) => (
                 <option key={g} value={g}>
                   {g}
                 </option>
@@ -948,7 +950,7 @@ export const AdminContentSection: React.FC = () => {
                   <div className="pt-2 flex items-center justify-center gap-2">
                     <a
                       href={previewItem.files?.[0]?.url || 'https://raw.githubusercontent.com/mozilla/pdf.js/ba2edeae/web/compressed.tracemonkey-pldi-09.pdf'}
-                      target="_blank"
+                      target="_self"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-xs font-medium text-white cursor-pointer"
                     >
@@ -1193,7 +1195,7 @@ export const AdminContentSection: React.FC = () => {
               </div>
 
               {/* Toggles */}
-              <div className="flex items-center gap-6 pt-2">
+              <div className="flex flex-wrap items-center gap-6 pt-2">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -1217,11 +1219,11 @@ export const AdminContentSection: React.FC = () => {
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={editItem.downloadAllowed !== false}
-                    onChange={(e) => setEditItem({ ...editItem, downloadAllowed: e.target.checked })}
+                    checked={editItem.downloadAllowed === true && editItem.downloadPermissionConfirmed === true}
+                    onChange={(e) => setEditItem({ ...editItem, downloadAllowed: e.target.checked, downloadPermissionConfirmed: true })}
                     className="rounded text-blue-600 focus:ring-blue-500"
                   />
-                  <span className="font-medium text-slate-700">Allow Download</span>
+                  <span className="font-medium text-slate-700">Explicitly allow downloads</span>
                 </label>
               </div>
             </div>

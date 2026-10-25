@@ -1,3 +1,5 @@
+import {protectedDrivePlayer} from './src/lib/media/protectedDriveVideo';
+import {defaultClassification,addClassification} from './src/lib/cms/classificationSettings';
 import { readStudentProfile, saveStudentGrade } from './src/lib/firebase/studentProfile';
 import { annualPassSettings } from './src/lib/payments/annualPassSettingsRepository';
 import { annualPassPrice } from './src/lib/payments/annualPassSettings';
@@ -2270,6 +2272,19 @@ app.post('/api/admin/orders/:orderId/refund', requireAuth, requireAdmin, asyncRo
  * 19. List Content CMS Items
  * Supports search, classLevel, contentType, accessType, visibility, tab, sortBy
  */
+app.get('/api/content-classification', asyncRoute(async (_req,res)=>{
+ const db=getAdminFirestore();if(!db)return res.status(503).json({error:'Settings storage unavailable.'});
+ const doc=await db.collection('siteSettings').doc('contentClassification').get();
+ res.setHeader('Cache-Control','no-store');const settings=doc.exists?doc.data()!:defaultClassification();return res.json({settings:{grades:settings.grades,subjects:settings.subjects}});
+}));
+app.post('/api/admin/content-classification',requireAuth,requireAdmin,asyncRoute(async (req:AuthenticatedRequest,res)=>{
+ const db=getAdminFirestore();if(!db)return res.status(503).json({error:'Settings storage unavailable.'});
+ const doc=await db.collection('siteSettings').doc('contentClassification').get();
+ let settings;try{settings=addClassification((doc.exists?doc.data():defaultClassification()) as any,req.body);}catch(e){return res.status(400).json({error:e instanceof Error?e.message:'Invalid option.'});}
+ try{await db.commit([{collection:'siteSettings',id:'contentClassification',data:{...settings,updatedBy:req.userAuth!.uid,updatedAt:new Date().toISOString()},updateTime:doc.updateTime}]);}catch{return res.status(409).json({error:'Options changed or could not be saved. Refresh and retry.'});}
+ return res.json({success:true,settings});
+}));
+
 app.get('/api/catalogue', catalogueRoute(false, (req, res) => {
   const pageSize = Math.max(1, Math.min(20, Number(req.query.pageSize) || 20));
   const offset = Math.max(0, Math.floor(Number(req.query.offset) || 0));
@@ -2278,6 +2293,15 @@ app.get('/api/catalogue', catalogueRoute(false, (req, res) => {
   res.setHeader?.('Cache-Control', 'no-store');
   return res.json({ ...result, items: result.items.map(item => publicContent(item)) });
 }));
+app.post('/api/videos/:id/player',asyncRoute(async(req,res)=>{
+ const verified=req.headers.authorization?await verifyStudentSessionToken(req.headers.authorization):null;
+ const item=await catalogueRepository.run(()=>contentCmsManager.exportState().find(i=>i.id===req.params.id&&i.visible&&(!i.status||i.status==='published')&&!i.isDeleted));
+ if(!item)return res.status(404).json({error:'Resource not found.'});
+ if(item.accessType!=='free'&&!canReadPremiumContent(verified,item.annualPassIncluded))return res.status(403).json({error:'Sign in with access to this resource.'});
+ res.setHeader('Cache-Control','private, no-store');
+ try{return res.json(await protectedDrivePlayer(item));}catch(e){return res.status(409).json({error:e instanceof Error?e.message:'Video protection could not be verified.'});}
+}));
+
 app.get('/api/catalogue/by-slug/:slug', asyncRoute(async (req, res) => {
   const verified = req.headers.authorization ? await verifyStudentSessionToken(req.headers.authorization) : null;
   const item = await catalogueRepository.run(() => contentCmsManager.exportState().find(item => item.slug === req.params.slug && item.visible && (!item.status || item.status === 'published') && !item.isDeleted));

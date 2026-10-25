@@ -169,6 +169,7 @@ export interface CmsContentRecord {
   currency?: string;
   annualPassIncluded?: boolean;
   downloadAllowed?: boolean;
+  downloadPermissionConfirmed?: boolean;
   visible: boolean;
   visibilityStatus: 'Visible' | 'Hidden' | 'Archived';
   status: 'published' | 'draft' | 'hidden' | 'archived';

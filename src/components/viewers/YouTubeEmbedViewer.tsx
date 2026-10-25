@@ -73,6 +73,6 @@ export const YouTubeEmbedViewer: React.FC<YouTubeEmbedViewerProps> = ({
           className="w-full h-full border-0"
         />
       )}
-    </div><a href={video.watchUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:underline">Watch on YouTube <ExternalLink className="h-3.5 w-3.5" /></a></div>
+    </div><a href={video.watchUrl} target="_self" rel="noopener noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:underline">Watch on YouTube <ExternalLink className="h-3.5 w-3.5" /></a></div>
   );
 };

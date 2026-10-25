@@ -14,7 +14,7 @@ interface SingleImageViewerProps {
 export const SingleImageViewer: React.FC<SingleImageViewerProps> = ({
   imageUrl,
   title,
-  downloadAllowed = true,
+  downloadAllowed = false,
   contentId = 'cnt-single-image-trig-chart',
   accessType = 'free',
 }) => {

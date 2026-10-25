@@ -57,7 +57,7 @@ export const CourseCard: React.FC<CourseCardProps> = ({
             {openInNewTab ? (
               <a
                 href={targetUrl}
-                target="_blank"
+                target="_self"
                 rel="noopener noreferrer"
                 className="hover:underline"
               >

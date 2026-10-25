@@ -161,7 +161,7 @@ Sitemap: ${canonicalDomain}/sitemap.xml`}
             <span>Served dynamically via <code className="font-mono text-slate-700">server.ts</code></span>
             <a
               href="/sitemap.xml"
-              target="_blank"
+              target="_self"
               rel="noreferrer"
               className="text-blue-600 hover:underline font-semibold font-mono"
             >
