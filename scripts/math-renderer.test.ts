@@ -21,3 +21,10 @@ test('code examples and HTML are kept as escaped text without running markup',()
  const html=render('```tex\n\\[x^2\\]\n```\n<img src=x onerror=alert(1)>\n`$x$`');
  assert.match(html,/<pre/);assert.doesNotMatch(html,/class="katex"|<img/);assert.match(html,/&lt;img/);
 });
+
+test('worked examples typeset every step instead of showing raw LaTeX commands',async()=>{
+ const {StepProblemCard}=await import('../src/components/ui/StepProblemCard');
+ const {INITIAL_SOLVED_PROBLEMS}=await import('../src/data/curriculumData');
+ const html=renderToStaticMarkup(React.createElement(StepProblemCard,{problem:INITIAL_SOLVED_PROBLEMS[0],defaultExpanded:true}));
+ assert.equal((html.match(/class="katex"/g)||[]).length,4);assert.doesNotMatch(html,/katex-error/);assert.match(html,/class="mfrac"/);
+});

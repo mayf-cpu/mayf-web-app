@@ -1,3 +1,4 @@
+import { MathRenderer } from './MathRenderer';
 import React, { useState } from 'react';
 import { ChevronDown, ChevronUp, CheckCircle2, Sparkles, HelpCircle } from 'lucide-react';
 import { SolvedProblem } from '../../lib/firebase/types';
@@ -108,9 +109,7 @@ export const StepProblemCard: React.FC<StepProblemCardProps> = ({
                       {step.heading}
                     </div>
                     {step.mathExpression && (
-                      <div className="font-mono tabular-nums text-sm md:text-base font-semibold text-[#0037B0] bg-white border border-[#E0F2FE] rounded px-3 py-1.5 my-2 overflow-x-auto">
-                        {step.mathExpression}
-                      </div>
+                      <MathRenderer content={`$$${step.mathExpression}$$`} />
                     )}
                     <p className="text-xs md:text-sm text-[#475569] leading-relaxed">
                       {step.explanation}
