@@ -466,10 +466,10 @@ export const StudentDashboard: React.FC = () => {
         {/* TOP PROFILE & ACCOUNT HEADER                              */}
         {/* ========================================================= */}
         <div className="bg-white rounded-xl border border-[#E2E8F0] p-5 sm:p-6 shadow-xs">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
             
             {/* Student Avatar & Google Identity */}
-            <div className="flex items-center gap-4">
+            <div className="flex min-w-0 items-center gap-4">
               <div className="relative shrink-0">
                 {user?.photoURL ? (
                   <img
@@ -524,7 +524,7 @@ export const StudentDashboard: React.FC = () => {
             </div>
 
             {/* Quick Badges & Controls */}
-            <div className="flex flex-wrap items-center gap-3 pt-2 md:pt-0 border-t md:border-t-0 border-[#F1F5F9]">
+            <div className="flex min-w-0 flex-wrap items-center gap-3 pt-2 lg:pt-0 border-t lg:border-t-0 border-[#F1F5F9]">
               
               {/* Revision Streak */}
               <div className="flex items-center gap-2 bg-[#FFF7ED] border border-[#FFEDD5] px-3.5 py-2 rounded-lg text-xs font-semibold text-[#EA580C]">
@@ -533,8 +533,8 @@ export const StudentDashboard: React.FC = () => {
               </div>
 
               {/* Class Selector Dropdown */}
-              <div className="flex items-center gap-2 text-xs bg-[#F8FAFC] border border-[#E2E8F0] px-3 py-1.5 rounded-lg">
-                <span className="text-[#64748B] font-medium">Grade:</span>
+              <div className="flex min-w-0 max-w-full items-start gap-2 text-xs bg-[#F8FAFC] border border-[#E2E8F0] px-3 py-1.5 rounded-lg">
+                <span className="pt-2 text-[#64748B] font-medium">Grade:</span>
                 <GradeSelector label="Student Class" />
               </div>
 

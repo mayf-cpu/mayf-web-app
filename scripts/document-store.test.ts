@@ -40,3 +40,14 @@ test('Firestore lists all pages and conditional commits reject concurrent change
   const payload = JSON.parse(calls[2].init!.body as string);
   assert.deepEqual(payload.writes[0].currentDocument, { updateTime: 'revision-1' });
 });
+
+test('partial profile commits send a Firestore update mask and preserve other stored fields', async t => {
+ t.mock.method(globalThis,'fetch',async(_url:any,init:any)=>{
+  const {writes:[write]}=JSON.parse(init.body);
+  assert.deepEqual(write.updateMask,{fieldPaths:['studentClass','updatedAt']});
+  assert.deepEqual(write.currentDocument,{updateTime:'revision'});
+  assert.deepEqual(Object.keys(write.update.fields).sort(),['studentClass','updatedAt']);
+  return Response.json({writeResults:[{}]});
+ });
+ await new FirestoreDocumentStore('p',async()=> 'test-token').commit([{collection:'users',id:'owner',data:{studentClass:'Class 7',updatedAt:'now'},updateTime:'revision',updateMask:['studentClass','updatedAt']}]);
+});

@@ -1213,8 +1213,12 @@ app.get('/api/student/profile', requireAuth, asyncRoute(async (req: Authenticate
 }));
 app.patch('/api/student/profile', requireAuth, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
   const db=getAdminFirestore(); if(!db)return res.status(503).json({success:false,error:'Profile storage unavailable.'});
-  try { const profile=await saveStudentGrade(db,req.userAuth!.uid,req.body);return res.json({success:true,profile}); }
-  catch {return res.status(400).json({success:false,error:'Grade could not be saved. Check your selection and retry.'});}
+  try { const profile=await saveStudentGrade(db,req.userAuth!.uid,req.body,{email:req.userAuth!.email});return res.json({success:true,profile}); }
+  catch(error) {
+    const invalid=error instanceof Error && error.message==='Select a grade from Class 5 to Class 10.';
+    console.warn('[Student profile] Grade save failed:', invalid ? 'invalid selection' : error instanceof Error && /Firestore (read|commit) failed \(\d+\)/.test(error.message) ? error.message : 'storage unavailable');
+    return res.status(invalid?400:503).json({success:false,error:invalid?'Select a grade from Class 5 to Class 10.':'Your grade could not be saved right now. Please try Save grade again.'});
+  }
 }));
 
 app.get('/api/student/orders', requireAuth, asyncRoute(async (req: AuthenticatedRequest, res: Response) => {
