@@ -356,8 +356,8 @@ async function processRegistryRowInternal(
     thumbnail: storageResult.productionThumbnailUrl,
     files: [
       {
-        name: `${slug}.${row.content_type === 'video' ? 'mp4' : 'pdf'}`,
-        url: storageResult.productionFileUrl, // PRODUCTION STORAGE URL (Not Google Drive)
+        name: `${slug}.${storageResult.mimeType.startsWith('video/') ? (storageResult.mimeType==='video/webm'?'webm':'mp4') : 'pdf'}`,
+        url: storageResult.productionFileUrl, // Verified private PDF object or original Drive video player
         sizeBytes: storageResult.fileSizeBytes,
         mimeType: storageResult.mimeType,
       },

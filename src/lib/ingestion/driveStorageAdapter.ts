@@ -1,3 +1,4 @@
+import {driveVideo} from '../media/driveVideo';
 import { hasPdfMarkers } from '../download/pdfIntegrity';
 /**
  * Authenticated Google Drive staging -> private Cloudflare R2 PDF import.
@@ -61,9 +62,22 @@ export async function copyDriveFileToProductionStorage(
   _accessType: 'free' | 'paid',
   contentId?: string,
 ): Promise<StorageIngestResult> {
+  if (['video','facebook','reel'].includes(contentType)) driveFileId=driveVideo(driveFileId||'')?.id;
   if (!driveFileId?.trim() || !/^[A-Za-z0-9_-]{5,200}$/.test(driveFileId))
     throw new Error('Cannot import file: source Google Drive file ID is missing or invalid.');
-  if (contentType !== 'pdf') throw new Error('Verified Google Drive import currently supports PDF content only');
+  if (['video','facebook','reel'].includes(contentType)) {
+    if(!contentId) throw new Error('Content registry ID is required for video import');
+    const token=await getDriveAccessToken(getServiceAccount());
+    const metadataResponse=await fetch('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(driveFileId)+'?fields=id,name,mimeType,size,resourceKey,trashed&supportsAllDrives=true',{headers:{Authorization:'Bearer '+token},redirect:'manual',signal:AbortSignal.timeout(15000)});
+    if(!metadataResponse.ok) throw new Error('Google Drive video metadata unavailable ('+metadataResponse.status+')');
+    const metadata=await metadataResponse.json() as {mimeType?:string;size?:string;resourceKey?:string;trashed?:boolean};
+    if(metadata.trashed || !metadata.mimeType?.startsWith('video/'))throw new Error('The selected Drive file is not an available video');
+    const video=driveVideo('https://drive.google.com/file/d/'+driveFileId+'/view'+(metadata.resourceKey?'?resourcekey='+encodeURIComponent(metadata.resourceKey):''))!;
+    // Register the real Drive video. Playback remains subject to its current
+    // sharing/processing state; no public-copy or R2 upload is claimed.
+    return {productionFileUrl:video.previewUrl,fileSizeBytes:Number(metadata.size)||0,mimeType:metadata.mimeType,sourceDriveFileId:driveFileId};
+  }
+  if (contentType !== 'pdf') throw new Error('Verified Google Drive import supports PDF and video content only');
   if (!contentId) throw new Error('Content registry ID is required for private storage');
   const bucket = getPdfBucket();
   if (!bucket?.put) throw new Error('Private R2 PDF bucket is not configured for uploads');

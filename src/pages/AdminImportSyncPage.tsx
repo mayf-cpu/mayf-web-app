@@ -300,7 +300,7 @@ function setupInstallableTrigger() {
             </div>
             <div>
               <span className="font-heading font-bold text-[#0F172A] block">Private Storage: Check Configuration</span>
-              <span>PDF files are imported from Google Drive into private R2 storage; real import and access controls must be verified in the active environment.</span>
+              <span>PDF imports use private R2 storage. Video imports verify the Drive file and register its original player; the file remains in Drive and keeps its existing sharing permissions.</span>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0 font-mono text-[11px] bg-white px-2.5 py-1 rounded border border-[#CBD5E1]">

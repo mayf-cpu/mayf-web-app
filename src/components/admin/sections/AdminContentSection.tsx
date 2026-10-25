@@ -1,4 +1,6 @@
-import { YouTubeEmbedViewer } from '../../viewers/YouTubeEmbedViewer';
+import { ViewerContainer } from '../../viewers/ViewerContainer';
+import { ContentClassificationFields } from '../ContentClassificationFields';
+import type { ContentItem } from '../../../lib/firebase/types';
 import { youtubeVideo } from '../../../lib/media/youtube';
 import { prepareContentMetadata } from '../../../lib/cms/contentForm';
 import React, { useState, useEffect, useMemo } from 'react';
@@ -48,7 +50,7 @@ const CONTENT_FORMATS: { value: string; label: string; icon: React.FC<{ classNam
   { value: 'testPaper', label: 'Diagnostic / Board Test Paper', icon: FileSpreadsheet },
   { value: 'worksheet', label: 'Printable Practice Worksheet', icon: Layers },
   { value: 'formulaSheet', label: 'KaTeX Formula Sheet / Deck', icon: Sigma },
-  { value: 'video', label: 'Direct Masterclass Video (MP4)', icon: Video },
+  { value: 'video', label: 'Long videos (landscape · Drive / MP4)', icon: Video },
   { value: 'reel', label: 'Short Video / Concept Reel', icon: Film },
   { value: 'youtube', label: 'YouTube Video Embed', icon: Youtube },
   { value: 'facebook', label: 'Facebook Video / Reel Embed', icon: Globe },
@@ -297,6 +299,9 @@ export const AdminContentSection: React.FC = () => {
       showMessage('Add a valid YouTube watch, Share, Shorts, live, or embed video link.', 'error');
       return;
     }
+    if (!editItem.classLevels?.length || !editItem.categoryId?.trim()) {
+      showMessage('Select at least one grade and a subject category.', 'error'); return;
+    }
     setSaving(true);
     const payload = prepareContentMetadata(editItem, isCreating);
     try {
@@ -333,8 +338,8 @@ export const AdminContentSection: React.FC = () => {
       title: '',
       slug: '',
       contentType: 'pdf',
-      classLevels: ['Class 10'],
-      categoryId: 'Algebra',
+      classLevels: [],
+      categoryId: '',
       subcategoryId: '',
       topic: '',
       shortDescription: '',
@@ -954,24 +959,8 @@ export const AdminContentSection: React.FC = () => {
                 </div>
               )}
 
-              {(previewItem.contentType === 'youtube' || (previewItem.contentType === 'video' && youtubeVideo(previewItem.embedUrl || previewItem.files?.[0]?.url || ''))) && (
-                <YouTubeEmbedViewer embedUrl={previewItem.embedUrl || previewItem.files?.[0]?.url || ''} title={previewItem.title} thumbnail={previewItem.thumbnail} />
-              )}
-
-              {((previewItem.contentType === 'video' && !youtubeVideo(previewItem.embedUrl || previewItem.files?.[0]?.url || '')) || previewItem.contentType === 'reel') && (
-                <div className="bg-black rounded-xl overflow-hidden aspect-video flex items-center justify-center text-white">
-                  <video
-                    controls
-                    poster={previewItem.thumbnail}
-                    className="w-full h-full object-contain"
-                  >
-                    <source
-                      src={previewItem.files?.[0]?.url || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'}
-                      type="video/mp4"
-                    />
-                    Your browser does not support the video tag.
-                  </video>
-                </div>
+              {['youtube','facebook','reel','video'].includes(previewItem.contentType) && (
+                <ViewerContainer item={previewItem as unknown as ContentItem} />
               )}
 
               {previewItem.contentType === 'course' && (
@@ -1110,39 +1099,7 @@ export const AdminContentSection: React.FC = () => {
                 </div>
               </div>
 
-              {/* Grades & Category */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="font-semibold text-slate-700">Target Grade Level</label>
-                  <select
-                    value={editItem.classLevels?.[0] || 'Class 10'}
-                    onChange={(e) =>
-                      setEditItem({
-                        ...editItem,
-                        classLevels: [e.target.value as StudentClass],
-                      })
-                    }
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-600 cursor-pointer"
-                  >
-                    {GRADE_LEVELS.map((g) => (
-                      <option key={g} value={g}>
-                        {g}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="font-semibold text-slate-700">Subject Category</label>
-                  <input
-                    type="text"
-                    value={editItem.categoryId || ''}
-                    onChange={(e) => setEditItem({ ...editItem, categoryId: e.target.value })}
-                    placeholder="Algebra / Geometry / Number System"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-600"
-                  />
-                </div>
-              </div>
+              <ContentClassificationFields value={editItem} onChange={patch=>setEditItem({...editItem,...patch})} />
 
               {/* Source Drive ID & Embed URL */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1152,7 +1109,7 @@ export const AdminContentSection: React.FC = () => {
                     type="text"
                     value={editItem.sourceDriveId || ''}
                     onChange={(e) => setEditItem({ ...editItem, sourceDriveId: e.target.value })}
-                    placeholder="1dr_8xK9ZqWvL3mNp7T2sF4hY5bC"
+                    placeholder="Google Drive file ID or file link"
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-600"
                   />
                 </div>
@@ -1168,6 +1125,8 @@ export const AdminContentSection: React.FC = () => {
                   />
                 </div>
               </div>
+
+              {['video','facebook','reel'].includes(editItem.contentType||'') && <p className="text-xs text-slate-500">Long videos use a landscape player. Add a Google Drive file ID/link above, or a direct video URL. Drive files retain their existing sharing permissions; importing does not make them public.</p>}
 
               {/* Access & Monetization */}
               <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-3">

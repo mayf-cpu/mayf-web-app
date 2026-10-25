@@ -1,3 +1,4 @@
+import { SUBJECT_TOPICS } from '../lib/cms/contentClassification';
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Filter, BookOpen, ArrowUpRight, ArrowRight, Sparkles, FileText, Download, CheckCircle2, Eye, X, ArrowUpDown } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
@@ -52,25 +53,8 @@ export const StudyMaterialPage: React.FC = () => {
     'Class 10',
   ];
 
-  const categories = [
-    'All',
-    'Number System',
-    'Algebra',
-    'Geometry',
-    'Coordinate Geometry',
-    'Trigonometry',
-    'Mensuration',
-  ];
-
-  const subcategoryMap: Record<string, string[]> = {
-    'All': ['All'],
-    'Number System': ['All', 'Real Numbers', 'Integers', 'Fractions & Decimals'],
-    'Algebra': ['All', 'Polynomials', 'Linear Equations', 'Quadratic Equations', 'Arithmetic Progressions', 'Mock Papers'],
-    'Geometry': ['All', 'Triangles', 'Circles', 'Quadrilaterals'],
-    'Coordinate Geometry': ['All', 'Cartesian Plane', 'Section Formula', 'Distance Formula'],
-    'Trigonometry': ['All', 'Trigonometric Ratios', 'Identities', 'Heights & Distances'],
-    'Mensuration': ['All', 'Surface Areas and Volumes', 'Conversion of Solids', 'Area Related to Circles'],
-  };
+  const categories = ['All',...Object.keys(SUBJECT_TOPICS)];
+  const subcategoryMap: Record<string,string[]> = Object.fromEntries(Object.entries(SUBJECT_TOPICS).map(([subject,topics])=>[subject,['All',...topics]]));
 
   const availableSubcategories = subcategoryMap[selectedCategory] || ['All'];
 
@@ -83,7 +67,7 @@ export const StudyMaterialPage: React.FC = () => {
     { label: 'Worksheets', value: 'worksheet' },
     { label: 'Multi-Image Guides', value: 'multiImage' },
     { label: 'Single Diagrams', value: 'singleImage' },
-    { label: 'Videos', value: 'video' },
+    { label: 'Long videos', value: 'video' },
     { label: 'YouTube Embeds', value: 'youtube' },
     { label: 'Micro Reels', value: 'facebook' },
   ];
