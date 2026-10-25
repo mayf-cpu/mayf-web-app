@@ -83,7 +83,10 @@ export const SiteSettingsProvider: React.FC<{ children: React.ReactNode }> = ({ 
           link.rel = 'icon';
           document.head.appendChild(link);
         }
+        link.removeAttribute('type');
+        link.removeAttribute('sizes');
         link.href = settings.brand.faviconUrl;
+        document.querySelectorAll('link[rel~="icon"]').forEach(other => { if (other !== link) other.remove(); });
       }
     }
   }, [settings]);

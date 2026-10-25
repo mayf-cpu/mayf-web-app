@@ -23,6 +23,7 @@ import {
   sanitizeColorHex,
   inspectSecuritySafety,
 } from '../security/sanitizer';
+import { resolveBrandImageUrl } from './brandImageUrl';
 import { getAdminFirestore } from '../firebase/admin';
 import { auditLogService } from '../audit/auditLogger';
 import { homepageLayoutService } from '../layout/homepageLayoutService';
@@ -52,6 +53,9 @@ class SiteSettingsService {
         const data = snap.data() as Partial<SiteSettings>;
         if (data) {
           this.currentSettings = this.mergeWithDefaults(data);
+          const brand = this.currentSettings.brand;
+          const [logoUrl, altLogoUrl, faviconUrl] = await Promise.all([brand.logoUrl, brand.altLogoUrl, brand.faviconUrl].map(value => resolveBrandImageUrl(value)));
+          this.currentSettings = { ...this.currentSettings, brand: { ...brand, logoUrl, altLogoUrl, faviconUrl } };
           this.cacheTimestamp = Date.now();
         }
       } else {

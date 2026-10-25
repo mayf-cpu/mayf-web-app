@@ -1,5 +1,6 @@
 import React from 'react';
 import { ShieldCheck, Award, Heart, CheckCircle2, Mail, Phone, MessageCircle } from 'lucide-react';
+import { BrandLogo } from '../ui/BrandLogo';
 import { Link } from '../../context/NavigationContext';
 import { useSiteSettings } from '../../context/SiteSettingsContext';
 
@@ -23,21 +24,7 @@ export const Footer: React.FC = () => {
           {/* Brand & Purpose */}
           <div className="md:col-span-1 space-y-3">
             <div className="flex items-center gap-2">
-              {logoUrl ? (
-                <img
-                  src={logoUrl}
-                  alt={siteName}
-                  className="w-8 h-8 rounded-lg object-contain"
-                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                />
-              ) : (
-                <div
-                  className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-heading font-extrabold text-base"
-                  style={{ backgroundColor: primaryColor }}
-                >
-                  {wordmarkGlyph}
-                </div>
-              )}
+              <BrandLogo className="h-12 w-auto max-w-[160px] object-contain" />
               <span className="font-heading font-bold text-base text-[#0F172A]">
                 {siteName}
               </span>

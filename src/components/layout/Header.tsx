@@ -4,6 +4,7 @@ import { Link, useNavigation } from '../../context/NavigationContext';
 import { useAuth } from '../../context/AuthContext';
 import { useSiteSettings } from '../../context/SiteSettingsContext';
 import { NotificationBellDropdown } from '../notifications/NotificationBellDropdown';
+import { BrandLogo } from '../ui/BrandLogo';
 import { Button } from '../ui/Button';
 
 export const Header: React.FC = () => {
@@ -28,10 +29,6 @@ export const Header: React.FC = () => {
 
   const configuredName = settings?.brand?.siteName?.trim();
   const siteName = configuredName && /\p{L}/u.test(configuredName) ? configuredName : 'Maths at Your Fingertips';
-  const bundledLogoUrl = '/mayf-logo.png';
-  const logoUrl = settings?.brand?.logoUrl || bundledLogoUrl;
-  const [failedLogoUrl, setFailedLogoUrl] = useState<string | null>(null);
-
   const navLinks = [
     { label: 'Study Material', href: '/study-material' },
     { label: 'Formula Deck', href: '/formula-deck' },
@@ -52,12 +49,7 @@ export const Header: React.FC = () => {
           title={`${siteName} Home`}
           aria-label={`${siteName} Home`}
         >
-            <img
-              src={failedLogoUrl === logoUrl ? bundledLogoUrl : logoUrl}
-              alt={siteName}
-              className="h-11 w-auto max-w-[120px] sm:h-12 sm:max-w-[220px] object-contain shrink-0"
-              onError={() => { if (failedLogoUrl !== logoUrl) setFailedLogoUrl(logoUrl); }}
-            />
+          <BrandLogo className="h-11 w-auto max-w-[120px] sm:h-12 sm:max-w-[220px] object-contain shrink-0" />
         </Link>
 
         {/* Zone 2: 4–6 text navigation links with subtle hover underlines */}
