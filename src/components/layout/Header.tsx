@@ -28,10 +28,9 @@ export const Header: React.FC = () => {
 
   const configuredName = settings?.brand?.siteName?.trim();
   const siteName = configuredName && /\p{L}/u.test(configuredName) ? configuredName : 'Maths at Your Fingertips';
-  const logoUrl = settings?.brand?.logoUrl;
+  const bundledLogoUrl = '/mayf-logo.png';
+  const logoUrl = settings?.brand?.logoUrl || bundledLogoUrl;
   const [failedLogoUrl, setFailedLogoUrl] = useState<string | null>(null);
-  const wordmarkGlyph = settings?.brand?.wordmarkGlyph || 'Σ';
-  const primaryColor = settings?.colors?.primaryColor || '#1D4ED8';
 
   const navLinks = [
     { label: 'Study Material', href: '/study-material' },
@@ -53,22 +52,12 @@ export const Header: React.FC = () => {
           title={`${siteName} Home`}
           aria-label={`${siteName} Home`}
         >
-          {logoUrl && failedLogoUrl !== logoUrl ? (
             <img
-              src={logoUrl}
+              src={failedLogoUrl === logoUrl ? bundledLogoUrl : logoUrl}
               alt={siteName}
               className="h-11 w-auto max-w-[120px] sm:h-12 sm:max-w-[220px] object-contain shrink-0"
-              onError={() => setFailedLogoUrl(logoUrl)}
+              onError={() => { if (failedLogoUrl !== logoUrl) setFailedLogoUrl(logoUrl); }}
             />
-          ) : (
-            <div
-              className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center text-white font-heading font-extrabold text-base sm:text-lg shadow-xs transition-colors shrink-0"
-              style={{ backgroundColor: primaryColor }}
-              aria-hidden="true"
-            >
-              {wordmarkGlyph}
-            </div>
-          )}
         </Link>
 
         {/* Zone 2: 4–6 text navigation links with subtle hover underlines */}
