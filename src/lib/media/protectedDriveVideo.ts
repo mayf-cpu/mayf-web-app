@@ -8,12 +8,12 @@ export async function protectedDrivePlayer(item:Record<string,any>,fetcher:typeo
  const headers={Authorization:'Bearer '+token};
  const base='https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(video.id);
  const fields='mimeType,trashed,copyRequiresWriterPermission';
- const read=()=>fetcher(base+'?supportsAllDrives=true&fields='+encodeURIComponent(fields),{headers,redirect:'error',signal:AbortSignal.timeout(10000)});
+ const read=()=>fetcher(base+'?supportsAllDrives=true&fields='+encodeURIComponent(fields),{headers,redirect:'manual',signal:AbortSignal.timeout(10000)});
  let response=await read();if(!response.ok)throw new Error('Video protection could not be verified. The owner must share this file with the site service account.');
  let metadata=await response.json() as any;
  if(metadata.trashed||!metadata.mimeType?.startsWith('video/'))throw new Error('This video is unavailable.');
  if(metadata.copyRequiresWriterPermission!==!permitted){
-  const update=await fetcher(base+'?supportsAllDrives=true',{method:'PATCH',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({copyRequiresWriterPermission:!permitted}),redirect:'error',signal:AbortSignal.timeout(10000)});
+  const update=await fetcher(base+'?supportsAllDrives=true',{method:'PATCH',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({copyRequiresWriterPermission:!permitted}),redirect:'manual',signal:AbortSignal.timeout(10000)});
   if(!update.ok)throw new Error('Playback is paused until the file owner disables viewer downloads in Google Drive sharing settings. The site could not apply this restriction.');
   response=await read();if(!response.ok)throw new Error('Video protection could not be verified.');metadata=await response.json();
   if(metadata.copyRequiresWriterPermission!==!permitted)throw new Error('Video download permission could not be verified.');

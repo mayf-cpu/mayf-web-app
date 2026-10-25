@@ -15,7 +15,7 @@ test('custom grades and subject-specific topics persist in configuration without
  assert.throws(()=>addClassification(next,{kind:'subcategory',subject:'Missing',name:'Topic'}));
 });
 test('Drive playback restricts legacy default-true downloads and verifies the saved restriction',async()=>{
- let restricted=false;const calls:any[]=[];const fake=async(url:any,options:any)=>{calls.push({url,options});if(options.method==='PATCH'){restricted=JSON.parse(options.body).copyRequiresWriterPermission;return Response.json({});}return Response.json({mimeType:'video/mp4',copyRequiresWriterPermission:restricted});};
+ let restricted=false;const calls:any[]=[];const fake=async(url:any,options:any)=>{assert.equal(options.redirect,'manual');calls.push({url,options});if(options.method==='PATCH'){restricted=JSON.parse(options.body).copyRequiresWriterPermission;return Response.json({});}return Response.json({mimeType:'video/mp4',copyRequiresWriterPermission:restricted});};
  const item={id:'v',contentType:'video',sourceDriveId:'source_file_id',downloadAllowed:true};
  const result=await protectedDrivePlayer(item,fake as any,async()=> 'credential');assert.equal(result.downloadAllowed,false);assert.equal(result.downloadUrl,undefined);assert.equal(restricted,true);assert.equal(calls.length,3);
  assert.equal(publicContent({...item,accessType:'free'}).embedUrl,'');assert.equal(publicContent({...item,accessType:'free'}).sourceDriveId,undefined);
