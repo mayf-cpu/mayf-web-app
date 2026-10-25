@@ -11,7 +11,12 @@ export const MathRenderer: React.FC<MathRendererProps> = ({ content, className =
     if (!content) return null;
 
     // Split content by block-level elements: code blocks, display math, tables, paragraphs
-    const lines = content.split('\n');
+    // Isolate display equations even when AI places prose on the same line.
+    // Protect code spans/fences from delimiter normalization.
+    const lines = content.split(/(```[\s\S]*?```|`[^`\n]*`)/g).map(part =>
+      part.startsWith('`') ? part : part.replace(/\$\$([\s\S]*?)\$\$|\\\[([\s\S]*?)\\\]/g,
+        (_match, dollars, brackets) => '\n$$\n' + (dollars ?? brackets).trim() + '\n$$\n')
+    ).join('').split('\n');
     const nodes: React.ReactNode[] = [];
     let currentParagraph: string[] = [];
     let inTable = false;
@@ -21,7 +26,7 @@ export const MathRenderer: React.FC<MathRendererProps> = ({ content, className =
       if (currentParagraph.length === 0) return;
       const text = currentParagraph.join('\n');
       nodes.push(
-        <div key={`${keyPrefix}-${nodes.length}`} className="my-2 leading-relaxed text-slate-800 text-sm">
+        <div key={`${keyPrefix}-${nodes.length}`} className="my-3 whitespace-pre-line leading-[1.85] text-slate-800 text-[15px] sm:text-base">
           {renderInlineMathAndFormatting(text)}
         </div>
       );
@@ -66,6 +71,14 @@ export const MathRenderer: React.FC<MathRendererProps> = ({ content, className =
     let i = 0;
     while (i < lines.length) {
       const line = lines[i];
+
+      if (line.trim().startsWith('```')) {
+        flushParagraph(`para-${i}`); flushTable(`tbl-${i}`);
+        const code: string[] = []; i++;
+        while (i < lines.length && !lines[i].trim().startsWith('```')) code.push(lines[i++]);
+        nodes.push(<pre key={`code-${i}`} className="my-3 overflow-x-auto rounded-lg bg-slate-100 p-4 text-sm"><code>{code.join('\n')}</code></pre>);
+        i++; continue;
+      }
 
       // 1. Display Math Block: $$ ... $$
       if (line.trim().startsWith('$$')) {
@@ -114,10 +127,10 @@ export const MathRenderer: React.FC<MathRendererProps> = ({ content, className =
         nodes.push(
           <h4
             key={`h3-${i}`}
-            className="text-xs font-heading font-extrabold tracking-wider uppercase text-blue-800 mt-4 mb-1.5 flex items-center gap-1.5"
+            className="text-sm font-heading font-semibold text-blue-800 mt-6 mb-2 flex items-center gap-1.5"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-blue-600 inline-block" />
-            {line.replace('### ', '')}
+            {renderInlineMathAndFormatting(line.replace('### ', ''))}
           </h4>
         );
         i++;
@@ -131,7 +144,7 @@ export const MathRenderer: React.FC<MathRendererProps> = ({ content, className =
             key={`h2-${i}`}
             className="text-sm font-heading font-bold text-slate-900 mt-5 mb-2 pb-1 border-b border-slate-200"
           >
-            {line.replace('## ', '')}
+            {renderInlineMathAndFormatting(line.replace('## ', ''))}
           </h3>
         );
         i++;
@@ -144,11 +157,11 @@ export const MathRenderer: React.FC<MathRendererProps> = ({ content, className =
         const isNumbered = /^\d+\.\s/.test(line.trim());
         const listText = line.trim().replace(/^(\*|-|\d+\.)\s/, '');
         nodes.push(
-          <div key={`li-${i}`} className="flex items-start gap-2 my-1.5 text-xs sm:text-sm text-slate-800">
+          <div key={`li-${i}`} className="flex items-start gap-2 my-2 text-[15px] sm:text-base text-slate-800">
             <span className="shrink-0 font-bold text-blue-700 text-xs mt-0.5">
               {isNumbered ? line.trim().match(/^\d+\./)?.[0] : '•'}
             </span>
-            <div className="flex-1 leading-relaxed">
+            <div className="min-w-0 flex-1 leading-[1.8]">
               {renderInlineMathAndFormatting(listText)}
             </div>
           </div>
@@ -190,7 +203,7 @@ function renderDisplayMath(latex: string, key: string): React.ReactNode {
     return (
       <div
         key={key}
-        className="my-3 py-2 px-3 overflow-x-auto rounded-lg bg-slate-50 border border-slate-200/90 text-center shadow-2xs"
+        className="equation-panel math-display"
         dangerouslySetInnerHTML={{ __html: html }}
       />
     );
@@ -218,7 +231,7 @@ function renderInlineMathAndFormatting(text: string): React.ReactNode[] {
       const latex = token.slice(2, -2);
       try {
         const html = katex.renderToString(latex, { displayMode: true, throwOnError: false });
-        return <span key={idx} dangerouslySetInnerHTML={{ __html: html }} />;
+        return <div key={idx} className="equation-panel math-display" dangerouslySetInnerHTML={{ __html: html }} />;
       } catch {
         return <code key={idx} className="font-mono text-xs">{latex}</code>;
       }
@@ -240,7 +253,7 @@ function renderInlineMathAndFormatting(text: string): React.ReactNode[] {
     if (token.startsWith('**') && token.endsWith('**') && token.length >= 4) {
       return (
         <strong key={idx} className="font-semibold text-slate-900">
-          {token.slice(2, -2)}
+          {renderInlineMathAndFormatting(token.slice(2, -2))}
         </strong>
       );
     }

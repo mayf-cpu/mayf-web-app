@@ -451,7 +451,7 @@ export const FormulaDeckPage: React.FC = () => {
                 <div className="bg-sky-50 border border-sky-200 rounded-xl p-5 sm:p-6 text-center my-4 overflow-x-auto scrollbar-thin">
                   {renderedSwipeLatex ? (
                     <div
-                      className="text-blue-900 text-xl sm:text-2xl font-semibold"
+                      className="equation-panel"
                       dangerouslySetInnerHTML={{ __html: renderedSwipeLatex }}
                     />
                   ) : (

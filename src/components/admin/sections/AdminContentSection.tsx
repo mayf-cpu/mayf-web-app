@@ -1,3 +1,5 @@
+import { YouTubeEmbedViewer } from '../../viewers/YouTubeEmbedViewer';
+import { youtubeVideo } from '../../../lib/media/youtube';
 import { prepareContentMetadata } from '../../../lib/cms/contentForm';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
@@ -291,6 +293,10 @@ export const AdminContentSection: React.FC = () => {
       return;
     }
 
+    if (editItem.contentType === 'youtube' && !youtubeVideo(editItem.embedUrl || editItem.files?.[0]?.url || '')) {
+      showMessage('Add a valid YouTube watch, Share, Shorts, live, or embed video link.', 'error');
+      return;
+    }
     setSaving(true);
     const payload = prepareContentMetadata(editItem, isCreating);
     try {
@@ -948,19 +954,11 @@ export const AdminContentSection: React.FC = () => {
                 </div>
               )}
 
-              {previewItem.contentType === 'youtube' && (
-                <div className="aspect-video bg-black rounded-xl overflow-hidden shadow-md">
-                  <iframe
-                    src={previewItem.embedUrl || 'https://www.youtube.com/embed/ZBalWWHY9kE'}
-                    title={previewItem.title}
-                    className="w-full h-full border-0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen
-                  />
-                </div>
+              {(previewItem.contentType === 'youtube' || (previewItem.contentType === 'video' && youtubeVideo(previewItem.embedUrl || previewItem.files?.[0]?.url || ''))) && (
+                <YouTubeEmbedViewer embedUrl={previewItem.embedUrl || previewItem.files?.[0]?.url || ''} title={previewItem.title} thumbnail={previewItem.thumbnail} />
               )}
 
-              {(previewItem.contentType === 'video' || previewItem.contentType === 'reel') && (
+              {((previewItem.contentType === 'video' && !youtubeVideo(previewItem.embedUrl || previewItem.files?.[0]?.url || '')) || previewItem.contentType === 'reel') && (
                 <div className="bg-black rounded-xl overflow-hidden aspect-video flex items-center justify-center text-white">
                   <video
                     controls
@@ -1165,7 +1163,7 @@ export const AdminContentSection: React.FC = () => {
                     type="text"
                     value={editItem.embedUrl || ''}
                     onChange={(e) => setEditItem({ ...editItem, embedUrl: e.target.value })}
-                    placeholder="https://www.youtube.com/embed/... or CDN URL"
+                    placeholder="YouTube watch / Share / Shorts link, or media URL"
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono text-slate-900 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-600"
                   />
                 </div>

@@ -301,7 +301,7 @@ export const FormulaDetailPage: React.FC = () => {
 
               {displayLatexHtml ? (
                 <div
-                  className="text-blue-900 text-2xl sm:text-3xl md:text-4xl font-medium tracking-wide py-2 overflow-x-auto"
+                  className="equation-panel"
                   dangerouslySetInnerHTML={{ __html: displayLatexHtml }}
                 />
               ) : (
