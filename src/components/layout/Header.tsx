@@ -26,8 +26,10 @@ export const Header: React.FC = () => {
     return () => controller.abort();
   }, []);
 
-  const siteName = settings?.brand?.siteName || 'Maths at Your Fingertips';
+  const configuredName = settings?.brand?.siteName?.trim();
+  const siteName = configuredName && /\p{L}/u.test(configuredName) ? configuredName : 'Maths at Your Fingertips';
   const logoUrl = settings?.brand?.logoUrl;
+  const [failedLogoUrl, setFailedLogoUrl] = useState<string | null>(null);
   const wordmarkGlyph = settings?.brand?.wordmarkGlyph || 'Σ';
   const primaryColor = settings?.colors?.primaryColor || '#1D4ED8';
 
@@ -44,30 +46,29 @@ export const Header: React.FC = () => {
       {/* Universal Top Bar Contract: Exactly 3 Zones on one row */}
       <div className="max-w-[1140px] mx-auto px-3 sm:px-6 min-h-16 py-2 flex flex-wrap items-center justify-between gap-2 sm:gap-4">
         
-        {/* Zone 1: Single text element wordmark with responsive truncation */}
+        {/* Zone 1: Logo-only home link; the accessible name remains available. */}
         <Link
           href="/"
           className="flex items-center gap-2 sm:gap-2.5 shrink min-w-0 group focus:outline-none py-1"
           title={`${siteName} Home`}
+          aria-label={`${siteName} Home`}
         >
-          {logoUrl ? (
+          {logoUrl && failedLogoUrl !== logoUrl ? (
             <img
               src={logoUrl}
               alt={siteName}
-              className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg object-contain shrink-0"
-              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              className="h-11 w-auto max-w-[120px] sm:h-12 sm:max-w-[220px] object-contain shrink-0"
+              onError={() => setFailedLogoUrl(logoUrl)}
             />
           ) : (
             <div
               className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center text-white font-heading font-extrabold text-base sm:text-lg shadow-xs transition-colors shrink-0"
               style={{ backgroundColor: primaryColor }}
+              aria-hidden="true"
             >
               {wordmarkGlyph}
             </div>
           )}
-          <span className="font-heading font-extrabold text-base sm:text-lg tracking-tight text-[#0F172A] group-hover:text-[#1D4ED8] transition-colors truncate max-w-[125px] min-[390px]:max-w-[170px] sm:max-w-none">
-            {siteName}
-          </span>
         </Link>
 
         {/* Zone 2: 4–6 text navigation links with subtle hover underlines */}
