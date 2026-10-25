@@ -7,7 +7,7 @@ const staging = JSON.parse(readFileSync(new URL('../wrangler.staging.jsonc',impo
 assert.notEqual(staging.name,production.name,'Staging Worker must be separate');
 assert.equal(staging.name,'staging-acceptance-mayf');
 assert.equal(staging.main,'worker.ts');
-assert.deepEqual(staging.assets.run_worker_first,['/api/*']);
+assert.deepEqual(staging.assets.run_worker_first,['/api/*','/robots.txt','/sitemap.xml']);
 assert.equal(staging.r2_buckets?.length,1);
 assert.equal(staging.r2_buckets[0].binding,'MAYF_PDF_BUCKET');
 assert.equal(staging.r2_buckets[0].bucket_name,'mayf-staging-materials');

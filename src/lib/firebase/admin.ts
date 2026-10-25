@@ -11,6 +11,7 @@ import type { App } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import type { Auth, UserRecord } from 'firebase-admin/auth';
 import { FirestoreDocumentStore } from './documentStore';
+import { getGoogleAccessToken } from './googleAccessToken';
 
 export interface FirebaseAdminConfig {
   projectId: string;
@@ -162,14 +163,9 @@ export function getAdminFirestore(): FirestoreDocumentStore | null {
   if (adminFirestoreInstance) {
     return adminFirestoreInstance;
   }
-  const app = getFirebaseAdminApp();
-  if (!app) return null;
   try {
-    adminFirestoreInstance = new FirestoreDocumentStore(getFirebaseAdminConfig().projectId, async () => {
-      const credential = app.options.credential;
-      if (!credential) throw new Error('Firebase service credentials are missing');
-      return (await credential.getAccessToken()).access_token;
-    });
+    adminFirestoreInstance = new FirestoreDocumentStore(getFirebaseAdminConfig().projectId,
+      () => getGoogleAccessToken(['https://www.googleapis.com/auth/datastore']));
     return adminFirestoreInstance;
   } catch (error: any) {
     console.warn('[Firebase Admin] getFirestore warning:', error?.message);
