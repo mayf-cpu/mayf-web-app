@@ -243,7 +243,7 @@ export const AdminLayoutSection: React.FC = () => {
         <div className="flex items-center gap-2.5 flex-wrap">
           <a
             href="/"
-            target="_blank"
+            target="_self"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 px-3 py-2 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
           >

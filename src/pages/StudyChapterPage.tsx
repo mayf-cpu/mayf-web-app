@@ -143,7 +143,7 @@ export const StudyChapterPage: React.FC = () => {
   const relevantFormulas = INITIAL_FORMULAS.filter(
     (f) =>
       f.category === activeItem.categoryId ||
-      activeItem.classLevels.some((c) => f.applicableClasses.includes(c))
+      activeItem.classLevels.some((c) => f.applicableClasses.some(grade => grade === c))
   );
 
   const relevantProblems = INITIAL_SOLVED_PROBLEMS.filter(

@@ -273,7 +273,7 @@ export const CourseDetailPage: React.FC = () => {
 
                     <a
                       href={`/study/${chapter.slug}`}
-                      target="_blank"
+                      target="_self"
                       rel="noopener noreferrer"
                       className="shrink-0 px-3 py-1 bg-white border border-[#CBD5E1] text-[#1D4ED8] hover:bg-[#EFF6FF] rounded-md text-xs font-semibold flex items-center gap-1 group-hover:border-[#1D4ED8] transition-colors"
                     >
@@ -307,7 +307,7 @@ export const CourseDetailPage: React.FC = () => {
                     <a
                       key={formula.id}
                       href={`/formula/${formula.slug}`}
-                      target="_blank"
+                      target="_self"
                       rel="noopener noreferrer"
                       className="p-3 rounded-lg border border-[#E2E8F0] hover:border-[#00687A] hover:bg-[#F8FAFC] transition-all flex flex-col justify-between group"
                     >

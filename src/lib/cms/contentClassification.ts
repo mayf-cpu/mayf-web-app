@@ -13,6 +13,6 @@ export const SUBJECT_TOPICS: Record<string,string[]> = {
  'Statistics':['Data Handling','Mean, Median & Mode','Grouped Data'],
  'Probability':['Probability of Events','Sample Spaces','Complementary Events'],
 };
-export function toggleContentGrade(selected:string[],grade:StudentClass):string[]{
- return selected.includes(grade)?selected.filter(value=>value!==grade):CONTENT_GRADES.filter(value=>value===grade||selected.includes(value));
+export function toggleContentGrade(selected:string[],grade:string):string[]{
+ return selected.includes(grade)?selected.filter(value=>value!==grade):[...selected,grade];
 }

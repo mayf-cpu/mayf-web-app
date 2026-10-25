@@ -70,7 +70,8 @@ export interface ContentItem {
   slug: string;
   shortDescription?: string;
   description?: string;
-  classLevels: StudentClass[];
+  classLevels: string[];
+  protectedDriveVideo?: boolean;
   categoryId: string;
   subcategoryId?: string;
   topic?: string;
@@ -84,6 +85,7 @@ export interface ContentItem {
   currency?: 'INR' | string;
   annualPassIncluded?: boolean;
   downloadAllowed?: boolean;
+  downloadPermissionConfirmed?: boolean;
   visible: boolean;
   featured?: boolean;
   trending?: boolean;

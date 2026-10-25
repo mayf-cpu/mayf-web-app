@@ -278,7 +278,7 @@ export const ShareButton: React.FC<ShareProps> = ({
           <a
             key={item.name}
             href={item.href}
-            target="_blank"
+            target="_self"
             rel="noopener noreferrer"
             onClick={() => handleSocialClick(item.name)}
             className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#CBD5E1] bg-white text-xs font-semibold transition-all ${item.color}`}
@@ -420,7 +420,7 @@ export const ShareButton: React.FC<ShareProps> = ({
                 <a
                   key={item.name}
                   href={item.href}
-                  target="_blank"
+                  target="_self"
                   rel="noopener noreferrer"
                   onClick={() => {
                     handleSocialClick(item.name);

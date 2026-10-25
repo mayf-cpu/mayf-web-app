@@ -910,7 +910,7 @@ export const HomePage: React.FC = () => {
           {/* Telegram */}
           <a
             href={config.telegramUrl || 'https://t.me/mayf_mathematics'}
-            target="_blank"
+            target="_self"
             rel="noopener noreferrer"
             className="group p-4 rounded-lg border border-[#E2E8F0] hover:border-[#0284C7] bg-[#F8FAFC] hover:bg-white transition-all flex items-center justify-between"
           >
@@ -931,7 +931,7 @@ export const HomePage: React.FC = () => {
           {/* YouTube */}
           <a
             href={config.youtubeUrl || 'https://youtube.com/@MathsAtYourFingertips'}
-            target="_blank"
+            target="_self"
             rel="noopener noreferrer"
             className="group p-4 rounded-lg border border-[#E2E8F0] hover:border-[#DC2626] bg-[#F8FAFC] hover:bg-white transition-all flex items-center justify-between"
           >
@@ -953,7 +953,7 @@ export const HomePage: React.FC = () => {
           <a
             href={usableWhatsApp(config.whatsappUrl) || undefined}
             aria-disabled={!usableWhatsApp(config.whatsappUrl)}
-            target="_blank"
+            target="_self"
             rel="noopener noreferrer"
             className="group p-4 rounded-lg border border-[#E2E8F0] hover:border-[#16A34A] bg-[#F8FAFC] hover:bg-white transition-all flex items-center justify-between"
           >

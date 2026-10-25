@@ -5,7 +5,7 @@ import type { FirestoreDocumentStore } from '../src/lib/firebase/documentStore';
 
 const pdf = {
  id:'cnt-pdf-topic',slug:'topic',title:'Topic PDF',visible:true,status:'published',
- contentType:'pdf',accessType:'paid',downloadAllowed:true,isDeleted:false,
+ contentType:'pdf',accessType:'paid',downloadAllowed:true,downloadPermissionConfirmed:true,isDeleted:false,
  classLevels:['Class 8'],categoryId:'algebra',files:[{
   url:'r2://mayf-study-materials/pdf/cnt-pdf-topic.pdf',sizeBytes:1234,
  }],

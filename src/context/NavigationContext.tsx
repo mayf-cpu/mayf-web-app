@@ -148,8 +148,8 @@ export function Link({
 }) {
   const { navigate } = useNavigation();
 
-  const isBlank = target === '_blank' || openInNewTab === true;
-  const computedTarget = isBlank ? '_blank' : target;
+  const isBlank = false;
+  const computedTarget = '_self';
   const computedRel = isBlank ? (rel || 'noopener noreferrer') : rel;
 
   const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {

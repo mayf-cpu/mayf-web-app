@@ -300,7 +300,7 @@ function setupInstallableTrigger() {
             </div>
             <div>
               <span className="font-heading font-bold text-[#0F172A] block">Private Storage: Check Configuration</span>
-              <span>PDF imports use private R2 storage. Video imports verify the Drive file and register its original player; the file remains in Drive and keeps its existing sharing permissions.</span>
+              <span>PDF imports use private R2 storage. Video imports remain in Drive. Playback verifies viewer download restrictions; the site service account needs permission to read the file and apply restrictions.</span>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0 font-mono text-[11px] bg-white px-2.5 py-1 rounded border border-[#CBD5E1]">
@@ -534,7 +534,7 @@ function setupInstallableTrigger() {
                           {job.status === 'imported' && (
                             <a
                               href={`/study/${job.sourceRowMetadata.slug || job.firestoreDocId}`}
-                              target="_blank"
+                              target="_self"
                               rel="noopener noreferrer"
                               className="p-1.5 text-[#1D4ED8] hover:bg-[#EFF6FF] rounded inline-flex items-center"
                               title="View Published Resource"

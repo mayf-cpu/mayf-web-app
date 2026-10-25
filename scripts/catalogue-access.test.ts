@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { canReadPremiumContent, publicContent } from '../src/lib/catalogue/catalogueAccess';
 test('catalogue download controls agree with private CMS PDF eligibility', () => {
   const pdf = { id: 'real-pdf', title: 'Real PDF', accessType: 'free', contentType: 'pdf',
-    visible: true, status: 'published', downloadAllowed: true,
+    visible: true, status: 'published', downloadAllowed: true, downloadPermissionConfirmed: true,
     files: [{ url: 'r2://mayf-study-materials/pdf/real-pdf.pdf' }] };
   assert.equal(publicContent(pdf).downloadAllowed, true);
   assert.equal(publicContent({ ...pdf, accessType: 'paid' }).downloadAllowed, true);

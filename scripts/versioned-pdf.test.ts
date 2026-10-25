@@ -13,7 +13,7 @@ test('versioned private PDF keys enforce exact content ownership',()=>{
 test('CMS resolver uses the published revision, never guessed latest version',async()=>{
  const key=versionedPdfKey('cnt-pdf-7',digest);
  const item={id:'cnt-pdf-7',slug:'sample',title:'Sample',contentType:'pdf',
- visible:true,status:'published',isDeleted:false,downloadAllowed:true,accessType:'paid',
+ visible:true,status:'published',isDeleted:false,downloadAllowed:true,downloadPermissionConfirmed:true,accessType:'paid',
  files:[{url:'r2://mayf-study-materials/'+key,sizeBytes:1024}]};
  const db={
   collection:()=>({doc:()=>({get:async()=>({exists:true,data:()=>item})})}),
