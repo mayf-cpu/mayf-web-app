@@ -29,7 +29,7 @@ export const FormulaCard: React.FC<FormulaCardProps> = ({
     if (!formula.latexFormula) return null;
     try {
       return katex.renderToString(formula.latexFormula, {
-        displayMode: false,
+        displayMode: true,
         throwOnError: false,
       });
     } catch {
@@ -124,7 +124,7 @@ export const FormulaCard: React.FC<FormulaCardProps> = ({
           <div className="flex-1 min-w-0 overflow-x-auto py-1 scrollbar-thin">
             {renderedLatex ? (
               <div
-                className="text-blue-900 font-medium text-sm sm:text-base whitespace-nowrap"
+                className="equation-panel"
                 dangerouslySetInnerHTML={{ __html: renderedLatex }}
               />
             ) : (

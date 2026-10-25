@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Play, ExternalLink } from 'lucide-react';
-import { Button } from '../ui/Button';
+import { youtubeVideo } from '../../lib/media/youtube';
 
 interface YouTubeEmbedViewerProps {
   embedUrl: string;
@@ -14,42 +14,16 @@ export const YouTubeEmbedViewer: React.FC<YouTubeEmbedViewerProps> = ({
   thumbnail,
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isInViewport, setIsInViewport] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
 
-  // Extract video ID for clean thumbnail resolution if thumbnail not provided
-  const videoIdMatch = embedUrl.match(/(?:embed\/|v=|\/v\/|youtu\.be\/|\/embed\/)([^?&"'>]+)/);
-  const videoId = videoIdMatch ? videoIdMatch[1] : '';
-  const fallbackThumbnail = videoId
-    ? `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
-    : thumbnail || 'https://images.unsplash.com/photo-1596495578065-6e0763fa1178?w=1200&auto=format&fit=crop&q=80';
+  const video = youtubeVideo(embedUrl, true);
+  const fallbackThumbnail = video ? `https://img.youtube.com/vi/${video.id}/hqdefault.jpg` : '';
+  useEffect(() => { setIsPlaying(false); }, [embedUrl]);
 
-  // IntersectionObserver ensures we don't do pre-emptive work until in viewport
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          setIsInViewport(true);
-        }
-      },
-      { threshold: 0.1 }
-    );
+  if (!video) return <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-700" role="status">A valid YouTube video link has not been added to this resource yet.</div>;
 
-    if (containerRef.current) {
-      observer.observe(containerRef.current);
-    }
-
-    return () => observer.disconnect();
-  }, []);
-
-  // Format autoplay URL only after explicit user interaction
-  const activeIframeSrc = embedUrl.includes('?')
-    ? `${embedUrl}&autoplay=1`
-    : `${embedUrl}?autoplay=1`;
 
   return (
-    <div
-      ref={containerRef}
+    <div className="min-w-0"><div
       className="relative w-full aspect-video rounded-xl overflow-hidden bg-[#0F172A] border border-[#E2E8F0] shadow-md group"
     >
       {!isPlaying ? (
@@ -86,18 +60,19 @@ export const YouTubeEmbedViewer: React.FC<YouTubeEmbedViewerProps> = ({
 
           {/* Zero-Tracking & Performance Indicator */}
           <div className="absolute bottom-3 right-4 z-10 text-[10px] text-white/75 bg-black/50 backdrop-blur-xs px-2 py-1 rounded">
-            Click to load player (Zero iframe overhead)
+            Click to play
           </div>
         </div>
       ) : (
         <iframe
-          src={activeIframeSrc}
+          src={video.embedUrl}
+          referrerPolicy="strict-origin-when-cross-origin"
           title={title}
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
           allowFullScreen
           className="w-full h-full border-0"
         />
       )}
-    </div>
+    </div><a href={video.watchUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:underline">Watch on YouTube <ExternalLink className="h-3.5 w-3.5" /></a></div>
   );
 };

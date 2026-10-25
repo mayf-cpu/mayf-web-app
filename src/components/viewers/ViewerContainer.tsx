@@ -1,4 +1,5 @@
 import React, { Suspense, lazy } from 'react';
+import { youtubeVideo } from '../../lib/media/youtube';
 import { ContentItem } from '../../lib/firebase/types';
 import { LoadingSpinner } from '../ui/LoadingState';
 
@@ -58,7 +59,7 @@ export const ViewerContainer: React.FC<ViewerContainerProps> = ({ item }) => {
           case 'youtube':
             return (
               <YouTubeEmbedViewer
-                embedUrl={item.embedUrl || 'https://www.youtube.com/embed/ZBalWWHY9kE'}
+                embedUrl={item.embedUrl || primaryFile?.url || ''}
                 title={item.title}
                 thumbnail={item.thumbnail}
               />
@@ -75,6 +76,7 @@ export const ViewerContainer: React.FC<ViewerContainerProps> = ({ item }) => {
             );
 
           case 'video':
+            if (youtubeVideo(item.embedUrl || primaryFile?.url || '')) return <YouTubeEmbedViewer embedUrl={item.embedUrl || primaryFile?.url || ''} title={item.title} thumbnail={item.thumbnail} />;
             return (
               <VideoViewer
                 videoUrl={item.embedUrl || primaryFile?.url || ''}
