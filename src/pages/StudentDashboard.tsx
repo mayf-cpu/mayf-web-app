@@ -1,3 +1,4 @@
+import { GradeSelector } from '../components/ui/GradeSelector';
 import { CourseProgress } from '../components/ui/CourseProgress';
 import { submitDoubtRating } from '../lib/ai/feedbackClient';
 import { downloadCards, type DownloadCard as DownloadResource } from '../lib/download/downloadCatalogue';
@@ -534,18 +535,7 @@ export const StudentDashboard: React.FC = () => {
               {/* Class Selector Dropdown */}
               <div className="flex items-center gap-2 text-xs bg-[#F8FAFC] border border-[#E2E8F0] px-3 py-1.5 rounded-lg">
                 <span className="text-[#64748B] font-medium">Grade:</span>
-                <select
-                  aria-label="Student Class"
-                  value={user?.studentClass || 'Class 10'}
-                  onChange={(e) => updateClass(e.target.value as StudentClass)}
-                  className="bg-transparent font-heading font-bold text-xs text-[#0F172A] focus:outline-none cursor-pointer"
-                >
-                  {(['Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10'] as StudentClass[]).map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
+                <GradeSelector label="Student Class" />
               </div>
 
               {/* Quick AI Teacher Action */}
@@ -689,20 +679,9 @@ export const StudentDashboard: React.FC = () => {
                   <div className="space-y-4 text-xs">
                     <div>
                       <label className="text-[#64748B] block font-medium mb-1.5">Enrolled Grade Level</label>
-                      <select
-                        aria-label="Select Enrolled Grade"
-                        value={user?.studentClass || 'Class 10'}
-                        onChange={(e) => updateClass(e.target.value as StudentClass)}
-                        className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg px-3 py-2 text-xs sm:text-sm font-heading font-semibold text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#1D4ED8]"
-                      >
-                        {(['Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10'] as StudentClass[]).map((c) => (
-                          <option key={c} value={c}>
-                            {c} CBSE / ICSE Standard
-                          </option>
-                        ))}
-                      </select>
+                      <GradeSelector label="Select Enrolled Grade" />
                       <p className="text-[11px] text-[#64748B] mt-1">
-                        Changing your grade filters formulas, chapter notes, and mock tests automatically.
+                        Choose your grade and select Save grade to update your profile and learning filters.
                       </p>
                     </div>
 
