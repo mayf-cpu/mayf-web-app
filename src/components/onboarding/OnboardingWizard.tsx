@@ -47,7 +47,7 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
     badgeText: 'Curriculum Setup',
     description: 'Welcome to Maths at Your Fingertips! Your learning experience is automatically filtered to your academic grade.',
     educationalTooltip:
-      'Select your exact class (Class 5 through Class 10) and curriculum board (CBSE or ICSE) from the header selector. Every formula card, chapter breakdown, and practice problem will instantly calibrate to your official NCERT and board syllabus.',
+      'Your grade starts at All. You can select and save your grade from your profile dashboard whenever you want to focus your learning.',
     proTip: 'Changing your class grade never resets your progress or saved formulas. You can switch grade levels anytime to revise previous years concepts.',
     targetPath: '/study-material',
     actionLabel: 'Browse Chapters',
