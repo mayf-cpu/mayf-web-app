@@ -1,11 +1,10 @@
-import {sessionTeacherName} from '../lib/ai/teacherIdentity';
+import {useSiteSettings} from '../context/SiteSettingsContext';
+import {sessionTeacherName,teacherDisplayName,teacherWelcome} from '../lib/ai/teacherIdentity';
 import { submitDoubtRating } from '../lib/ai/feedbackClient';
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  Bot,
   Send,
   Sparkles,
-  Camera,
   Upload,
   Image as ImageIcon,
   X,
@@ -54,6 +53,9 @@ export const AiTeacherPage: React.FC = () => {
   const queryTopic = currentRoute.searchParams.get('topic');
 
   const [teacherName]=useState(()=>{try{return sessionTeacherName(window.sessionStorage);}catch{return sessionTeacherName();}});
+  const displayName=teacherDisplayName(teacherName);
+  const {settings}=useSiteSettings();
+  const teacherIcon=<img src={settings.brand.faviconUrl||'/mayf-logo.png'} alt="" className="h-7 w-7 object-contain" onError={e=>{if(!e.currentTarget.src.endsWith('/mayf-logo.png'))e.currentTarget.src='/mayf-logo.png';}}/>;
   const [studentClass, setStudentClass] = useState<StudentClass>(
     user?.studentClass || 'All'
   );
@@ -64,14 +66,12 @@ export const AiTeacherPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [quotaRemaining, setQuotaRemaining] = useState<number | null>(null);
-  const [activeModel, setActiveModel] = useState<string>('gemini-3.8-flash');
   const [ratingSubmittedIds, setRatingSubmittedIds] = useState<Record<string, 'helpful' | 'unhelpful'>>({});
 
   const [ratingError, setRatingError] = useState('');
   const [ratingPending, setRatingPending] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -79,20 +79,10 @@ export const AiTeacherPage: React.FC = () => {
     {
       id: 'welcome-1',
       sender: 'ai_teacher',
-      text: `### Understanding the Question\nHello! I am **${teacherName}**, your dedicated AI Mathematics Teacher for **${studentClass}**.\n\n### Given Information\n* Grades Covered: Classes 5 to 10 (CBSE & ICSE Syllabuses)\n* Supported Inputs: Typed algebra, textbook photo upload, mobile camera photograph, and clipboard screenshot\n\n### Concept Used\nMulti-step pedagogical problem decomposition with beautiful KaTeX equations: $$\\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}, \\quad a^2 + b^2 = c^2, \\quad \\sin^2 \\theta + \\cos^2 \\theta = 1$$\n\n### Step-by-Step Solution\n1. Type any math doubt or take a photo of your exercise problem.\n2. I will break it down into givens, theorems, worked algebraic steps, and exam verification.\n3. If an image is blurry or numbers are cut off, I will ask for clarification rather than guessing.\n\n### Final Answer\nReady whenever you are! Ask your first doubt below.`,
+      text: teacherWelcome(teacherName),
       timestamp: 'Just now',
     },
   ]);
-
-  // Fetch model config on mount
-  useEffect(() => {
-    fetch('/api/ai-teacher/config')
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.model) setActiveModel(data.model);
-      })
-      .catch(() => {});
-  }, []);
 
   // Auto-scroll chat to latest message
   useEffect(() => {
@@ -246,7 +236,7 @@ export const AiTeacherPage: React.FC = () => {
         const teacherNoticeMsg: ChatMessage = {
           id: 'msg-notice-' + Date.now(),
           sender: 'ai_teacher',
-          text: `### ${teacherName} Note\n${noticeText}\n\n* Please ensure equations and signs are readable.\n* You can also type out the question directly in the input box below.`,
+          text: `### ${displayName} Note\n${noticeText}\n\n* Please ensure equations and signs are readable.\n* You can also type out the question directly in the input box below.`,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         };
         setMessages((prev) => [...prev, teacherNoticeMsg]);
@@ -271,7 +261,7 @@ export const AiTeacherPage: React.FC = () => {
       logProductEvent({
         userId: user?.uid || 'anonymous-student',
         eventType: 'ai_question',
-        title: `Asked ${teacherName}: "${studentMsg.text.slice(0, 50)}..."`,
+        title: `Asked ${displayName}: "${studentMsg.text.slice(0, 50)}..."`,
         targetId: data.doubtId,
         targetType: 'ai_doubt',
         metadata: {
@@ -307,13 +297,7 @@ export const AiTeacherPage: React.FC = () => {
     { label: '°', val: '^\\circ' },
   ];
 
-  const quickPrompts = [
-    'How do I solve 2x² - 5x + 3 = 0 using the quadratic formula?',
-    'Prove that √5 is an irrational number by contradiction.',
-    'What is the formula for the total surface area of a cone?',
-    'State and prove Basic Proportionality Theorem (BPT).',
-    'How do I find HCF and LCM of 96 and 404 using prime factorisation?',
-  ];
+
 
   const classes: StudentClass[] = [
     'All',
@@ -361,14 +345,14 @@ export const AiTeacherPage: React.FC = () => {
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 text-xs font-heading font-semibold text-blue-700 mb-1">
-              <Sparkles className="w-4 h-4 text-cyan-500" />
-              <span>{teacherName} · AI Mathematics Tutor</span>
+              {teacherIcon}
+              <span>{displayName}</span>
             </div>
             <h1 className="font-heading font-extrabold text-2xl text-slate-900 tracking-tight">
-              Class 5–10 Step-by-Step AI Teacher
+              Your Personal AI Teacher
             </h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              Multimodal reasoning with typed math, camera capture, and textbook photo analysis.
+              Ask a question by typing or uploading an image.
             </p>
           </div>
 
@@ -419,14 +403,6 @@ export const AiTeacherPage: React.FC = () => {
         {/* Security, Model, and Quota Strip */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border border-blue-200/60 rounded-xl text-xs text-slate-700">
           <div className="flex items-center gap-3 flex-wrap">
-            <span className="inline-flex items-center gap-1 font-mono text-[11px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-semibold">
-              <Zap className="w-3 h-3 text-blue-600" />
-              {activeModel}
-            </span>
-            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-800 font-medium">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              Server-enforced usage limits
-            </span>
             {quotaRemaining !== null && (
               <span className="text-[11px] text-slate-600">
                 Daily Doubts Remaining: <strong>{quotaRemaining}</strong>
@@ -443,20 +419,6 @@ export const AiTeacherPage: React.FC = () => {
               <span>View My AI History</span>
             </Link>
           </div>
-        </div>
-
-        {/* Quick Prompts Strip */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-          <span className="text-xs text-slate-500 font-semibold shrink-0">Try asking:</span>
-          {quickPrompts.map((q, idx) => (
-            <button
-              key={idx}
-              onClick={() => handleSendMessage(q)}
-              className="text-xs bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-slate-600 hover:text-blue-700 px-3 py-1.5 rounded-full shrink-0 transition-colors cursor-pointer text-left font-medium"
-            >
-              {q}
-            </button>
-          ))}
         </div>
 
         {/* Main Chat Box */}
@@ -483,7 +445,7 @@ export const AiTeacherPage: React.FC = () => {
                         : 'bg-slate-100 text-slate-800 border border-slate-300'
                     }`}
                   >
-                    {isTeacher ? 'Σ' : 'You'}
+                    {isTeacher ? teacherIcon : 'You'}
                   </div>
 
                   <div
@@ -500,7 +462,7 @@ export const AiTeacherPage: React.FC = () => {
                       }`}
                     >
                       <span className="font-heading font-semibold">
-                        {isTeacher ? `${teacherName} (AI Teacher)` : 'Student Question'}
+                        {isTeacher ? displayName : 'Student Question'}
                       </span>
                       <span className="font-mono text-[10px]">{msg.timestamp}</span>
                     </div>
@@ -568,11 +530,11 @@ export const AiTeacherPage: React.FC = () => {
             {loading && (
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-blue-700 text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                  Σ
+                  {teacherIcon}
                 </div>
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs text-slate-600 flex items-center gap-2.5">
                   <RefreshCw className="w-4 h-4 animate-spin text-blue-700" />
-                  <span>{teacherName} is analyzing the algebraic steps and theorems...</span>
+                  <span>{displayName} is analyzing the algebraic steps and theorems...</span>
                 </div>
               </div>
             )}
@@ -644,45 +606,12 @@ export const AiTeacherPage: React.FC = () => {
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) handleFileChange(file, 'image');
+                  e.currentTarget.value = '';
                 }}
               />
-              <input
-                ref={cameraInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                capture="environment"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleFileChange(file, 'camera');
-                }}
-              />
-
-              {/* Action buttons (Camera, Upload) with accessible touch targets (>= 44px) */}
-              <div className="flex items-center gap-1.5 shrink-0 pb-1">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-white hover:bg-slate-100 border border-slate-300 text-slate-600 hover:text-blue-700 transition-colors cursor-pointer"
-                  title="Upload math problem photo (JPEG, PNG, WebP)"
-                  aria-label="Upload photo"
-                >
-                  <Upload className="w-4 h-4" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => cameraInputRef.current?.click()}
-                  className="w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-white hover:bg-slate-100 border border-slate-300 text-slate-600 hover:text-blue-700 transition-colors cursor-pointer"
-                  title="Take photo with camera (supported mobile devices)"
-                  aria-label="Take photo with camera"
-                >
-                  <Camera className="w-4 h-4" />
-                </button>
-              </div>
-
               {/* Textarea */}
-              <div className="flex-1 relative">
+              <div className="flex-1 relative min-w-0">
+                <button type="button" onClick={()=>fileInputRef.current?.click()} disabled={loading} aria-label="Upload question image" title="Upload an image (JPEG, PNG or WebP)" className="absolute left-1 bottom-2 z-10 flex h-10 w-10 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 disabled:opacity-50"><Upload className="h-5 w-5"/></button>
                 <textarea
                   ref={textareaRef}
                   rows={2}
@@ -696,8 +625,8 @@ export const AiTeacherPage: React.FC = () => {
                     }
                   }}
                   disabled={loading}
-                  placeholder={`Ask a math doubt in ${topic} for ${studentClass}... (Paste screenshot with Ctrl+V)`}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 resize-none min-h-[44px]"
+                  placeholder="Type or upload your problem here…"
+                  className="w-full bg-white border border-slate-300 rounded-xl pl-12 pr-3.5 py-2 text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 resize-none min-h-[44px]"
                 />
               </div>
 

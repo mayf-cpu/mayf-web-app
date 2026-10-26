@@ -1,5 +1,11 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {sessionTeacherName,safeTeacherName,TEACHER_NAMES} from '../src/lib/ai/teacherIdentity';
+import {teacherDisplayName,teacherWelcome} from '../src/lib/ai/teacherIdentity';
+test('teacher titles and brief introductions agree for all male and female session names',()=>{
+ for(const name of ['Aarav','Arjun','Rohan','Vikram'])assert.equal(teacherDisplayName(name),name+' Sir');
+ for(const name of ['Ananya','Priya','Kavya','Meera'])assert.equal(teacherDisplayName(name),name+" Ma'am");
+ for(const name of TEACHER_NAMES){const welcome=teacherWelcome(name);assert.ok(welcome.includes(teacherDisplayName(name)));assert.ok(welcome.includes('upload an image'));assert.ok(!welcome.includes('###'));assert.ok(!welcome.includes('(AI Teacher)'));}
+});
 import {saveStudentGrade} from '../src/lib/firebase/studentProfile';
 test('All can be saved from the profile without changing other profile fields',async()=>{
  let patch:any;const db:any={collection:()=>({doc:()=>({get:async()=>({exists:true,updateTime:'revision'})})}),commit:async([write]:any[])=>{patch=write;}};
