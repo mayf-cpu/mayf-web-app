@@ -1,9 +1,11 @@
+import {useSiteSettings} from '../../context/SiteSettingsContext';
 import React from 'react';
 import { BookOpen, Layers, Bot, User } from 'lucide-react';
 import { Link, useNavigation } from '../../context/NavigationContext';
 import { useAuth } from '../../context/AuthContext';
 
 export const MobileNav: React.FC = () => {
+  const {settings}=useSiteSettings();
   const { currentRoute } = useNavigation();
   const { user } = useAuth();
 
@@ -36,7 +38,7 @@ export const MobileNav: React.FC = () => {
 
   return (
     <nav
-      className="md:hidden fixed bottom-0 left-0 right-0 z-40 h-16 glass-nav border-t border-[#E2E8F0] px-4 pb-[env(safe-area-inset-bottom,0px)]"
+      style={{backgroundColor:settings.colors.primaryColor}} className="md:hidden fixed bottom-0 left-0 right-0 z-40 h-16 border-t border-[#E2E8F0] px-4 pb-[env(safe-area-inset-bottom,0px)]"
       aria-label="Mobile Bottom Navigation"
     >
       <div className="h-full max-w-md mx-auto grid grid-cols-4 items-center">
@@ -52,8 +54,8 @@ export const MobileNav: React.FC = () => {
               <div
                 className={`flex items-center justify-center px-3.5 py-1 rounded-full transition-all duration-200 ${
                   item.isActive
-                    ? 'bg-[#EFF6FF] text-[#1D4ED8] ring-1 ring-[#1D4ED8]/30 shadow-xs'
-                    : 'text-[#64748B] hover:text-[#0F172A]'
+                    ? 'bg-white/20 text-white'
+                    : 'text-white hover:bg-white/10'
                 }`}
               >
                 <Icon className="w-5 h-5" strokeWidth={item.isActive ? 2.4 : 1.8} />
@@ -61,8 +63,8 @@ export const MobileNav: React.FC = () => {
               <span
                 className={`text-[10px] mt-0.5 font-heading tracking-tight ${
                   item.isActive
-                    ? 'font-bold text-[#1D4ED8]'
-                    : 'font-medium text-[#64748B]'
+                    ? 'font-bold text-white'
+                    : 'font-medium text-white'
                 }`}
               >
                 {item.label}

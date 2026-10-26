@@ -1,5 +1,5 @@
 import { usableWhatsApp } from '../lib/settings/launchDisplay';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ArrowRight,
   Sparkles,
@@ -32,7 +32,10 @@ import { FormulaCard } from '../components/ui/FormulaCard';
 import { StepProblemCard } from '../components/ui/StepProblemCard';
 import { WatermarkGlyph } from '../components/ui/WatermarkGlyph';
 import { Link, useNavigation } from '../context/NavigationContext';
-import { INITIAL_FORMULAS, INITIAL_CHAPTERS, INITIAL_SOLVED_PROBLEMS } from '../data/curriculumData';
+import {fetchContentCatalogue} from '../lib/catalogue/catalogueService';
+import type {ContentItem} from '../lib/firebase/types';
+import {SocialIcon} from '../components/ui/SocialIcon';
+import {isRealHomepageContent} from '../lib/catalogue/homepageContent';
 import { StudentClass } from '../lib/firebase/types';
 import { PromotionalBanner } from '../components/ui/PromotionalBanner';
 import { ShareButton } from '../components/ui/ShareButton';
@@ -79,14 +82,21 @@ const truthfulHomepageCopy = (value: string | undefined, fallback: string): stri
 export const HomePage: React.FC = () => {
   const { navigate } = useNavigation();
   const { blocks, loading } = useHomepageLayout();
-  const [selectedClass, setSelectedClass] = useState<StudentClass>('Class 10');
+  const [selectedClass, setSelectedClass] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const featuredFormulas = INITIAL_FORMULAS.slice(0, 3);
-  const sampleProblem = INITIAL_SOLVED_PROBLEMS[0];
-  const chaptersForClass = INITIAL_CHAPTERS.filter(
-    (c) => c.classLevel === selectedClass || selectedClass === 'Class 10'
-  ).slice(0, 4);
+  const [passPrice,setPassPrice]=useState<string|null>(null);
+  useEffect(()=>{fetch('/api/annual-pass/config').then(r=>r.ok?r.json():null).then(data=>{if(data?.settings?.enabled&&Number.isFinite(data.settings.salePrice))setPassPrice(new Intl.NumberFormat('en-IN',{style:'currency',currency:data.settings.currency||'INR'}).format(data.settings.salePrice));}).catch(()=>{});},[]);
+  const [content,setContent]=useState<ContentItem[]>([]);
+  const [contentError,setContentError]=useState('');
+  const [contentLoading,setContentLoading]=useState(true);
+  useEffect(()=>{let active=true;fetchContentCatalogue({sortBy:'latest'},null,20).then(result=>{if(active)setContent(result.items.filter(isRealHomepageContent));}).catch(()=>{if(active)setContentError('Published resources could not be loaded. Please retry.');}).finally(()=>{if(active)setContentLoading(false);});return()=>{active=false;};},[]);
+  const renderPublishedResources=(block:HomepageBlock)=>{
+    const type=block.id;
+    const items=content.filter(item=>(type!=='classCategories'||selectedClass==='All'||item.classLevels.includes(selectedClass))).filter(item=>type==='freeMaterial'?item.accessType==='free':type==='premiumMaterial'?item.accessType==='paid':type==='courses'?item.contentType==='course':type==='formulaDeckCta'?item.contentType==='formulaSheet':true).slice(0,8);
+    if(!content.length)return null;
+    return <section key={block.id} className="space-y-4"><h2 className="font-heading text-2xl font-bold">{(block.config as any)?.title||'Published study resources'}</h2>{type==='classCategories'&&<select aria-label="Filter homepage by grade" value={selectedClass} onChange={e=>setSelectedClass(e.target.value)} className="rounded border p-2"><option>All</option>{[...new Set(content.flatMap(item=>item.classLevels))].map(grade=><option key={grade}>{grade}</option>)}</select>}{!items.length&&<p>No published resources in this section yet.</p>}<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{items.map(item=><Link key={item.id} href={'/study/'+item.slug} className="rounded-xl border border-slate-200 bg-white p-5 hover:border-blue-500"><p className="text-xs text-slate-500">{item.classLevels.join(', ')} · {item.categoryId}</p><h3 className="mt-2 text-lg font-bold">{item.title}</h3><p className="mt-2 text-sm text-slate-600">{item.shortDescription||''}</p><span className="mt-3 inline-block text-xs font-semibold">{item.accessType==='free'?'Free':'Annual Pass'} · {item.contentType}</span></Link>)}</div></section>;
+  };
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,7 +114,7 @@ export const HomePage: React.FC = () => {
   // 1. Custom Announcement Block
   const renderCustomAnnouncement = (block: HomepageBlock<CustomAnnouncementBlockConfig>) => {
     const config = block.config || {};
-    if (config.enabled === false) return null;
+    if (config.enabled === false || config.title === 'CBSE & ICSE 2026 Examination Revision Cycle Active') return null;
 
     const variantStyles = {
       info: 'bg-[#EFF6FF] border-[#BFDBFE] text-[#1E40AF]',
@@ -286,249 +296,24 @@ export const HomePage: React.FC = () => {
 
   // 4. Class Categories Block
   const renderClassCategories = (block: HomepageBlock<ClassCategoriesBlockConfig>) => {
-    const config = block.config || {};
-    const availableClasses: StudentClass[] = (config.availableClasses as StudentClass[]) || [
-      'Class 5',
-      'Class 6',
-      'Class 7',
-      'Class 8',
-      'Class 9',
-      'Class 10',
-    ];
 
-    return (
-      <section
-        key={block.id}
-        className="bg-white rounded-lg border border-[#E2E8F0] p-6 shadow-[0_4px_14px_-2px_rgba(29,78,216,0.05)]"
-      >
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-          <div>
-            <h2 className="font-heading font-bold text-xl text-[#0F172A]">
-              {config.title || 'Select Your Standard'}
-            </h2>
-            <p className="text-xs sm:text-sm text-[#64748B]">
-              {config.subtitle ||
-                'Curated chapter maps, formula collections, and board exam tips for each grade.'}
-            </p>
-          </div>
-
-          {/* Segmented Class Selector */}
-          <div className="flex flex-wrap items-center gap-1.5 bg-[#F1F5F9] p-1.5 rounded-lg">
-            {availableClasses.map((cls) => (
-              <button
-                key={cls}
-                onClick={() => setSelectedClass(cls)}
-                className={`px-3 py-1.5 rounded-md text-xs font-heading font-semibold transition-all cursor-pointer whitespace-nowrap ${
-                  selectedClass === cls
-                    ? 'bg-white text-[#1D4ED8] shadow-xs'
-                    : 'text-[#64748B] hover:text-[#0F172A]'
-                }`}
-              >
-                {cls}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Chapters Grid for Selected Grade */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {chaptersForClass.map((chap) => (
-            <Link
-              key={chap.id}
-              href={`/study/${chap.slug}`}
-              className="group bg-[#F8FAFC] hover:bg-white border border-[#E2E8F0] hover:border-[#1D4ED8]/40 rounded-lg p-4 transition-all duration-200 flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center justify-between text-[11px] text-[#64748B] mb-2">
-                  <span className="font-semibold text-[#00687A]">{chap.category}</span>
-                  <span>{chap.formulaCount} Formulas</span>
-                </div>
-                <h3 className="font-heading font-bold text-sm text-[#0F172A] group-hover:text-[#1D4ED8] transition-colors mb-2 line-clamp-2">
-                  {chap.title}
-                </h3>
-                <p className="text-xs text-[#64748B] line-clamp-2 mb-3">{chap.description}</p>
-              </div>
-              <div className="pt-2 border-t border-[#EDF2F7] flex items-center justify-between text-xs font-semibold text-[#1D4ED8]">
-                <span>{chap.isFreePreview ? 'Free Preview' : 'Pro Chapter'}</span>
-                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
-              </div>
-            </Link>
-          ))}
-        </div>
-
-        <div className="mt-5 text-center">
-          <Link
-            href={`/study-material?class=${encodeURIComponent(selectedClass)}`}
-            className="inline-flex items-center gap-1.5 text-xs font-heading font-bold text-[#1D4ED8] hover:underline cursor-pointer"
-          >
-            <span>View full curriculum for {selectedClass}</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
-      </section>
-    );
+    return renderPublishedResources(block);
   };
-
   // 5. Trending Block
   const renderTrending = (block: HomepageBlock<TrendingBlockConfig>) => {
-    const config = block.config || {};
-    const maxItems = config.maxItems || 4;
-    const trendingList = INITIAL_CHAPTERS.slice(0, maxItems);
 
-    return (
-      <section key={block.id} className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-1.5 text-xs font-heading font-bold text-[#EA580C] uppercase tracking-wider mb-1">
-              <Flame className="w-4 h-4 fill-current" />
-              <span>Revision Topics</span>
-            </div>
-            <h2 className="font-heading font-bold text-2xl text-[#0F172A]">
-              {truthfulHomepageCopy(config.title, 'Explore Revision Topics')}
-            </h2>
-            <p className="text-xs sm:text-sm text-[#64748B]">
-              {truthfulHomepageCopy(config.subtitle, 'Browse chapter explanations and revision topics.')}
-            </p>
-          </div>
-          <Link href="/study-material" className="self-start sm:self-auto">
-            <Button variant="outline" size="sm" className="min-h-[36px]">
-              <span>View All</span>
-              <ArrowRight className="w-3.5 h-3.5 ml-1" />
-            </Button>
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {trendingList.map((item, idx) => (
-            <Link
-              key={item.id}
-              href={`/study/${item.slug}`}
-              className="bg-white border border-[#E2E8F0] hover:border-[#EA580C]/50 rounded-lg p-4 shadow-xs hover:shadow-md transition-all flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center justify-between text-[11px] text-[#64748B] mb-2">
-                  <span className="font-mono font-bold text-[#EA580C]">Topic {idx + 1}</span>
-                  <span>{item.classLevel}</span>
-                </div>
-                <h3 className="font-heading font-bold text-sm text-[#0F172A] mb-1.5 line-clamp-1">
-                  {item.title}
-                </h3>
-                <p className="text-xs text-[#64748B] line-clamp-2 mb-3">{item.description}</p>
-              </div>
-              <div className="flex items-center justify-between pt-2 border-t border-[#F1F5F9] text-xs font-semibold text-[#EA580C]">
-                <span>Explore Topic</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </div>
-            </Link>
-          ))}
-        </div>
-      </section>
-    );
+    return renderPublishedResources(block);
   };
-
   // 6. Free Material Block
   const renderFreeMaterial = (block: HomepageBlock<FreeMaterialBlockConfig>) => {
-    const config = block.config || {};
-    const maxItems = config.maxItems || 4;
-    const freeChapters = INITIAL_CHAPTERS.filter((c) => c.isFreePreview).slice(0, maxItems);
 
-    return (
-      <section
-        key={block.id}
-        className="bg-[#F8FAFC] rounded-xl border border-[#E2E8F0] p-6 shadow-xs space-y-4"
-      >
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-1.5 text-xs font-heading font-bold text-[#10B981] uppercase tracking-wider mb-1">
-              <Gift className="w-4 h-4" />
-              <span>100% Free Access</span>
-            </div>
-            <h2 className="font-heading font-bold text-2xl text-[#0F172A]">
-              {config.title || 'Free Study Materials & Revision Guides'}
-            </h2>
-            <p className="text-xs sm:text-sm text-[#64748B]">
-              {config.subtitle || 'Accessible 100% free without sign-in or payment.'}
-            </p>
-          </div>
-          <Link href="/study-material" className="self-start sm:self-auto">
-            <Button variant="outline" size="sm" className="bg-white min-h-[36px]">
-              <span>View Free Library</span>
-              <ArrowRight className="w-3.5 h-3.5 ml-1" />
-            </Button>
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {freeChapters.map((item) => (
-            <Link
-              key={item.id}
-              href={`/study/${item.slug}`}
-              className="bg-white border border-[#CBD5E1] hover:border-[#10B981] rounded-lg p-4 transition-all shadow-xs flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center justify-between text-[11px] mb-2">
-                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-bold">
-                    FREE
-                  </span>
-                  <span className="text-[#64748B]">{item.classLevel}</span>
-                </div>
-                <h3 className="font-heading font-bold text-sm text-[#0F172A] mb-1 line-clamp-1">
-                  {item.title}
-                </h3>
-                <p className="text-xs text-[#64748B] line-clamp-2 mb-3">{item.description}</p>
-              </div>
-              <div className="flex items-center justify-between pt-2 border-t border-[#F1F5F9] text-xs font-semibold text-emerald-700">
-                <span className="flex items-center gap-1">
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Free Download</span>
-                </span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </div>
-            </Link>
-          ))}
-        </div>
-      </section>
-    );
+    return renderPublishedResources(block);
   };
-
   // 7. Formula Deck CTA Block
   const renderFormulaDeckCta = (block: HomepageBlock<FormulaDeckCtaBlockConfig>) => {
-    const config = block.config || {};
-    const sampleCount = config.sampleCount || 3;
-    const displayFormulas = INITIAL_FORMULAS.slice(0, sampleCount);
 
-    return (
-      <section key={block.id} className="space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
-          <div>
-            <div className="text-xs font-heading font-semibold text-[#00687A] uppercase tracking-wider mb-1">
-              Visual Mathematical Memory
-            </div>
-            <h2 className="font-heading font-bold text-2xl text-[#0F172A]">
-              {config.title || 'Authoritative Formula Deck'}
-            </h2>
-            <p className="text-xs sm:text-sm text-[#64748B]">
-              {config.subtitle ||
-                'Every formula verified with variable definitions, units, and mnemonics.'}
-            </p>
-          </div>
-          <Link href="/formula-deck">
-            <Button variant="outline" size="sm">
-              <span>{truthfulHomepageCopy(config.viewAllText, 'Browse Formula Deck')}</span>
-              <ArrowRight className="w-3.5 h-3.5 ml-1" />
-            </Button>
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {displayFormulas.map((f) => (
-            <FormulaCard key={f.id} formula={f} />
-          ))}
-        </div>
-      </section>
-    );
+    return renderPublishedResources(block);
   };
-
   // 8. AI Teacher CTA Block
   const renderAiTeacherCta = (block: HomepageBlock<AiTeacherCtaBlockConfig>) => {
     const config = block.config || {};
@@ -579,208 +364,19 @@ export const HomePage: React.FC = () => {
 
   // 9. Popular Block
   const renderPopular = (block: HomepageBlock<PopularBlockConfig>) => {
-    const config = block.config || {};
-    const maxItems = config.maxItems || 4;
-    const popularChapters = INITIAL_CHAPTERS.slice(1, maxItems + 1);
 
-    return (
-      <section key={block.id} className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-1.5 text-xs font-heading font-bold text-[#1D4ED8] uppercase tracking-wider mb-1">
-              <TrendingUp className="w-4 h-4" />
-              <span>Study Resources</span>
-            </div>
-            <h2 className="font-heading font-bold text-2xl text-[#0F172A]">
-              {truthfulHomepageCopy(config.title, 'Revision Handouts')}
-            </h2>
-            <p className="text-xs sm:text-sm text-[#64748B]">
-              {truthfulHomepageCopy(config.subtitle, 'Explore study guides, formula sheets, and practice resources.')}
-            </p>
-          </div>
-          <Link href="/study-material" className="self-start sm:self-auto">
-            <Button variant="outline" size="sm" className="min-h-[36px]">
-              <span>View All</span>
-              <ArrowRight className="w-3.5 h-3.5 ml-1" />
-            </Button>
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {popularChapters.map((chap) => (
-            <Link
-              key={chap.id}
-              href={`/study/${chap.slug}`}
-              className="bg-white border border-[#E2E8F0] hover:border-[#1D4ED8] rounded-lg p-4 transition-all shadow-xs flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center justify-between text-[11px] text-[#64748B] mb-2">
-                  <span className="font-bold text-[#1D4ED8]">{chap.classLevel}</span>
-                  <span>Revision handout</span>
-                </div>
-                <h3 className="font-heading font-bold text-sm text-[#0F172A] mb-1 line-clamp-1">
-                  {chap.title}
-                </h3>
-                <p className="text-xs text-[#64748B] line-clamp-2 mb-3">{chap.description}</p>
-              </div>
-              <div className="pt-2 border-t border-[#F1F5F9] flex items-center justify-between text-xs font-semibold text-[#1D4ED8]">
-                <span>Open Handout</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </div>
-            </Link>
-          ))}
-        </div>
-      </section>
-    );
+    return renderPublishedResources(block);
   };
-
   // 10. Courses Block
   const renderCourses = (block: HomepageBlock<CoursesBlockConfig>) => {
-    const config = block.config || {};
-    const courses = [
-      {
-        id: 'course-1',
-        title: 'Class 10 Trigonometry Complete Visual Proofs',
-        desc: 'Derive identities with right-triangle geometry. Never memorize blindly.',
-        lessons: 'Chapter explanations',
-        badge: 'Board High-Yield',
-      },
-      {
-        id: 'course-2',
-        title: 'Class 9 Real Numbers & Euclid Geometry Foundation',
-        desc: 'Axioms, postulates, rationalization, and surds step-by-step masterclass.',
-        lessons: 'Chapter explanations',
-        badge: 'Core Foundation',
-      },
-      {
-        id: 'course-3',
-        title: 'Class 8 Algebraic Identities & Factorisation',
-        desc: 'Geometric area proofs for (a+b)², (a-b)², and split-the-middle-term drills.',
-        lessons: 'Chapter explanations',
-        badge: 'High-Scoring',
-      },
-    ];
 
-    return (
-      <section key={block.id} className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-1.5 text-xs font-heading font-bold text-[#7C3AED] uppercase tracking-wider mb-1">
-              <Video className="w-4 h-4" />
-              <span>Structured Learning</span>
-            </div>
-            <h2 className="font-heading font-bold text-2xl text-[#0F172A]">
-              {truthfulHomepageCopy(config.title, 'Structured Mathematics Topics')}
-            </h2>
-            <p className="text-xs sm:text-sm text-[#64748B]">
-              {truthfulHomepageCopy(config.subtitle, 'Explore chapter explanations and worked examples by topic.')}
-            </p>
-          </div>
-          <Link href="/courses" className="self-start sm:self-auto">
-            <Button variant="outline" size="sm" className="min-h-[36px]">
-              <span>View All Courses</span>
-              <ArrowRight className="w-3.5 h-3.5 ml-1" />
-            </Button>
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {courses.map((crs) => (
-            <div
-              key={crs.id}
-              className="bg-white border border-[#E2E8F0] hover:border-[#7C3AED]/40 rounded-xl p-5 shadow-xs transition-all flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center justify-between text-xs mb-3">
-                  <span className="px-2.5 py-0.5 rounded bg-purple-50 text-purple-700 font-bold text-[11px]">
-                    {crs.badge}
-                  </span>
-                  <span className="text-[#64748B] flex items-center gap-1">
-                    <PlayCircle className="w-3.5 h-3.5" />
-                    <span>{crs.lessons}</span>
-                  </span>
-                </div>
-                <h3 className="font-heading font-bold text-base text-[#0F172A] mb-2 leading-snug">
-                  {crs.title}
-                </h3>
-                <p className="text-xs text-[#64748B] leading-relaxed mb-4">{crs.desc}</p>
-              </div>
-
-              <Link href="/study-material">
-                <Button size="sm" variant="outline" className="w-full font-semibold border-purple-200 text-purple-700 hover:bg-purple-50">
-                  <span>Browse Study Topics</span>
-                  <ArrowRight className="w-3.5 h-3.5 ml-1" />
-                </Button>
-              </Link>
-            </div>
-          ))}
-        </div>
-      </section>
-    );
+    return renderPublishedResources(block);
   };
-
   // 11. Premium Material Block
   const renderPremiumMaterial = (block: HomepageBlock<PremiumMaterialBlockConfig>) => {
-    const config = block.config || {};
-    const premiumItems = INITIAL_CHAPTERS.filter((c) => !c.isFreePreview).slice(0, 4);
 
-    return (
-      <section
-        key={block.id}
-        className="bg-gradient-to-br from-amber-50/50 via-white to-amber-50/20 rounded-xl border border-amber-200/80 p-6 shadow-xs space-y-4"
-      >
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-1.5 text-xs font-heading font-bold text-amber-700 uppercase tracking-wider mb-1">
-              <Crown className="w-4 h-4 fill-amber-500 text-amber-600" />
-              <span>Pro Curriculum Assets</span>
-            </div>
-            <h2 className="font-heading font-bold text-2xl text-[#0F172A]">
-              {truthfulHomepageCopy(config.title, 'Annual Pass Revision Topics')}
-            </h2>
-            <p className="text-xs sm:text-sm text-[#64748B]">
-              {truthfulHomepageCopy(config.subtitle, 'Explore the published chapter explanations included in Annual Pass.')}
-            </p>
-          </div>
-          <Link href="/annual-pass" className="self-start sm:self-auto">
-            <Button size="sm" variant="primary" className="bg-amber-600 hover:bg-amber-700 text-white min-h-[36px]">
-              <span>Unlock Pass</span>
-              <ArrowRight className="w-3.5 h-3.5 ml-1" />
-            </Button>
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {premiumItems.map((item) => (
-            <Link
-              key={item.id}
-              href={`/study/${item.slug}`}
-              className="bg-white border border-amber-200 hover:border-amber-400 rounded-lg p-4 transition-all shadow-xs flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center justify-between text-[11px] mb-2">
-                  <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold flex items-center gap-1">
-                    <Crown className="w-3 h-3" />
-                    <span>ANNUAL PASS</span>
-                  </span>
-                  <span className="text-[#64748B]">{item.classLevel}</span>
-                </div>
-                <h3 className="font-heading font-bold text-sm text-[#0F172A] mb-1 line-clamp-1">
-                  {item.title}
-                </h3>
-                <p className="text-xs text-[#64748B] line-clamp-2 mb-3">{item.description}</p>
-              </div>
-              <div className="flex items-center justify-between pt-2 border-t border-amber-100 text-xs font-semibold text-amber-700">
-                <span>View Chapter</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </div>
-            </Link>
-          ))}
-        </div>
-      </section>
-    );
+    return renderPublishedResources(block);
   };
-
   // 12. Annual Pass CTA Block
   const renderAnnualPassCta = (block: HomepageBlock<AnnualPassCtaBlockConfig>) => {
     const config = block.config || {};
@@ -801,7 +397,7 @@ export const HomePage: React.FC = () => {
         </p>
 
         <div className="inline-flex items-baseline gap-1 font-mono tabular-nums text-4xl sm:text-5xl font-extrabold text-[#0037B0] mb-2">
-          <span>{config.priceFormatted || '₹999'}</span>
+          <span>{passPrice || 'View current pricing'}</span>
           <span className="text-xs font-sans text-[#64748B] font-semibold">
             {config.periodText || '/ entire academic year'}
           </span>
@@ -826,63 +422,9 @@ export const HomePage: React.FC = () => {
 
   // 13. Latest Block
   const renderLatest = (block: HomepageBlock<LatestBlockConfig>) => {
-    const config = block.config || {};
-    const maxItems = config.maxItems || 4;
-    const latestItems = INITIAL_CHAPTERS.slice(-maxItems);
 
-    return (
-      <section key={block.id} className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-1.5 text-xs font-heading font-bold text-[#00687A] uppercase tracking-wider mb-1">
-              <Clock className="w-4 h-4" />
-              <span>Fresh Additions</span>
-            </div>
-            <h2 className="font-heading font-bold text-2xl text-[#0F172A]">
-              {config.title || 'Newly Added Curriculum Resources'}
-            </h2>
-            <p className="text-xs sm:text-sm text-[#64748B]">
-              {config.subtitle || 'Latest updates added to our mathematical repository.'}
-            </p>
-          </div>
-          <Link href="/study-material" className="self-start sm:self-auto">
-            <Button variant="outline" size="sm" className="min-h-[36px]">
-              <span>View Repository</span>
-              <ArrowRight className="w-3.5 h-3.5 ml-1" />
-            </Button>
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {latestItems.map((item) => (
-            <Link
-              key={item.id}
-              href={`/study/${item.slug}`}
-              className="bg-white border border-[#E2E8F0] hover:border-[#00687A] rounded-lg p-4 transition-all shadow-xs flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center justify-between text-[11px] text-[#64748B] mb-2">
-                  <span className="px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-800 font-bold text-[10px]">
-                    NEW
-                  </span>
-                  <span>{item.classLevel}</span>
-                </div>
-                <h3 className="font-heading font-bold text-sm text-[#0F172A] mb-1 line-clamp-1">
-                  {item.title}
-                </h3>
-                <p className="text-xs text-[#64748B] line-clamp-2 mb-3">{item.description}</p>
-              </div>
-              <div className="pt-2 border-t border-[#F1F5F9] flex items-center justify-between text-xs font-semibold text-[#00687A]">
-                <span>Read Notes</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </div>
-            </Link>
-          ))}
-        </div>
-      </section>
-    );
+    return renderPublishedResources(block);
   };
-
   // 14. Social Join Block
   const renderSocialJoin = (block: HomepageBlock<SocialJoinBlockConfig>) => {
     const config = block.config || {};
@@ -916,7 +458,7 @@ export const HomePage: React.FC = () => {
           >
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-[#0284C7]/10 text-[#0284C7] flex items-center justify-center font-bold">
-                TG
+                <SocialIcon name="telegram" />
               </div>
               <div>
                 <div className="font-heading font-bold text-sm text-[#0F172A] group-hover:text-[#0284C7] transition-colors">
@@ -937,7 +479,7 @@ export const HomePage: React.FC = () => {
           >
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-[#DC2626]/10 text-[#DC2626] flex items-center justify-center font-bold">
-                YT
+                <SocialIcon name="youtube" />
               </div>
               <div>
                 <div className="font-heading font-bold text-sm text-[#0F172A] group-hover:text-[#DC2626] transition-colors">
@@ -959,7 +501,7 @@ export const HomePage: React.FC = () => {
           >
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-[#16A34A]/10 text-[#16A34A] flex items-center justify-center font-bold">
-                WA
+                <SocialIcon name="whatsapp" />
               </div>
               <div>
                 <div className="font-heading font-bold text-sm text-[#0F172A] group-hover:text-[#16A34A] transition-colors">
@@ -1034,12 +576,7 @@ export const HomePage: React.FC = () => {
           name: 'Maths at Your Fingertips',
           url: 'https://mayf.co.in',
           description: 'The authoritative digital math companion for Class 5–10 students.',
-          offers: {
-            '@type': 'Offer',
-            price: '999',
-            priceCurrency: 'INR',
-            name: 'Annual Pass',
-          },
+
         }}
       />
       <div className="space-y-12 md:space-y-20">
@@ -1047,24 +584,12 @@ export const HomePage: React.FC = () => {
         <PromotionalBanner placement="homepage" />
 
         {/* Controlled Predefined Performant Blocks */}
+        {contentLoading&&<p role="status">Loading published resources…</p>}
+        {contentError&&<p role="alert">{contentError}</p>}
+        {!contentLoading&&!contentError&&!content.length&&<p>No study resources have been published yet.</p>}
         {blocks.map((block) => renderBlock(block))}
 
-        {/* Always included pedagogical worked problem anchor */}
-        <section className="space-y-4 pt-4 border-t border-[#E2E8F0]">
-          <div className="max-w-xl">
-            <div className="text-xs font-heading font-semibold text-[#00687A] uppercase tracking-wider mb-1">
-              Pedagogical Method
-            </div>
-            <h2 className="font-heading font-bold text-2xl text-[#0F172A]">
-              Step-by-Step Problem Breakdown
-            </h2>
-            <p className="text-xs sm:text-sm text-[#64748B]">
-              Never skip algebraic steps. Reveal each stage as you work on paper.
-            </p>
-          </div>
 
-          <StepProblemCard problem={sampleProblem} defaultExpanded={true} />
-        </section>
       </div>
     </SharedLayout>
   );

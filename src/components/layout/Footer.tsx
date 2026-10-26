@@ -1,3 +1,4 @@
+import {SocialIcon} from '../ui/SocialIcon';
 import React from 'react';
 import { ShieldCheck, Award, Heart, CheckCircle2, Mail, Phone, MessageCircle } from 'lucide-react';
 import { BrandLogo } from '../ui/BrandLogo';
@@ -25,9 +26,7 @@ export const Footer: React.FC = () => {
           <div className="md:col-span-1 space-y-3">
             <div className="flex items-center gap-2">
               <BrandLogo className="h-12 w-auto max-w-[160px] object-contain" />
-              <span className="font-heading font-bold text-base text-[#0F172A]">
-                {siteName}
-              </span>
+
             </div>
             <p className="text-xs text-[#64748B] leading-relaxed">
               {footerText}
@@ -48,7 +47,7 @@ export const Footer: React.FC = () => {
                   title="YouTube"
                   aria-label="YouTube Channel"
                 >
-                  YT
+                  <SocialIcon name="youtube" />
                 </a>
               )}
               {social.telegram && (
@@ -60,7 +59,7 @@ export const Footer: React.FC = () => {
                   title="Telegram"
                   aria-label="Telegram Channel"
                 >
-                  TG
+                  <SocialIcon name="telegram" />
                 </a>
               )}
               {social.whatsapp && (
@@ -72,7 +71,7 @@ export const Footer: React.FC = () => {
                   title="WhatsApp"
                   aria-label="WhatsApp Support"
                 >
-                  WA
+                  <SocialIcon name="whatsapp" />
                 </a>
               )}
               {social.instagram && (
@@ -84,7 +83,7 @@ export const Footer: React.FC = () => {
                   title="Instagram"
                   aria-label="Instagram Profile"
                 >
-                  IG
+                  <SocialIcon name="instagram" />
                 </a>
               )}
             </div>
