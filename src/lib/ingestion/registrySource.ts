@@ -2,6 +2,7 @@ import { getAdminFirestore } from '../firebase/admin';
 import { DocumentStateRepository } from '../firebase/documentStateRepository';
 import { getGoogleAccessToken } from '../firebase/googleAccessToken';
 import type { ContentRegistryRow } from './types';
+import {normalizeRegistryRow} from './editorialRegistry';
 
 type RegistryConfig = { spreadsheetId: string; tabName: string };
 let config: RegistryConfig = { spreadsheetId: '', tabName: 'Content Registry' };
@@ -20,7 +21,7 @@ export const registrySource = {
 export async function readRegistrySheet(source: RegistryConfig, tokenProvider = getGoogleAccessToken) {
   if (!source.spreadsheetId) throw new Error('Save the curriculum registry spreadsheet connection first.');
   const token = await tokenProvider(['https://www.googleapis.com/auth/spreadsheets']);
-  const range = `'${source.tabName.replace(/'/g, "''")}'!A:AD`;
+  const range = `'${source.tabName.replace(/'/g, "''")}'!A:BH`;
   const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(source.spreadsheetId)}/values/${encodeURIComponent(range)}`, { redirect: 'manual', headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10000) });
   if (!response.ok) throw new Error(`Registry spreadsheet cannot be read (${response.status}). Enable Sheets API and share it with the service account.`);
   const data = await response.json();
@@ -39,7 +40,9 @@ export async function readRegistrySheet(source: RegistryConfig, tokenProvider = 
   const rows = values.slice(1).map((cells, index) => {
     const row: Record<string, any> = {};
     headers.forEach((header, column) => { const value = cells[column]; if (header && value !== undefined && value !== '') row[header] = booleanColumns.has(header) ? /^(true|yes|1)$/i.test(String(value)) : String(value).trim(); });
-    return { row: row as ContentRegistryRow, sheetRow: index + 2 };
+    // Blank approval cells remain Pending even if an AI filled legacy status=Approved.
+    if(headers.includes('approval_status')&&!row.approval_status)row.approval_status='Pending';
+    return { row: normalizeRegistryRow(row), sheetRow: index + 2 };
   }).filter(item => item.row.content_id);
   return { rows, headers, token };
 }

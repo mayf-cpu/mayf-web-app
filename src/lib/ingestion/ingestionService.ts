@@ -18,6 +18,11 @@ import { ContentItem, StudentClass, ContentType } from '../firebase/types';
 import { getAdminFirestore } from '../firebase/admin';
 import { importPublicationPolicy } from './importPublicationPolicy';
 import { verifyWebhookSecret } from './webhookAuth';
+import {normalizeRegistryRow, requireApprovedRegistryRow} from './editorialRegistry';
+import {driveVideo} from '../media/driveVideo';
+import {youtubeVideo} from '../media/youtube';
+import {defaultClassification} from '../cms/classificationSettings';
+import {copyDriveMedia} from './driveMediaStorage';
 export { verifyWebhookSecret } from './webhookAuth';
 
 // Initial fixture state for local development; Firestore is authoritative for live jobs.
@@ -249,6 +254,7 @@ async function processRegistryRowInternal(
   triggeredBy: IngestionJobRecord['triggeredBy'] = 'apps_script_webhook',
   renewLease: () => Promise<void> = async () => {},
 ): Promise<{ success: boolean; firestore_id?: string; error?: string; job: IngestionJobRecord }> {
+  row=normalizeRegistryRow(row);
   const timestamp = new Date().toISOString();
   const contentId = row.content_id?.trim();
 
@@ -288,6 +294,8 @@ async function processRegistryRowInternal(
     return { success: false, error: 'Marked as Rejected', job: rejectedJob };
   }
 
+  requireApprovedRegistryRow(row);
+
   // Check for test simulated error string
   if (row.drive_file_id && row.drive_file_id.includes('INVALID_PERMS')) {
     const failedJob: IngestionJobRecord = {
@@ -321,22 +329,47 @@ async function processRegistryRowInternal(
   // Determine the stable content ID before copying: it also identifies the
   // private R2 object. Never expose a public storage link for paid content.
   const slug = row.slug || row.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-  const firestoreId = row.firestore_id || `cnt-${row.content_type}-${slug}`;
+  const firestoreId = row.firestore_id || (row.approval_status!==undefined?`cnt-${contentId}`:`cnt-${row.content_type}-${slug}`);
   if (!/^[A-Za-z0-9_-]{1,150}$/.test(firestoreId)) throw new Error('Invalid CMS content ID');
   const db = getAdminFirestore();
   if (!db) throw new Error('CMS database unavailable');
+  if(row.approval_status!==undefined){
+    const config=await db.collection('siteSettings').doc('contentClassification').get();
+    const classification=config.exists?config.data()!:defaultClassification();
+    if(row.class.split(',').some(grade=>!classification.grades.includes(grade.trim())))throw new Error('A grade is not available in the current admin settings.');
+    if(!Object.hasOwn(classification.subjects,row.category))throw new Error('Choose a subject category from the current admin settings.');
+    if(row.subcategory&&!classification.subjects[row.category].includes(row.subcategory))throw new Error('Subcategory does not belong to the selected subject category.');
+  }
   const existing = await db.collection('contentItems').doc(firestoreId).get();
   if (existing.exists && !existing.updateTime) throw new Error('CMS revision unavailable');
   const previous = existing.exists ? existing.data() || {} : {};
   await renewLease();
-  const storageResult = await copyDriveFileToProductionStorage(
-    row.drive_file_id,
-    row.thumbnail_drive_file_id,
-    slug,
-    row.content_type,
-    row.access_type,
-    firestoreId,
-  );
+  const ids=(row.drive_file_ids||row.drive_file_id||'').split(/[\n,]+/).map(value=>value.trim()).filter(Boolean);
+  if(ids.length>20)throw new Error('At most 20 Drive attachments are supported per row.');
+  const embed=row.embed_url||'';
+  const videoType=['video','reel','facebook'].includes(row.content_type);
+  if(videoType&&!ids.length&&driveVideo(embed))ids.push(driveVideo(embed)!.id);
+  if(row.content_type==='youtube'&&!youtubeVideo(embed))throw new Error('A valid YouTube URL is required.');
+  if(videoType&&!ids.length)throw new Error('Upload this video to Drive and enter its file ID for private website storage.');
+  if(['pdf','worksheet','testPaper','singleImage','multiImage'].includes(row.content_type)&&!ids.length)throw new Error('A Drive file is required for this format.');
+  const jsonArray=(text:string|undefined,label:string)=>{if(!text)return undefined;let value;try{value=JSON.parse(text);}catch{throw new Error(label+' must be a JSON array.');}if(!Array.isArray(value)||value.length>200)throw new Error(label+' must contain at most 200 entries.');return value;};
+  const modules=jsonArray(row.modules_json,'Course modules');const equations=jsonArray(row.equations_json,'Equations');
+  if(row.content_type==='course'&&!modules?.length)throw new Error('Course modules JSON is required.');
+  if(row.content_type==='formulaSheet'&&!ids.length&&!equations?.length)throw new Error('Formula sheets require equations JSON or a Drive PDF.');
+  const stored=[];
+  for(const id of ids){
+    await renewLease();
+    const storageResult = await copyDriveFileToProductionStorage(driveVideo(id)?.id||id,stored.length===0?row.thumbnail_drive_file_id:undefined,slug,
+      ['worksheet','testPaper','formulaSheet','course','other'].includes(row.content_type)?'pdf':row.content_type,row.access_type,firestoreId);
+    stored.push(storageResult);
+  }
+  const primaryStorage=stored[0];
+  const standaloneThumbnail=!stored.length&&row.thumbnail_drive_file_id
+    ?(await copyDriveMedia(row.thumbnail_drive_file_id,firestoreId,'image')).productionFileUrl:undefined;
+  const downloadsConfirmed=row.download_permission_confirmed!==undefined
+    ?row.download_permission_confirmed===true:previous.downloadPermissionConfirmed===true;
+  const formatMetadata={...(modules?{modules}:{}),...(equations?{equations}:{}),
+    ...Object.fromEntries([['totalMarks',row.total_marks],['durationMinutes',row.duration_minutes],['questionsCount',row.questions_count]].filter(([,v])=>v!==undefined&&v!=='').map(([key,value])=>{const number=Number(value);if(!Number.isFinite(number)||number<0)throw new Error(String(key)+' must be non-negative.');return [key,number];}))};
 
   // 3. Construct Firestore ContentItem payload
   // CRITICAL: Respect visibility (Visible = true, Hidden = false)
@@ -353,21 +386,15 @@ async function processRegistryRowInternal(
     subcategoryId: row.subcategory,
     topic: row.topic,
     contentType: (row.content_type as ContentType) || 'pdf',
-    thumbnail: storageResult.productionThumbnailUrl,
-    files: [
-      {
-        name: `${slug}.${storageResult.mimeType.split('/')[1].replace('jpeg','jpg')}`,
-        url: storageResult.productionFileUrl, // Verified private website-storage object
-        sizeBytes: storageResult.fileSizeBytes,
-        mimeType: storageResult.mimeType,
-      },
-    ],
+    thumbnail: primaryStorage?.productionThumbnailUrl || standaloneThumbnail || previous.thumbnail,
+    files: stored.map((file,index)=>({name:`${slug}-${index+1}.${file.mimeType.split('/')[1].replace('jpeg','jpg')}`,url:file.productionFileUrl,sizeBytes:file.fileSizeBytes,mimeType:file.mimeType})),
     embedUrl: ['video','facebook','reel'].includes(row.content_type)?'':row.embed_url,
     accessType: row.access_type,
     price: row.price ? Number(row.price) : 0,
     currency: row.currency || 'INR',
     annualPassIncluded: row.annual_pass_included !== false,
-    downloadAllowed: row.download_allowed === true && previous.downloadPermissionConfirmed === true,
+    downloadAllowed: row.download_allowed === true && downloadsConfirmed,
+    downloadPermissionConfirmed: downloadsConfirmed,
     visible: isPubliclyVisible, // Visibility control!
     featured: Boolean(row.featured),
     tags: row.tags ? row.tags.split(',').map((t) => t.trim()) : [],
@@ -379,13 +406,13 @@ async function processRegistryRowInternal(
     ].filter(Boolean),
     seoTitle: row.seo_title || `${row.title} | Maths at Your Fingertips`,
     seoDescription: row.seo_description || row.short_description,
-    sortOrder: row.sort_order ? Number(row.sort_order) : 100,
+    sortOrder: row.sort_order !== undefined && row.sort_order !== ('' as any) ? Number(row.sort_order) : 100,
     sourceDriveFileId: row.drive_file_id, // Maintained privately for traceability
-    createdAt: timestamp,
+    createdAt: previous.createdAt || timestamp,
     updatedAt: timestamp,
     publishedAt: row.publish_date || timestamp,
-    viewCount: 0,
-    downloadCount: 0,
+    viewCount: previous.viewCount || 0,
+    downloadCount: previous.downloadCount || 0,
   };
 
   // The R2 transfer alone is not a completed import. The CMS record must be
@@ -398,6 +425,7 @@ async function processRegistryRowInternal(
     data: {
       ...previous,
       ...contentDoc,
+      ...formatMetadata,
       ...publication,
       sourceDriveId: row.drive_file_id,
       importStatus: 'imported',
@@ -418,8 +446,8 @@ async function processRegistryRowInternal(
     sourceThumbnailDriveFileId: row.thumbnail_drive_file_id,
     status: 'imported',
     visibility: row.visibility,
-    productionFileUrl: storageResult.productionFileUrl,
-    productionThumbnailUrl: storageResult.productionThumbnailUrl,
+    productionFileUrl: primaryStorage?.productionFileUrl,
+    productionThumbnailUrl: primaryStorage?.productionThumbnailUrl,
     firestoreDocId: firestoreId,
     errorMessage: undefined,
     triggeredBy,
