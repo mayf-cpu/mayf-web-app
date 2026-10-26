@@ -27,11 +27,11 @@ try {
   }
   await page.getByRole('button', {name: 'Fraction', exact: true}).click();
   assert.match(await page.getByTestId('value').textContent(), /\\frac/);
-  assert.ok(await field.locator('.ML__frac-line').count(), 'fraction is rendered visually');
+  await field.locator('.ML__frac-line').waitFor({state: 'attached', timeout: 5000});
   await field.evaluate(editor => {editor.executeCommand('selectAll'); editor.insert('\\frac{3}{4}', {mode: 'math'});});
   await page.waitForFunction(() => document.querySelector('math-field').value.includes('3'));
   await page.getByRole('button', {name: 'Root', exact: true}).click();
-  assert.ok(await field.locator('.ML__sqrt-sign').count(), 'root is rendered visually');
+  await field.locator('.ML__sqrt-sign').waitFor({state: 'attached', timeout: 5000});
   await field.press('Enter');
   await page.waitForFunction(() => document.querySelector('[data-testid="sent"]').textContent.includes('3'));
   assert.equal(await field.evaluate(editor => editor.value), '', 'send clears editor');
@@ -44,6 +44,11 @@ try {
   assert.equal(await field.evaluate(editor => editor.readOnly), true);
   assert.deepEqual(errors, [], 'no runtime exception while mounting/editing');
   console.log('PASS: editor mount/remount, alignment, rendered math, editing, prose, submit/clear and readonly');
+} catch (error) {
+  for (const page of browser?.contexts().flatMap(context => context.pages()) ?? []) {
+    console.error(await page.locator('math-field').evaluate(editor => ({value: editor.value, html: editor.shadowRoot.innerHTML})));
+  }
+  throw error;
 } finally {
   await browser?.close();
   await server.close();
