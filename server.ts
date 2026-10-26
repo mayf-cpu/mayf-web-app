@@ -1,3 +1,4 @@
+import {privateVideoChunk,privateVideoDownload,videoAccess,videoSessionCookie} from './src/lib/media/privateVideoMedia';
 import {protectedDrivePlayer} from './src/lib/media/protectedDriveVideo';
 import {defaultClassification,addClassification} from './src/lib/cms/classificationSettings';
 import { readStudentProfile, saveStudentGrade } from './src/lib/firebase/studentProfile';
@@ -2293,13 +2294,42 @@ app.get('/api/catalogue', catalogueRoute(false, (req, res) => {
   res.setHeader?.('Cache-Control', 'no-store');
   return res.json({ ...result, items: result.items.map(item => publicContent(item)) });
 }));
+async function findVideoItem(id:string){
+ if(!/^[a-zA-Z0-9_-]{1,200}$/.test(id))return undefined;
+ const db=getAdminFirestore();if(!db)throw new Error('Video storage is unavailable.');
+ const doc=await db.collection('contentItems').doc(id).get();return doc.exists?{...doc.data(),id}:undefined;
+}
 app.post('/api/videos/:id/player',asyncRoute(async(req,res)=>{
  const verified=req.headers.authorization?await verifyStudentSessionToken(req.headers.authorization):null;
- const item=await catalogueRepository.run(()=>contentCmsManager.exportState().find(i=>i.id===req.params.id&&i.visible&&(!i.status||i.status==='published')&&!i.isDeleted));
- if(!item)return res.status(404).json({error:'Resource not found.'});
- if(item.accessType!=='free'&&!canReadPremiumContent(verified,item.annualPassIncluded))return res.status(403).json({error:'Sign in with access to this resource.'});
+ const item=await findVideoItem(String(req.params.id));
+ if(!videoAccess(item,verified))return res.status(403).json({error:'This video is unavailable or requires sign-in with access.'});
  res.setHeader('Cache-Control','private, no-store');
- try{return res.json(await protectedDrivePlayer(item));}catch(e){return res.status(409).json({error:e instanceof Error?e.message:'Video protection could not be verified.'});}
+ try{
+  const player=await protectedDrivePlayer(item!);
+  if(verified?.valid&&req.headers.authorization?.startsWith('Bearer '))res.cookie('mayf_video_session',req.headers.authorization.slice(7),{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'strict',path:'/api/videos',maxAge:3600000});
+  return res.json(player);
+ }catch(e){return res.status(409).json({error:e instanceof Error?e.message:'Video protection could not be verified.'});}
+}));
+app.get('/api/videos/:id/media',asyncRoute(async(req,res)=>{
+ res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cross-Origin-Resource-Policy','same-origin');
+ if(req.headers['sec-fetch-site']==='cross-site')return res.status(403).json({error:'Open this video on Maths at Your Fingertips.'});
+ const authorization=req.headers.authorization||videoSessionCookie(req.headers.cookie);
+ const verified=authorization?await verifyStudentSessionToken(authorization):null;
+ const item=await findVideoItem(String(req.params.id));
+ const download=req.query.download==='1';
+ if(!videoAccess(item,verified,download))return res.status(403).json({error:'Video access or download permission is unavailable.'});
+ try{
+  if(download){
+   const file=await privateVideoDownload(item!);const reader=file.body.getReader();
+   res.status(200);res.setHeader('Content-Type',file.mimeType);res.setHeader('Content-Length',file.size);res.setHeader('Content-Disposition','attachment; filename="mayf-video.mp4"');
+   let length=0;res.once('close',()=>{void reader.cancel().catch(()=>{});});
+   try{while(true){const part=await reader.read();if(part.done)break;length+=part.value.byteLength;if(length>file.size)throw new Error('Invalid video file length.');if(!res.write(Buffer.from(part.value)))await new Promise<void>((resolve,reject)=>{const done=()=>{cleanup();resolve();};const closed=()=>{cleanup();reject(new Error('Video connection closed.'));};const cleanup=()=>{res.off('drain',done);res.off('close',closed);res.off('error',closed);};res.once('drain',done);res.once('close',closed);res.once('error',closed);});}if(length!==file.size)throw new Error('Incomplete video file.');return res.end();}catch{res.destroy();return;}
+  }
+  const chunk=await privateVideoChunk(item!,req.headers.range);
+  res.status(206);res.setHeader('Content-Type',chunk.mimeType);res.setHeader('Accept-Ranges','bytes');res.setHeader('Content-Range',`bytes ${chunk.start}-${chunk.end}/${chunk.size}`);res.setHeader('Content-Length',chunk.bytes.length);
+  res.setHeader('Content-Disposition',download?'attachment; filename="mayf-video.mp4"':'inline');
+  return res.end(Buffer.from(chunk.bytes));
+ }catch(e){return res.status(409).json({error:e instanceof Error?e.message:'Video could not be loaded.'});}
 }));
 
 app.get('/api/catalogue/by-slug/:slug', asyncRoute(async (req, res) => {
