@@ -1,4 +1,5 @@
-/** Bound to the MAYF Content Registry. Run installEditorialAutomation once.
+/** @OnlyCurrentDoc
+ * Bound to the MAYF Content Registry. Run installEditorialAutomation once.
  * Script properties: MAYF_WEBHOOK_URL (https://mayf.co.in/api/ingestion/webhook)
  * and MAYF_INGESTION_WEBHOOK_SECRET (same 32+ character secret as the Worker).
  * AI/API writes do not fire onEdit, so the five-minute poll is required too.
@@ -48,7 +49,7 @@ function processEditorialQueue(){
  const lock=LockService.getScriptLock();if(!lock.tryLock(1000))return;
  try{
   const id=PropertiesService.getScriptProperties().getProperty('MAYF_SPREADSHEET_ID');
-  const book=id?SpreadsheetApp.openById(id):SpreadsheetApp.getActive();const sheet=book.getSheetByName('Content Registry');if(!sheet)return;
+  const book=SpreadsheetApp.getActive();if(!book||(id&&book.getId()!==id))throw new Error('The bound approval spreadsheet is unavailable.');const sheet=book.getSheetByName('Content Registry');if(!sheet)return;
   const start=Date.now();let processed=0;const all=sheet.getDataRange().getValues();const headers=all[0];
   const count={};all.slice(1).forEach(values=>{const id=values[headers.indexOf('content_id')];if(id)count[id]=(count[id]||0)+1;});
   for(let r=2;r<=all.length&&processed<3&&Date.now()-start<200000;r++){
