@@ -4,23 +4,17 @@ import { submitDoubtRating } from '../lib/ai/feedbackClient';
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Send,
-  Sparkles,
   Upload,
-  Image as ImageIcon,
   X,
   ThumbsUp,
   ThumbsDown,
   RefreshCw,
   History,
-  ShieldCheck,
-  Zap,
-  Info,
   Check,
 } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
-import { Button } from '../components/ui/Button';
 import { useAuth } from '../context/AuthContext';
-import { StudentClass } from '../lib/firebase/types';
+import { MATH_SYMBOL_GROUPS } from '../lib/ai/mathSymbols';
 import { useNavigation, Link } from '../context/NavigationContext';
 import { MathRenderer } from '../components/ui/MathRenderer';
 import { SeoHead } from '../components/common/SeoHead';
@@ -56,11 +50,9 @@ export const AiTeacherPage: React.FC = () => {
   const displayName=teacherDisplayName(teacherName);
   const {settings}=useSiteSettings();
   const teacherIcon=<img src={settings.brand.faviconUrl||'/mayf-logo.png'} alt="" className="h-7 w-7 object-contain" onError={e=>{if(!e.currentTarget.src.endsWith('/mayf-logo.png'))e.currentTarget.src='/mayf-logo.png';}}/>;
-  const [studentClass, setStudentClass] = useState<StudentClass>(
-    user?.studentClass || 'All'
-  );
-  useEffect(()=>{setStudentClass(user?.studentClass||'All');},[user?.studentClass]);
-  const [topic, setTopic] = useState<string>(queryTopic || 'Quadratic Equations');
+  const studentClass = user?.studentClass || 'All';
+  const topic = queryTopic || '';
+  const [symbolsOpen, setSymbolsOpen] = useState(false);
   const [inputQuestion, setInputQuestion] = useState('');
   const [selectedImage, setSelectedImage] = useState<ImagePayload | null>(null);
   const [loading, setLoading] = useState(false);
@@ -94,8 +86,8 @@ export const AiTeacherPage: React.FC = () => {
   // Quick mathematical symbol helper
   const insertSymbol = (symbol: string) => {
     if (!textareaRef.current) return;
-    const start = textareaRef.current.selectionStart || inputQuestion.length;
-    const end = textareaRef.current.selectionEnd || inputQuestion.length;
+    const start = textareaRef.current.selectionStart ?? inputQuestion.length;
+    const end = textareaRef.current.selectionEnd ?? inputQuestion.length;
     const newText = inputQuestion.substring(0, start) + symbol + inputQuestion.substring(end);
     setInputQuestion(newText);
     setTimeout(() => {
@@ -284,31 +276,6 @@ export const AiTeacherPage: React.FC = () => {
     }
   };
 
-  const mathSymbols = [
-    { label: 'x²', val: 'x^2' },
-    { label: '√x', val: '\\sqrt{x}' },
-    { label: 'a/b', val: '\\frac{a}{b}' },
-    { label: 'π', val: '\\pi' },
-    { label: 'θ', val: '\\theta' },
-    { label: '±', val: '\\pm' },
-    { label: '≤', val: '\\le' },
-    { label: '≥', val: '\\ge' },
-    { label: 'Δ', val: '\\Delta' },
-    { label: '°', val: '^\\circ' },
-  ];
-
-
-
-  const classes: StudentClass[] = [
-    'All',
-    'Class 5',
-    'Class 6',
-    'Class 7',
-    'Class 8',
-    'Class 9',
-    'Class 10',
-  ];
-
   const canonicalUrl = 'https://mayf.co.in/ai-teacher';
   const pageTitle = 'AI Teacher Doubt Solver & Mathematical Reasoning';
   const pageDesc = 'Multimodal AI Mathematics Teacher for Classes 5 to 10 CBSE & ICSE. Step-by-step problem solver for textbook photos, KaTeX formulas, and exam questions.';
@@ -351,52 +318,6 @@ export const AiTeacherPage: React.FC = () => {
             <h1 className="font-heading font-extrabold text-2xl text-slate-900 tracking-tight">
               Your Personal AI Teacher
             </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Ask a question by typing or uploading an image.
-            </p>
-          </div>
-
-          {/* Model, Grade Badges, and Share */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <ShareButton
-              canonicalUrl={canonicalUrl}
-              title={pageTitle}
-              description={pageDesc}
-              buttonText="Share"
-              buttonSize="sm"
-            />
-
-            <div className="text-xs">
-              <label htmlFor="grade-select" className="text-slate-500 font-medium block mb-1">
-                Student Grade:
-              </label>
-              <select
-                id="grade-select"
-                value={studentClass}
-                onChange={(e) => setStudentClass(e.target.value as StudentClass)}
-                className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 font-heading font-semibold text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600"
-              >
-                {classes.map((c) => (
-                  <option key={c} value={c}>
-                    {c} (CBSE/ICSE)
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="text-xs">
-              <label htmlFor="topic-focus" className="text-slate-500 font-medium block mb-1">
-                Topic Focus:
-              </label>
-              <input
-                id="topic-focus"
-                type="text"
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                placeholder="e.g. Triangles, Algebra"
-                className="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600 w-36 sm:w-44"
-              />
-            </div>
           </div>
         </div>
 
@@ -441,7 +362,7 @@ export const AiTeacherPage: React.FC = () => {
                   <div
                     className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 font-bold text-xs shadow-xs ${
                       isTeacher
-                        ? 'bg-blue-700 text-white'
+                        ? 'bg-transparent'
                         : 'bg-slate-100 text-slate-800 border border-slate-300'
                     }`}
                   >
@@ -529,7 +450,7 @@ export const AiTeacherPage: React.FC = () => {
 
             {loading && (
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-blue-700 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                <div className="w-9 h-9 rounded-xl bg-transparent flex items-center justify-center font-bold text-xs">
                   {teacherIcon}
                 </div>
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs text-slate-600 flex items-center gap-2.5">
@@ -543,21 +464,6 @@ export const AiTeacherPage: React.FC = () => {
           {/* Input Console */}
           <div className="p-4 bg-slate-50 border-t border-slate-200 space-y-2.5">
             
-            {/* Mathematical Equation Shortcuts Bar */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-              <span className="text-[11px] text-slate-400 font-semibold shrink-0 mr-1">Insert Math:</span>
-              {mathSymbols.map((s, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => insertSymbol(s.val)}
-                  className="px-3 py-1.5 min-h-[34px] text-xs font-mono bg-white hover:bg-blue-50 border border-slate-200 rounded-md text-slate-700 hover:text-blue-700 transition-colors cursor-pointer shrink-0 font-semibold flex items-center justify-center"
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
-
             {/* Selected Image Preview Pill */}
             {selectedImage && (
               <div className="flex items-center gap-3 p-2 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900">
@@ -589,13 +495,15 @@ export const AiTeacherPage: React.FC = () => {
               </div>
             )}
 
+            {uploadError && <p role="alert" className="text-xs text-red-700">{uploadError}</p>}
+
             {/* Input Form */}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 handleSendMessage();
               }}
-              className="flex items-end gap-2"
+              className="flex items-stretch gap-2"
             >
               {/* Hidden file inputs */}
               <input
@@ -626,32 +534,56 @@ export const AiTeacherPage: React.FC = () => {
                   }}
                   disabled={loading}
                   placeholder="Type or upload your problem here…"
-                  className="w-full bg-white border border-slate-300 rounded-xl pl-12 pr-3.5 py-2 text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 resize-none min-h-[44px]"
+                  className="w-full bg-white border border-slate-300 rounded-xl pl-12 pr-3.5 py-2 text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 resize-none min-h-[72px] block h-full"
                 />
               </div>
 
-              {/* Submit Button */}
-              <div className="shrink-0 pb-1">
-                <Button
-                  type="submit"
-                  variant="primary"
-                  size="md"
-                  disabled={(!inputQuestion.trim() && !selectedImage) || loading}
-                  isLoading={loading}
-                  className="min-h-[44px] px-3.5 sm:px-4 font-bold gap-1.5"
-                >
-                  <Send className="w-4 h-4" />
-                  <span className="hidden sm:inline">Ask Tutor</span>
-                </Button>
-              </div>
+              <button
+                type="submit"
+                disabled={(!inputQuestion.trim() && !selectedImage) || loading}
+                aria-label={loading ? 'Sending question' : 'Send question'}
+                style={{backgroundColor: settings.colors.primaryColor || '#1D4ED8'}}
+                className="shrink-0 self-stretch min-h-[72px] min-w-12 px-3 sm:px-4 rounded-xl text-white inline-flex items-center justify-center gap-2 font-semibold text-sm shadow-sm hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-700 disabled:cursor-not-allowed"
+              >
+                {loading ? <RefreshCw className="h-5 w-5 animate-spin"/> : <Send className="h-5 w-5"/>}
+                <span className="hidden sm:inline">{loading ? 'Sending' : 'Send'}</span>
+              </button>
             </form>
+
+            <button
+              type="button"
+              aria-expanded={symbolsOpen}
+              aria-controls="math-symbol-panel"
+              onClick={() => setSymbolsOpen(!symbolsOpen)}
+              className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              Insert Math Symbols <span aria-hidden="true">{symbolsOpen ? '−' : '+'}</span>
+            </button>
+            {symbolsOpen && (
+              <div id="math-symbol-panel" role="region" aria-label="Math symbols" className="max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white p-3 space-y-4">
+                {MATH_SYMBOL_GROUPS.map(group => (
+                  <div key={group.name}>
+                    <h2 className="mb-2 text-xs font-semibold text-slate-600">{group.name}</h2>
+                    <div className="flex flex-wrap gap-1.5">
+                      {group.symbols.map(symbol => (
+                        <button key={symbol.label} type="button" disabled={loading} title={symbol.name} aria-label={`Insert ${symbol.name}`} onClick={() => insertSymbol(symbol.value)} className="min-h-10 min-w-10 rounded-md border border-slate-200 px-2 text-sm text-slate-800 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50">
+                          {symbol.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="text-[11px] text-slate-500 flex flex-col sm:flex-row gap-1 sm:items-center sm:justify-between pt-1">
               <span className="leading-tight">Supports fractions, roots, algebra, geometry, trigonometry, and matrices. Paste screenshots directly into box.</span>
               <span className="hidden sm:inline shrink-0">Press Enter to send · Shift+Enter for newline</span>
             </div>
           </div>
-
+          <div className="mt-auto border-t border-slate-200 bg-white px-4 py-3 overflow-x-auto">
+            <ShareButton variant="row" canonicalUrl={canonicalUrl} title={pageTitle} description={pageDesc} />
+          </div>
         </div>
 
       </div>

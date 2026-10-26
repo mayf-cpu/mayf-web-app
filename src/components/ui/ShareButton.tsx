@@ -16,7 +16,7 @@ export interface ShareProps {
   title: string;
   description?: string;
   className?: string;
-  variant?: 'button' | 'compact' | 'inline' | 'icon-only';
+  variant?: 'button' | 'compact' | 'inline' | 'icon-only' | 'row';
   buttonText?: string;
   buttonSize?: 'xs' | 'sm' | 'md';
   align?: 'left' | 'right';
@@ -234,6 +234,20 @@ export const ShareButton: React.FC<ShareProps> = ({
       item_title: shareTitle,
     });
   };
+
+  // A single bottom row with the full Share menu and direct social shortcuts.
+  if (variant === 'row') {
+    return (
+      <div className={`flex w-max min-w-full items-center justify-center gap-2 ${className}`}>
+        <ShareButton canonicalUrl={shareUrl} title={shareTitle} description={shareDescription} buttonText="Share" />
+        {shareTargets.map(item => (
+          <a key={item.name} href={item.href} target="_blank" rel="noopener noreferrer" onClick={() => handleSocialClick(item.name)} aria-label={`Share on ${item.name}`} title={`Share on ${item.name}`} className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white ${item.color}`}>
+            {item.icon}
+          </a>
+        ))}
+      </div>
+    );
+  }
 
   // Inline mode: directly renders horizontal share icons
   if (variant === 'inline') {
