@@ -211,7 +211,7 @@ export const StudyMaterialPage: React.FC = () => {
               Curriculum Study Materials
             </h1>
             <p className="text-sm md:text-base text-[#64748B] mt-1 max-w-2xl">
-              Indexed educational resources with direct shareable URLs. Click any card to open in a new tab.
+              Indexed educational resources with direct shareable URLs. Select a resource to study it on this site.
             </p>
           </div>
 

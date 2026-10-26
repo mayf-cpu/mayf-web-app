@@ -37,7 +37,7 @@ export const FormulaDeckPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'swipe'>('grid');
-  const [openInNewTab, setOpenInNewTab] = useState(true);
+  const openInNewTab = false;
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 24;
 
@@ -275,16 +275,7 @@ export const FormulaDeckPage: React.FC = () => {
 
             {/* Quick Actions Bar */}
             <div className="flex items-center gap-2 shrink-0 flex-wrap">
-              {/* Open in new tab config */}
-              <label className="flex items-center gap-1.5 text-xs text-slate-600 font-medium cursor-pointer select-none px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-white">
-                <input
-                  type="checkbox"
-                  checked={openInNewTab}
-                  onChange={(e) => setOpenInNewTab(e.target.checked)}
-                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-600 w-3.5 h-3.5"
-                />
-                <span>Open cards in new tab</span>
-              </label>
+              
 
               {/* Favorites toggle */}
               <button

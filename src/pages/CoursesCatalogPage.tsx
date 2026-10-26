@@ -24,7 +24,7 @@ export const CoursesCatalogPage: React.FC = () => {
   const [selectedClass, setSelectedClass] = useState<StudentClass | 'All'>('All');
   const [selectedLevel, setSelectedLevel] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
-  const [openInNewTab, setOpenInNewTab] = useState(true);
+  const openInNewTab = false;
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 12;
 
@@ -163,17 +163,7 @@ export const CoursesCatalogPage: React.FC = () => {
               />
             </div>
 
-            {/* Config: Open cards in new tab */}
-            <label className="flex items-center gap-2 text-xs font-heading font-medium text-[#475569] cursor-pointer select-none bg-[#F8FAFC] px-3 py-2 rounded-lg border border-[#E2E8F0] hover:bg-white transition-colors shrink-0">
-              <input
-                type="checkbox"
-                checked={openInNewTab}
-                onChange={(e) => setOpenInNewTab(e.target.checked)}
-                className="rounded border-[#CBD5E1] text-[#1D4ED8] focus:ring-[#1D4ED8] w-4 h-4 cursor-pointer"
-              />
-              <span>Open course cards in new tab</span>
-              <ExternalLink className="w-3 h-3 text-[#94A3B8]" />
-            </label>
+            
           </div>
 
           {/* Grade and Level Filter Buttons */}

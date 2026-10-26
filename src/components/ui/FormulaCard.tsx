@@ -179,7 +179,7 @@ export const FormulaCard: React.FC<FormulaCardProps> = ({
       {showDetailsLink && (
         <div className="border-t border-slate-100 px-6 py-2.5 bg-slate-50/70 flex items-center justify-between text-xs font-semibold text-blue-700 group-hover:bg-blue-50/40 transition-colors">
           <span className="inline-flex items-center gap-1.5 group-hover:translate-x-0.5 transition-transform">
-            <span>{openInNewTab ? 'Explore in new tab' : 'Explore formula document & derivation'}</span>
+            <span>Explore formula document & derivation</span>
             {openInNewTab ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowRight className="w-3.5 h-3.5" />}
           </span>
           <span className="text-[10px] uppercase font-bold text-slate-400 group-hover:text-blue-600 truncate max-w-[110px] sm:max-w-[180px]">

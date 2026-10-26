@@ -31,3 +31,7 @@ test('old automatically enabled PDF downloads require new explicit owner permiss
  const item={id:'test',contentType:'pdf',visible:true,status:'published',accessType:'free',downloadAllowed:true,files:[{url:'r2://mayf-study-materials/pdf/test.pdf'}]};
  assert.equal(downloadableCmsPdfFile(item),null);assert.equal(publicContent(item).downloadAllowed,false);
 });
+
+test('disabled Drive API is distinguished from file-sharing failures without exposing provider details',async()=>{
+ await assert.rejects(protectedDrivePlayer({contentType:'video',sourceDriveId:'source_file_id'},(async()=>Response.json({error:{details:[{reason:'SERVICE_DISABLED',metadata:{private:'not exposed'}}]}},{status:403})) as any,async()=> 'token'),/Google Drive API is disabled/);
+});

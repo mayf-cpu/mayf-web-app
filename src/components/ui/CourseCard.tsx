@@ -116,7 +116,7 @@ export const CourseCard: React.FC<CourseCardProps> = ({
           Standalone Course
         </span>
         <span className="font-heading font-semibold text-[#1D4ED8] flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
-          <span>{openInNewTab ? 'Open in New Tab' : 'View Course'}</span>
+          <span>View Course</span>
           {openInNewTab ? (
             <ArrowUpRight className="w-3.5 h-3.5" />
           ) : (
