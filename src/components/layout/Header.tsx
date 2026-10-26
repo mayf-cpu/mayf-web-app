@@ -8,10 +8,12 @@ import { BrandLogo } from '../ui/BrandLogo';
 import { Button } from '../ui/Button';
 
 export const Header: React.FC = () => {
-  const { currentRoute } = useNavigation();
+  const { currentRoute, navigate } = useNavigation();
   const { user } = useAuth();
   const { settings } = useSiteSettings();
 
+  const [search,setSearch]=useState('');
+  const menuColor=settings?.colors?.primaryColor||'#1D4ED8';
   const [passPrice, setPassPrice] = useState<string | null>(null);
   useEffect(() => {
     const controller = new AbortController();
@@ -54,7 +56,7 @@ export const Header: React.FC = () => {
 
         {/* Zone 2: 4–6 text navigation links with subtle hover underlines */}
         <nav
-          className="hidden md:flex order-last w-full justify-center border-t border-slate-100 pt-2 items-center gap-6 lg:gap-8 text-sm font-medium text-[#475569]"
+          style={{backgroundColor:menuColor}} className="hidden md:flex order-last w-full justify-center rounded-lg px-4 py-1 items-center gap-6 lg:gap-8 text-sm font-medium text-white"
           aria-label="Main Navigation"
         >
           {navLinks.map((link) => {
@@ -65,14 +67,14 @@ export const Header: React.FC = () => {
                 href={link.href}
                 className={`relative py-2 transition-colors whitespace-nowrap ${
                   isActive
-                    ? 'text-[#1D4ED8] font-semibold'
-                    : 'hover:text-[#0F172A]'
+                    ? 'text-white font-bold'
+                    : 'text-white hover:underline'
                 }`}
               >
                 {link.label}
                 {isActive && (
                   <span
-                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#1D4ED8] rounded-full"
+                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-white rounded-full"
                     aria-hidden="true"
                   />
                 )}
@@ -85,13 +87,14 @@ export const Header: React.FC = () => {
         <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
           <Link
             href="/search"
-            className="w-10 h-10 flex items-center justify-center text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] rounded-lg transition-colors cursor-pointer"
+            className="lg:hidden w-10 h-10 flex items-center justify-center text-[#64748B] hover:text-[#0F172A] hover:bg-[#F1F5F9] rounded-lg transition-colors cursor-pointer"
             title="Search formulas and chapters"
             aria-label="Search"
           >
             <Search className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
           </Link>
 
+          <form role="search" onSubmit={event=>{event.preventDefault();navigate('/study-material?q='+encodeURIComponent(search.trim()));}} className="hidden lg:flex items-center rounded-lg border border-slate-300 bg-white overflow-hidden"><input aria-label="Search study resources" placeholder="Search study resources…" value={search} onChange={event=>setSearch(event.target.value)} className="w-44 xl:w-60 px-3 py-2 text-sm outline-none"/><button aria-label="Submit search" className="p-3 text-slate-700"><Search className="h-4 w-4"/></button></form>
           {/* Internal Student Notification Bell Dropdown */}
           <NotificationBellDropdown />
 
@@ -134,11 +137,11 @@ export const Header: React.FC = () => {
         </div>
 
       </div>
-      <details className="md:hidden border-t border-slate-100 px-3">
-        <summary className="min-h-11 flex items-center cursor-pointer font-semibold text-sm text-slate-700">Browse learning tools</summary>
+      <details style={{backgroundColor:menuColor}} className="md:hidden px-3 text-white">
+        <summary className="min-h-11 flex items-center cursor-pointer font-semibold text-sm text-white">Browse learning tools</summary>
         <nav aria-label="Mobile learning navigation" className="grid grid-cols-2 gap-2 pb-3">
-          {navLinks.map(link => <Link key={link.href} href={link.href} className="min-h-11 rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-800">{link.label}</Link>)}
-          <Link href={user ? '/dashboard' : '/login'} className="min-h-11 rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-800">{user ? 'My dashboard' : 'Log In'}</Link>
+          {navLinks.map(link => <Link key={link.href} href={link.href} className="min-h-11 rounded-lg bg-white/10 px-3 py-3 text-sm text-white">{link.label}</Link>)}
+          <Link href={user ? '/dashboard' : '/login'} className="min-h-11 rounded-lg bg-white/10 px-3 py-3 text-sm text-white">{user ? 'My dashboard' : 'Log In'}</Link>
         </nav>
       </details>
     </header>
