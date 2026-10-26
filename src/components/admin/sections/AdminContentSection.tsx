@@ -1228,6 +1228,8 @@ export const AdminContentSection: React.FC = () => {
               </div>
             </div>
 
+            {/* Website storage import uses the saved CMS source, never arbitrary caller URLs. */}
+            {!isCreating&&<div className="px-6 py-3 text-xs"><button type="button" className="rounded-lg border border-blue-300 px-3 py-2 text-blue-800" onClick={async()=>{try{const response=await fetch('/api/admin/content/'+encodeURIComponent(editItem.id!)+'/store-source',{method:'POST',headers:await adminService.getAuthHeaders(),signal:AbortSignal.timeout(180000)});const data=await response.json();if(!response.ok)throw new Error(data.error||'Import failed.');setEditItem(data.item);loadContent();showMessage('Saved Drive files copied into private website storage.');}catch(error){showMessage(error instanceof Error?error.message:'Import failed.','error');}}}>Copy saved Drive files to website storage</button><p className="mt-2 text-slate-500">Save source changes before importing. Original files stay in Drive; students use the website copy.</p></div>}
             {/* Footer */}
             <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-2.5">
               <button

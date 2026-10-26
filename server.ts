@@ -1,3 +1,5 @@
+import {storeExistingContent} from './src/lib/ingestion/storeExistingContent';
+import {storedMediaKey,storedVideo} from './src/lib/media/storedMedia';
 import {privateVideoChunk,privateVideoDownload,videoAccess,videoSessionCookie} from './src/lib/media/privateVideoMedia';
 import {protectedDrivePlayer} from './src/lib/media/protectedDriveVideo';
 import {defaultClassification,addClassification} from './src/lib/cms/classificationSettings';
@@ -2294,19 +2296,20 @@ app.get('/api/catalogue', catalogueRoute(false, (req, res) => {
   res.setHeader?.('Cache-Control', 'no-store');
   return res.json({ ...result, items: result.items.map(item => publicContent(item)) });
 }));
-async function findVideoItem(id:string){
+async function findVideoItem(id:string):Promise<Record<string,any>|undefined>{
  if(!/^[a-zA-Z0-9_-]{1,200}$/.test(id))return undefined;
  const db=getAdminFirestore();if(!db)throw new Error('Video storage is unavailable.');
  const doc=await db.collection('contentItems').doc(id).get();return doc.exists?{...doc.data(),id}:undefined;
 }
 app.post('/api/videos/:id/player',asyncRoute(async(req,res)=>{
  const verified=req.headers.authorization?await verifyStudentSessionToken(req.headers.authorization):null;
- const item=await findVideoItem(String(req.params.id));
+ let item=await findVideoItem(String(req.params.id));
  if(!videoAccess(item,verified))return res.status(403).json({error:'This video is unavailable or requires sign-in with access.'});
  res.setHeader('Cache-Control','private, no-store');
  try{
+  if(!storedVideo(item!))item=await storeExistingContent(String(req.params.id));
   const player=await protectedDrivePlayer(item!);
-  if(verified?.valid&&req.headers.authorization?.startsWith('Bearer '))res.cookie('mayf_video_session',req.headers.authorization.slice(7),{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'strict',path:'/api/videos',maxAge:3600000});
+  if(verified?.valid&&req.headers.authorization?.startsWith('Bearer '))res.cookie('mayf_video_session',req.headers.authorization.slice(7),{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'strict',path:'/api',maxAge:3600000});
   return res.json(player);
  }catch(e){return res.status(409).json({error:e instanceof Error?e.message:'Video protection could not be verified.'});}
 }));
@@ -2332,11 +2335,33 @@ app.get('/api/videos/:id/media',asyncRoute(async(req,res)=>{
  }catch(e){return res.status(409).json({error:e instanceof Error?e.message:'Video could not be loaded.'});}
 }));
 
+app.post('/api/admin/content/:id/store-source',requireAuth,requireAdmin,asyncRoute(async(req,res)=>{
+ const item=await storeExistingContent(String(req.params.id));return res.json({success:true,item});
+}));
+app.get('/api/assets/:id/:index',asyncRoute(async(req,res)=>{
+ res.setHeader('Cache-Control','private, no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Cross-Origin-Resource-Policy','same-origin');
+ const authorization=req.headers.authorization||videoSessionCookie(req.headers.cookie);
+ const verified=authorization?await verifyStudentSessionToken(authorization):null;const item=await findVideoItem(String(req.params.id));
+ const thumbnail=req.params.index==='thumbnail';
+ if(!videoAccess(thumbnail&&item?{...item,accessType:'free'}:item,verified)||(!thumbnail&&!['singleImage','multiImage'].includes(item!.contentType)))return res.status(403).json({error:'Resource access unavailable.'});
+ const index=Number(req.params.index);const extension=typeof item?.thumbnail==='string'?item.thumbnail.split('.').at(-1):'';
+ const imageTypes:Record<string,string>={png:'image/png',jpg:'image/jpeg',webp:'image/webp',gif:'image/gif'};
+ const file=thumbnail?{url:item!.thumbnail,mimeType:imageTypes[extension||'']}:Number.isSafeInteger(index)&&index>=0?item!.files?.[index]:null;
+ if(!file||!['image/png','image/jpeg','image/webp','image/gif'].includes(file.mimeType))return res.status(404).json({error:'Image not found.'});
+ const key=storedMediaKey(item!.id,file.url);const bucket=getPdfBucket();const head=await bucket?.head(key);
+ if(!head||head.size>20*1024*1024)return res.status(404).json({error:'Image not found.'});
+ const object=await bucket!.get(key);if(!object?.body)return res.status(404).json({error:'Image not found.'});
+ const reader=object.body.getReader();let length=0;const chunks:Uint8Array[]=[];
+ try{while(true){const part=await reader.read();if(part.done)break;length+=part.value.length;if(length>head.size)throw new Error('Invalid stored image.');chunks.push(part.value);}if(length!==head.size)throw new Error('Incomplete stored image.');}finally{await reader.cancel().catch(()=>{});}
+ res.setHeader('Content-Type',file.mimeType);res.setHeader('Content-Disposition','inline');return res.send(Buffer.concat(chunks.map(part=>Buffer.from(part))));
+}));
+
 app.get('/api/catalogue/by-slug/:slug', asyncRoute(async (req, res) => {
   const verified = req.headers.authorization ? await verifyStudentSessionToken(req.headers.authorization) : null;
   const item = await catalogueRepository.run(() => contentCmsManager.exportState().find(item => item.slug === req.params.slug && item.visible && (!item.status || item.status === 'published') && !item.isDeleted));
   if (!item) return res.status(404).json({ error: 'Resource not found' });
   const canAccess = canReadPremiumContent(verified, item.annualPassIncluded);
+  if(verified?.valid&&req.headers.authorization?.startsWith('Bearer '))res.cookie('mayf_video_session',req.headers.authorization.slice(7),{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'strict',path:'/api',maxAge:3600000});
   res.setHeader('Cache-Control', 'private, no-store');
   return res.json({ item: publicContent(item, canAccess) });
 }));

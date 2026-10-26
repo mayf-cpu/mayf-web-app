@@ -26,18 +26,3 @@ test('Drive video facade is landscape, waits for Play, and includes access/proce
  const html=renderToStaticMarkup(React.createElement(DriveVideoViewer,{contentId:id,title:'Landscape lesson'}));
  assert.match(html,/aspect-video/);assert.match(html,/Play video/);assert.doesNotMatch(html,/href=|drive.google.com/);assert.doesNotMatch(html,/<iframe/);
 });
-test('video imports verify Drive metadata, reject non-videos and failures, and retain original permissions',async t=>{
- const previous=process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
- const {privateKey}=crypto.generateKeyPairSync('rsa',{modulusLength:2048});
- process.env.GOOGLE_SERVICE_ACCOUNT_KEY=JSON.stringify({client_email:'test@example.iam.gserviceaccount.com',private_key:privateKey.export({type:'pkcs8',format:'pem'}).toString()});
- let metadata:any={mimeType:'video/mp4',size:'987654321',resourceKey:'resource_key'};let status=200;const calls:string[]=[];
- t.mock.method(globalThis,'fetch',async(input:any)=>{const url=String(input);calls.push(url);return url.includes('oauth2.googleapis.com')?Response.json({access_token:'test-token'}):Response.json(metadata,{status});});
- try{
-  const result=await copyDriveFileToProductionStorage(id,undefined,'lesson','video','paid','cnt-video');
-  assert.equal(result.mimeType,'video/mp4');assert.equal(result.fileSizeBytes,987654321);assert.match(result.productionFileUrl,/drive.google.com\/file\/d\/.*\/preview\?resourcekey=resource_key/);
-  assert.equal(calls.some(url=>url.includes('alt=media')||url.includes('/permissions')),false);
-  metadata={mimeType:'application/pdf'};await assert.rejects(copyDriveFileToProductionStorage(id,undefined,'lesson','video','paid','cnt-video'),/not an available video/);
-  metadata={mimeType:'video/mp4',trashed:true};await assert.rejects(copyDriveFileToProductionStorage(id,undefined,'lesson','video','paid','cnt-video'),/not an available video/);
-  status=403;await assert.rejects(copyDriveFileToProductionStorage(id,undefined,'lesson','video','paid','cnt-video'),/unavailable \(403\)/);
- }finally{if(previous===undefined)delete process.env.GOOGLE_SERVICE_ACCOUNT_KEY;else process.env.GOOGLE_SERVICE_ACCOUNT_KEY=previous;}
-});

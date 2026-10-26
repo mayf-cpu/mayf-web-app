@@ -300,7 +300,7 @@ function setupInstallableTrigger() {
             </div>
             <div>
               <span className="font-heading font-bold text-[#0F172A] block">Private Storage: Check Configuration</span>
-              <span>PDF imports use private R2 storage. Video imports remain in Drive. Playback verifies viewer download restrictions; the site service account needs permission to read the file and apply restrictions.</span>
+              <span>PDF imports use private R2 storage. PDFs, MP4/WebM videos and PNG/JPEG/WebP/GIF images are copied into private website storage. Playback and viewing use website storage; Drive remains the source backup.</span>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0 font-mono text-[11px] bg-white px-2.5 py-1 rounded border border-[#CBD5E1]">

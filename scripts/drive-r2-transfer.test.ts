@@ -7,7 +7,7 @@ import { copyDriveFileToProductionStorage } from '../src/lib/ingestion/driveStor
 test('Drive import requires private upload configuration and rejects unsupported types', async () => {
   configurePdfBucket(null);
   await assert.rejects(copyDriveFileToProductionStorage('drive-id-123', undefined, 'a', 'pdf', 'paid', 'cnt-pdf-a'), /R2 PDF bucket/);
-  await assert.rejects(copyDriveFileToProductionStorage('drive-id-123', undefined, 'a', 'other', 'paid', 'cnt-pdf-a'), /PDF and video content only/);
+  await assert.rejects(copyDriveFileToProductionStorage('drive-id-123', undefined, 'a', 'other', 'paid', 'cnt-pdf-a'), /PDF, image and video content only/);
 });
 
 test('Drive import verifies authenticated downloaded bytes before declaring an R2 upload successful', async () => {
