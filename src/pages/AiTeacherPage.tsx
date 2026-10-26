@@ -1,3 +1,4 @@
+import {MathQuestionInput, type MathQuestionInputHandle} from '../components/ui/MathQuestionInput';
 import {useSiteSettings} from '../context/SiteSettingsContext';
 import {sessionTeacherName,teacherDisplayName,teacherWelcome} from '../lib/ai/teacherIdentity';
 import { submitDoubtRating } from '../lib/ai/feedbackClient';
@@ -64,7 +65,7 @@ export const AiTeacherPage: React.FC = () => {
   const [ratingPending, setRatingPending] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const mathInputRef = useRef<MathQuestionInputHandle | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -83,20 +84,7 @@ export const AiTeacherPage: React.FC = () => {
     }
   }, [messages, loading]);
 
-  // Quick mathematical symbol helper
-  const insertSymbol = (symbol: string) => {
-    if (!textareaRef.current) return;
-    const start = textareaRef.current.selectionStart ?? inputQuestion.length;
-    const end = textareaRef.current.selectionEnd ?? inputQuestion.length;
-    const newText = inputQuestion.substring(0, start) + symbol + inputQuestion.substring(end);
-    setInputQuestion(newText);
-    setTimeout(() => {
-      if (textareaRef.current) {
-        textareaRef.current.focus();
-        textareaRef.current.setSelectionRange(start + symbol.length, start + symbol.length);
-      }
-    }, 0);
-  };
+  const insertSymbol = (latex: string) => mathInputRef.current?.insertLatex(latex);
 
   // Handle image file selection
   const handleFileChange = (file: File, type: 'image' | 'camera' | 'screenshot') => {
@@ -127,7 +115,7 @@ export const AiTeacherPage: React.FC = () => {
   };
 
   // Clipboard paste listener for screenshots
-  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+  const handlePaste = (e: ClipboardEvent) => {
     const items = e.clipboardData?.items;
     if (!items) return;
 
@@ -166,7 +154,7 @@ export const AiTeacherPage: React.FC = () => {
     const studentMsg: ChatMessage = {
       id: studentMsgId,
       sender: 'student',
-      text: questionText.trim() || 'Please solve the problem in the uploaded image.',
+      text: questionText.trim() || '\\text{Please solve the problem in the uploaded image.}',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       questionType: currentImg ? currentImg.type : 'text',
       imageUrl: currentImg?.previewUrl,
@@ -373,14 +361,12 @@ export const AiTeacherPage: React.FC = () => {
                     className={`max-w-[88%] rounded-2xl p-4 sm:p-5 ${
                       isTeacher
                         ? 'bg-slate-50 border border-slate-200 text-slate-900 shadow-2xs'
-                        : 'bg-blue-700 text-white shadow-xs'
+                        : 'bg-blue-50 text-slate-900 shadow-xs'
                     }`}
                   >
                     {/* Message Header */}
                     <div
-                      className={`flex items-center justify-between gap-4 mb-2.5 text-[11px] ${
-                        isTeacher ? 'text-slate-500' : 'text-blue-200'
-                      }`}
+                      className="flex items-center justify-between gap-4 mb-2.5 text-[11px] text-slate-500"
                     >
                       <span className="font-heading font-semibold">
                         {isTeacher ? displayName : 'Student Question'}
@@ -403,9 +389,7 @@ export const AiTeacherPage: React.FC = () => {
                     {isTeacher ? (
                       <MathRenderer content={msg.text} />
                     ) : (
-                      <div className="text-xs sm:text-sm leading-relaxed whitespace-pre-wrap font-sans">
-                        {msg.text}
-                      </div>
+                      <MathRenderer content={`\\(${msg.text}\\)`} />
                     )}
 
                     {/* Feedback Rating Strip (For Teacher responses) */}
@@ -517,25 +501,9 @@ export const AiTeacherPage: React.FC = () => {
                   e.currentTarget.value = '';
                 }}
               />
-              {/* Textarea */}
-              <div className="flex-1 relative min-w-0">
-                <button type="button" onClick={()=>fileInputRef.current?.click()} disabled={loading} aria-label="Upload question image" title="Upload an image (JPEG, PNG or WebP)" className="absolute left-1 bottom-2 z-10 flex h-10 w-10 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 disabled:opacity-50"><Upload className="h-5 w-5"/></button>
-                <textarea
-                  ref={textareaRef}
-                  rows={2}
-                  value={inputQuestion}
-                  onChange={(e) => setInputQuestion(e.target.value)}
-                  onPaste={handlePaste}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendMessage();
-                    }
-                  }}
-                  disabled={loading}
-                  placeholder="Type or upload your problem here…"
-                  className="w-full bg-white border border-slate-300 rounded-xl pl-12 pr-3.5 py-2 text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 resize-none min-h-[72px] block h-full"
-                />
+              <div className="flex flex-1 min-w-0 items-center gap-2 rounded-xl border border-slate-300 bg-white px-2 py-2 focus-within:ring-2 focus-within:ring-blue-600">
+                <button type="button" onClick={()=>fileInputRef.current?.click()} disabled={loading} aria-label="Upload question image" title="Upload an image (JPEG, PNG or WebP)" className="shrink-0 flex h-10 w-10 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 disabled:opacity-50"><Upload className="h-5 w-5"/></button>
+                <MathQuestionInput ref={mathInputRef} value={inputQuestion} onChange={setInputQuestion} disabled={loading} onSubmit={() => handleSendMessage()} onPaste={handlePaste}/>
               </div>
 
               <button
@@ -578,7 +546,7 @@ export const AiTeacherPage: React.FC = () => {
 
             <div className="text-[11px] text-slate-500 flex flex-col sm:flex-row gap-1 sm:items-center sm:justify-between pt-1">
               <span className="leading-tight">Supports fractions, roots, algebra, geometry, trigonometry, and matrices. Paste screenshots directly into box.</span>
-              <span className="hidden sm:inline shrink-0">Press Enter to send · Shift+Enter for newline</span>
+              <span className="hidden sm:inline shrink-0">Press Enter to send · Tap an equation to edit</span>
             </div>
           </div>
           <div className="mt-auto border-t border-slate-200 bg-white px-4 py-3 overflow-x-auto">
