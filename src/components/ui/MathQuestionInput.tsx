@@ -32,7 +32,8 @@ export const MathQuestionInput = forwardRef<MathQuestionInputHandle, Props>(func
     editor.defaultMode = 'text';
     editor.smartMode = true;
     editor.mathVirtualKeyboardPolicy = 'manual';
-    editor.menuItems = [];
+    // Menu controls are hidden by CSS. The menuItems setter requires a mounted
+    // field and must not run during construction.
     editor.setAttribute('aria-label', 'Type or upload your problem here');
     editor.setAttribute('placeholder', '\\text{Type or upload your problem here…}');
     editor.className = 'mayf-question-mathfield';

@@ -44,3 +44,11 @@ jobs:
         run: npm run build
       - name: Worker API smoke tests
         run: npm run test:worker
+      - name: Install browser regression runtime
+        run: |
+          npm install --prefix "$RUNNER_TEMP/mayf-browser" --no-save playwright@1.64.1
+          "$RUNNER_TEMP/mayf-browser/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Math editor browser regression
+        env:
+          MAYF_PLAYWRIGHT_MODULE: ${{ runner.temp }}/mayf-browser/node_modules/playwright/index.mjs
+        run: node scripts/math-editor-browser-smoke.mjs
