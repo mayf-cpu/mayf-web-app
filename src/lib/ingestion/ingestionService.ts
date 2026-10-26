@@ -356,18 +356,18 @@ async function processRegistryRowInternal(
     thumbnail: storageResult.productionThumbnailUrl,
     files: [
       {
-        name: `${slug}.${storageResult.mimeType.startsWith('video/') ? (storageResult.mimeType==='video/webm'?'webm':'mp4') : 'pdf'}`,
-        url: storageResult.productionFileUrl, // Verified private PDF object or original Drive video player
+        name: `${slug}.${storageResult.mimeType.split('/')[1].replace('jpeg','jpg')}`,
+        url: storageResult.productionFileUrl, // Verified private website-storage object
         sizeBytes: storageResult.fileSizeBytes,
         mimeType: storageResult.mimeType,
       },
     ],
-    embedUrl: row.embed_url,
+    embedUrl: ['video','facebook','reel'].includes(row.content_type)?'':row.embed_url,
     accessType: row.access_type,
     price: row.price ? Number(row.price) : 0,
     currency: row.currency || 'INR',
     annualPassIncluded: row.annual_pass_included !== false,
-    downloadAllowed: row.download_allowed !== false,
+    downloadAllowed: row.download_allowed === true && previous.downloadPermissionConfirmed === true,
     visible: isPubliclyVisible, // Visibility control!
     featured: Boolean(row.featured),
     tags: row.tags ? row.tags.split(',').map((t) => t.trim()) : [],
