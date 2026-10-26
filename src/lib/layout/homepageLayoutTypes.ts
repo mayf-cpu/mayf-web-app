@@ -270,12 +270,12 @@ export const DEFAULT_HOMEPAGE_BLOCKS: HomepageBlock[] = [
   {
     id: 'aiTeacherCta',
     name: 'AI Teacher CTA',
-    description: 'Professor Sigma 24/7 personal math doubt clearance banner',
+    description: 'AI Teacher 24/7 personal math doubt clearance banner',
     enabled: true,
     order: 8,
     config: {
       headline: 'Stuck on a Math Problem at 10 PM?',
-      subheadline: 'Professor Sigma, your personal AI Math Tutor, guides your thinking step-by-step, highlights the exact CBSE/ICSE formulas needed, and tests your conceptual understanding.',
+      subheadline: 'AI Teacher, your personal AI Math Tutor, guides your thinking step-by-step, highlights the exact CBSE/ICSE formulas needed, and tests your conceptual understanding.',
       badgeText: 'Powered by Gemini & Firebase AI Logic',
       primaryButtonText: 'Start Free AI Doubt Session',
       secondaryButtonText: 'Explore Formula Deck First',

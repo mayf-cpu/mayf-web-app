@@ -322,7 +322,7 @@ export const StudyChapterPage: React.FC = () => {
               <span>Have a doubt in this module?</span>
             </div>
             <p className="text-xs text-[#3B82F6]">
-              Professor Sigma is ready 24/7 to explain any equation, theorem, or word problem step-by-step.
+              AI Teacher is ready 24/7 to explain any equation, theorem, or word problem step-by-step.
             </p>
           </div>
           <Link href={`/ai-teacher?topic=${encodeURIComponent(activeItem.title)}`}>

@@ -50,7 +50,7 @@ export function getStarterNotifications(userId: string): NotificationItem[] {
     {
       id: 'notif-ai-teacher',
       userId,
-      title: 'AI Teacher Professor Sigma Ready',
+      title: 'AI Teacher AI Teacher Ready',
       message: 'Ask any doubt from Classes 5–10 using typed math, camera photo, or screenshot for instant step-by-step guidance.',
       read: true,
       linkUrl: '/ai-teacher',

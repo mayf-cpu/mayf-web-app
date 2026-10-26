@@ -1,3 +1,4 @@
+import {safeTeacherName} from './src/lib/ai/teacherIdentity';
 import {storeExistingContent} from './src/lib/ingestion/storeExistingContent';
 import {storedMediaKey,storedVideo} from './src/lib/media/storedMedia';
 import {privateVideoChunk,privateVideoDownload,videoAccess,videoSessionCookie} from './src/lib/media/privateVideoMedia';
@@ -3646,7 +3647,7 @@ app.post('/api/ai-teacher/ask', asyncRoute(async (req: Request, res: Response) =
       });
     }
 
-    const classLevel = studentClass || 'Class 10';
+    const classLevel = studentClass || 'All';
     const topic = chapterTopic || 'General Mathematics';
 
     // Image format & security validation
@@ -3702,7 +3703,7 @@ app.post('/api/ai-teacher/ask', asyncRoute(async (req: Request, res: Response) =
     }
 
     // Carefully designed pedagogical system instruction
-    const systemInstruction = `You are "Professor Sigma", the friendly, pedagogical, highly encouraging, and rigorous AI Mathematics Teacher for "Maths at Your Fingertips" (mayf.co.in).
+    const systemInstruction = `You are "${safeTeacherName(req.body.teacherName)}", the friendly, pedagogical, highly encouraging, and rigorous AI Mathematics Teacher for "Maths at Your Fingertips" (mayf.co.in).
 Target Syllabus: Classes 5 to 10 (CBSE & ICSE syllabus standards).
 Current Student Grade: ${classLevel} | Topic Focus: ${topic}.
 
