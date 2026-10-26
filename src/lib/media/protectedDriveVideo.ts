@@ -1,13 +1,13 @@
 import {contentDriveVideo} from './driveVideo';
 import {getGoogleAccessToken} from '../firebase/googleAccessToken';
 /** Fail closed: a viewer never receives an unrestricted Drive player by accident. */
-export async function protectedDrivePlayer(item:Record<string,any>,fetcher:typeof fetch=fetch,tokenProvider=getGoogleAccessToken){
+export async function protectedDriveSource(item:Record<string,any>,fetcher:typeof fetch=fetch,tokenProvider=getGoogleAccessToken){
  const video=contentDriveVideo(item);if(!video)throw new Error('This resource is not a Drive video.');
  const permitted=item.downloadAllowed===true&&item.downloadPermissionConfirmed===true;
  const token=await tokenProvider(['https://www.googleapis.com/auth/drive']);
  const headers={Authorization:'Bearer '+token};
  const base='https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(video.id);
- const fields='mimeType,trashed,copyRequiresWriterPermission';
+ const fields='mimeType,size,trashed,copyRequiresWriterPermission,capabilities(canDownload)';
  const read=()=>fetcher(base+'?supportsAllDrives=true&fields='+encodeURIComponent(fields),{headers,redirect:'manual',signal:AbortSignal.timeout(10000)});
  let response=await read();if(!response.ok){
   const problem=await response.json().catch(()=>({})) as any;
@@ -23,5 +23,11 @@ export async function protectedDrivePlayer(item:Record<string,any>,fetcher:typeo
   response=await read();if(!response.ok)throw new Error('Video protection could not be verified.');metadata=await response.json();
   if(metadata.copyRequiresWriterPermission!==!permitted)throw new Error('Video download permission could not be verified.');
  }
- return {url:video.previewUrl,downloadAllowed:permitted,downloadUrl:permitted?video.viewUrl:undefined};
+ return {video,token,metadata,permitted};
+}
+
+export async function protectedDrivePlayer(item:Record<string,any>,fetcher:typeof fetch=fetch,tokenProvider=getGoogleAccessToken){
+ const source=await protectedDriveSource(item,fetcher,tokenProvider);
+ const url='/api/videos/'+encodeURIComponent(item.id)+'/media';
+ return {url,downloadAllowed:source.permitted,downloadUrl:source.permitted?url+'?download=1':undefined};
 }
