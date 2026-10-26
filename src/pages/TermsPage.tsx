@@ -62,7 +62,7 @@ export const TermsPage: React.FC = () => {
               4. Pedagogical Nature of AI Tutor
             </h2>
             <p>
-              Professor Sigma is an interactive AI study companion. While tuned for CBSE and ICSE syllabus precision, students must independently verify answers for school examinations and coursework.
+              AI Teacher is an interactive AI study companion. While tuned for CBSE and ICSE syllabus precision, students must independently verify answers for school examinations and coursework.
             </p>
           </section>
 

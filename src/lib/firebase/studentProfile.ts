@@ -1,5 +1,5 @@
 import type {FirestoreDocumentStore} from './documentStore';
-const grades=['Class 5','Class 6','Class 7','Class 8','Class 9','Class 10'];
+const grades=['All','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10'];
 export async function readStudentProfile(db:FirestoreDocumentStore,uid:string) {
  const snap=await db.collection('users').doc(uid).get();if(!snap.exists)return null;
  const data=snap.data()!;

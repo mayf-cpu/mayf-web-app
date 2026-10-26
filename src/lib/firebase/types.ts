@@ -3,7 +3,7 @@
  * Strict type definitions covering all 21 collections.
  */
 
-export type StudentClass = 'Class 5' | 'Class 6' | 'Class 7' | 'Class 8' | 'Class 9' | 'Class 10';
+export type StudentClass = 'All' | 'Class 5' | 'Class 6' | 'Class 7' | 'Class 8' | 'Class 9' | 'Class 10';
 export type BoardType = 'CBSE' | 'ICSE' | 'State Board';
 export type UserRole = 'student' | 'admin' | 'superAdmin';
 

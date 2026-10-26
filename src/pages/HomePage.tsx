@@ -76,7 +76,7 @@ const truthfulHomepageCopy = (value: string | undefined, fallback: string): stri
     'Highest rated study guides, formula cheatsheets, and question banks.': 'Explore study guides, formula sheets, and practice resources.',
     'Complete syllabus access for Class 5 to 10. Printable revision notes, formula flashcards, and unlimited AI Teacher guidance.': 'Explore Class 5 to 10 study materials, formula flashcards, and AI Teacher guidance with daily usage limits.',
   };
-  return value ? (legacyClaims[value] || value) : fallback;
+  return value ? (legacyClaims[value] || value).replace(/Professor Sigma/g, 'AI Teacher') : fallback;
 };
 
 export const HomePage: React.FC = () => {
@@ -337,7 +337,7 @@ export const HomePage: React.FC = () => {
 
           <p className="text-sm sm:text-base text-[#CAD3FF] leading-relaxed">
             {config.subheadline ||
-              "Professor Sigma, your personal AI Math Tutor, doesn't just hand you the answer—he guides your thinking step-by-step, highlights the exact CBSE/ICSE formulas needed, and tests your conceptual understanding."}
+              "AI Teacher, your personal AI Math Tutor, doesn't just hand you the answer—he guides your thinking step-by-step, highlights the exact CBSE/ICSE formulas needed, and tests your conceptual understanding."}
           </p>
 
           <div className="pt-2 flex flex-wrap gap-3">

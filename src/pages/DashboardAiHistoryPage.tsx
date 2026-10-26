@@ -76,7 +76,7 @@ export const DashboardAiHistoryPage: React.FC = () => {
   return (
     <DashboardLayout
       title="AI Tutor Doubt History"
-      subtitle="Review past mathematical doubts, worked formulas, and step-by-step guidance from Professor Sigma."
+      subtitle="Review past mathematical doubts, worked formulas, and step-by-step guidance from AI Teacher."
     >
       <div className="space-y-4">
         {ratingError && <p role="alert" className="text-sm text-red-700">{ratingError}</p>}
@@ -91,7 +91,7 @@ export const DashboardAiHistoryPage: React.FC = () => {
             </div>
             <h3 className="font-heading font-bold text-base text-slate-900">No Past Doubts Yet</h3>
             <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              You haven't asked any doubts to Professor Sigma yet. Have a question from your textbook or homework?
+              You haven't asked any doubts to AI Teacher yet. Have a question from your textbook or homework?
             </p>
             <div className="pt-2">
               <Link href="/ai-teacher">

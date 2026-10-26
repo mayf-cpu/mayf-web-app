@@ -1,3 +1,4 @@
+import {sessionTeacherName} from '../lib/ai/teacherIdentity';
 import { submitDoubtRating } from '../lib/ai/feedbackClient';
 import React, { useState, useRef, useEffect } from 'react';
 import {
@@ -52,9 +53,11 @@ export const AiTeacherPage: React.FC = () => {
   const { currentRoute } = useNavigation();
   const queryTopic = currentRoute.searchParams.get('topic');
 
+  const [teacherName]=useState(()=>{try{return sessionTeacherName(window.sessionStorage);}catch{return sessionTeacherName();}});
   const [studentClass, setStudentClass] = useState<StudentClass>(
-    user?.studentClass || 'Class 10'
+    user?.studentClass || 'All'
   );
+  useEffect(()=>{setStudentClass(user?.studentClass||'All');},[user?.studentClass]);
   const [topic, setTopic] = useState<string>(queryTopic || 'Quadratic Equations');
   const [inputQuestion, setInputQuestion] = useState('');
   const [selectedImage, setSelectedImage] = useState<ImagePayload | null>(null);
@@ -76,7 +79,7 @@ export const AiTeacherPage: React.FC = () => {
     {
       id: 'welcome-1',
       sender: 'ai_teacher',
-      text: `### Understanding the Question\nHello! I am **Professor Sigma**, your dedicated AI Mathematics Teacher for **${studentClass}**.\n\n### Given Information\n* Grades Covered: Classes 5 to 10 (CBSE & ICSE Syllabuses)\n* Supported Inputs: Typed algebra, textbook photo upload, mobile camera photograph, and clipboard screenshot\n\n### Concept Used\nMulti-step pedagogical problem decomposition with beautiful KaTeX equations: $$\\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}, \\quad a^2 + b^2 = c^2, \\quad \\sin^2 \\theta + \\cos^2 \\theta = 1$$\n\n### Step-by-Step Solution\n1. Type any math doubt or take a photo of your exercise problem.\n2. I will break it down into givens, theorems, worked algebraic steps, and exam verification.\n3. If an image is blurry or numbers are cut off, I will ask for clarification rather than guessing.\n\n### Final Answer\nReady whenever you are! Ask your first doubt below.`,
+      text: `### Understanding the Question\nHello! I am **${teacherName}**, your dedicated AI Mathematics Teacher for **${studentClass}**.\n\n### Given Information\n* Grades Covered: Classes 5 to 10 (CBSE & ICSE Syllabuses)\n* Supported Inputs: Typed algebra, textbook photo upload, mobile camera photograph, and clipboard screenshot\n\n### Concept Used\nMulti-step pedagogical problem decomposition with beautiful KaTeX equations: $$\\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}, \\quad a^2 + b^2 = c^2, \\quad \\sin^2 \\theta + \\cos^2 \\theta = 1$$\n\n### Step-by-Step Solution\n1. Type any math doubt or take a photo of your exercise problem.\n2. I will break it down into givens, theorems, worked algebraic steps, and exam verification.\n3. If an image is blurry or numbers are cut off, I will ask for clarification rather than guessing.\n\n### Final Answer\nReady whenever you are! Ask your first doubt below.`,
       timestamp: 'Just now',
     },
   ]);
@@ -195,7 +198,7 @@ export const AiTeacherPage: React.FC = () => {
     // GA4 / Firebase Analytics: Privacy-preserving AI doubt question tracking
     trackAiQuestion({
       math_category: topic || 'General Mathematics',
-      class_level: studentClass || 'Class 10',
+      class_level: studentClass || 'All',
       has_image: Boolean(currentImg),
       question_length_bracket: questionText.length < 30 ? 'short' : questionText.length < 120 ? 'medium' : 'long',
     });
@@ -218,6 +221,7 @@ export const AiTeacherPage: React.FC = () => {
       const payload: any = {
         message: questionText.trim(),
         studentClass,
+        teacherName,
         chapterTopic: topic,
         questionType: currentImg ? currentImg.type : 'text',
       };
@@ -242,7 +246,7 @@ export const AiTeacherPage: React.FC = () => {
         const teacherNoticeMsg: ChatMessage = {
           id: 'msg-notice-' + Date.now(),
           sender: 'ai_teacher',
-          text: `### Professor Sigma Note\n${noticeText}\n\n* Please ensure equations and signs are readable.\n* You can also type out the question directly in the input box below.`,
+          text: `### ${teacherName} Note\n${noticeText}\n\n* Please ensure equations and signs are readable.\n* You can also type out the question directly in the input box below.`,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         };
         setMessages((prev) => [...prev, teacherNoticeMsg]);
@@ -267,7 +271,7 @@ export const AiTeacherPage: React.FC = () => {
       logProductEvent({
         userId: user?.uid || 'anonymous-student',
         eventType: 'ai_question',
-        title: `Asked Professor Sigma: "${studentMsg.text.slice(0, 50)}..."`,
+        title: `Asked ${teacherName}: "${studentMsg.text.slice(0, 50)}..."`,
         targetId: data.doubtId,
         targetType: 'ai_doubt',
         metadata: {
@@ -312,6 +316,7 @@ export const AiTeacherPage: React.FC = () => {
   ];
 
   const classes: StudentClass[] = [
+    'All',
     'Class 5',
     'Class 6',
     'Class 7',
@@ -357,7 +362,7 @@ export const AiTeacherPage: React.FC = () => {
           <div>
             <div className="flex items-center gap-2 text-xs font-heading font-semibold text-blue-700 mb-1">
               <Sparkles className="w-4 h-4 text-cyan-500" />
-              <span>Professor Sigma · Dedicated AI Mathematics Tutor</span>
+              <span>{teacherName} · AI Mathematics Tutor</span>
             </div>
             <h1 className="font-heading font-extrabold text-2xl text-slate-900 tracking-tight">
               Class 5–10 Step-by-Step AI Teacher
@@ -495,7 +500,7 @@ export const AiTeacherPage: React.FC = () => {
                       }`}
                     >
                       <span className="font-heading font-semibold">
-                        {isTeacher ? 'Professor Sigma (AI Teacher)' : 'Student Question'}
+                        {isTeacher ? `${teacherName} (AI Teacher)` : 'Student Question'}
                       </span>
                       <span className="font-mono text-[10px]">{msg.timestamp}</span>
                     </div>
@@ -567,7 +572,7 @@ export const AiTeacherPage: React.FC = () => {
                 </div>
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs text-slate-600 flex items-center gap-2.5">
                   <RefreshCw className="w-4 h-4 animate-spin text-blue-700" />
-                  <span>Professor Sigma is analyzing the algebraic steps and theorems...</span>
+                  <span>{teacherName} is analyzing the algebraic steps and theorems...</span>
                 </div>
               </div>
             )}
