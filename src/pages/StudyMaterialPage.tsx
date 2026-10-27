@@ -1,6 +1,6 @@
 import {useClassification} from '../lib/cms/useClassification';
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Filter, BookOpen, ArrowUpRight, ArrowRight, Sparkles, FileText, Download, CheckCircle2, Eye, X, ArrowUpDown } from 'lucide-react';
+import { Search, Filter, BookOpen, ArrowUpRight, ArrowRight, Sparkles, FileText, Download, CheckCircle2, Eye, X, ArrowUpDown, ChevronDown } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
 import { StudentClass, MathSubjectCategory, ContentItem, ContentType, ContentAccessType } from '../lib/firebase/types';
 import { Badge } from '../components/ui/Badge';
@@ -16,6 +16,21 @@ import { Link } from '../context/NavigationContext';
 import { CardSkeleton } from '../components/ui/LoadingState';
 import { ErrorState } from '../components/ui/ErrorState';
 import { trackSearch } from '../lib/analytics/analyticsService';
+
+const FilterDropdown: React.FC<React.SelectHTMLAttributes<HTMLSelectElement> & {label: string}> = ({label, children, ...props}) => {
+  const id = React.useId();
+  return (
+    <div className="min-w-0 space-y-1.5">
+      <label htmlFor={id} className="block text-xs font-semibold text-slate-500">{label}</label>
+      <div className="relative">
+        <select {...props} id={id} className="min-h-11 w-full min-w-0 appearance-none rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-3 pr-9 text-sm font-medium text-slate-800 shadow-xs transition-colors hover:border-slate-300 hover:bg-white focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20 disabled:cursor-not-allowed disabled:text-slate-400">
+          {children}
+        </select>
+        <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"/>
+      </div>
+    </div>
+  );
+};
 
 export const StudyMaterialPage: React.FC = () => {
   const [selectedClass, setSelectedClass] = useState<string>('All');
@@ -249,7 +264,7 @@ export const StudyMaterialPage: React.FC = () => {
         {/* Multi-Faceted Filters & Debounced Autocomplete Search */}
         <div className="bg-white rounded-xl border border-[#E2E8F0] p-4 sm:p-5 shadow-xs space-y-4">
           
-          {/* Top Row: Debounced Search & Free/Premium Switcher */}
+          {/* Full-width search with autocomplete */}
           <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
             {/* Search Input with Autocomplete Suggestions */}
             <div ref={searchContainerRef} className="relative flex-1">
@@ -300,130 +315,29 @@ export const StudyMaterialPage: React.FC = () => {
               )}
             </div>
 
-            {/* Access Type Switcher (Free vs Annual Pass) */}
-            <div className="flex items-center gap-1 bg-[#F1F5F9] p-1 rounded-lg shrink-0">
-              <button
-                onClick={() => setSelectedAccessType('All')}
-                className={`px-3 py-1 text-xs font-heading font-semibold rounded cursor-pointer transition-colors ${
-                  selectedAccessType === 'All' ? 'bg-white text-[#1D4ED8] shadow-xs' : 'text-[#64748B]'
-                }`}
-              >
-                All Access
-              </button>
-              <button
-                onClick={() => setSelectedAccessType('free')}
-                className={`px-3 py-1 text-xs font-heading font-semibold rounded cursor-pointer transition-colors ${
-                  selectedAccessType === 'free' ? 'bg-white text-[#059669] shadow-xs' : 'text-[#64748B]'
-                }`}
-              >
-                Free Access
-              </button>
-              <button
-                onClick={() => setSelectedAccessType('paid')}
-                className={`px-3 py-1 text-xs font-heading font-semibold rounded cursor-pointer transition-colors ${
-                  selectedAccessType === 'paid' ? 'bg-white text-[#EA580C] shadow-xs' : 'text-[#64748B]'
-                }`}
-              >
-                Annual Pass
-              </button>
-            </div>
           </div>
 
-          {/* Row 2: Grade (Class 5–10) Tabs */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-            <span className="text-xs text-[#64748B] font-semibold mr-1 shrink-0">Grade:</span>
-            {classes.map((cls) => (
-              <button
-                key={cls}
-                onClick={() => setSelectedClass(cls)}
-                className={`px-3 py-1 rounded-md text-xs font-heading font-semibold transition-colors shrink-0 cursor-pointer ${
-                  selectedClass === cls
-                    ? 'bg-[#1D4ED8] text-white shadow-xs'
-                    : 'bg-[#F1F5F9] text-[#64748B] hover:text-[#0F172A]'
-                }`}
-              >
-                {cls}
-              </button>
-            ))}
-          </div>
-
-          {/* Row 3: Category & Dynamic Subcategory */}
-          <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-[#F1F5F9]">
-            {/* Category */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-              <span className="text-xs text-[#64748B] font-semibold mr-1 shrink-0">Category:</span>
-              {categories.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => {
-                    setSelectedCategory(cat);
-                    setSelectedSubcategory('All');
-                  }}
-                  className={`px-2.5 py-0.5 rounded text-[11px] font-medium transition-colors shrink-0 cursor-pointer ${
-                    selectedCategory === cat
-                      ? 'bg-[#06B6D4] text-white'
-                      : 'bg-[#F8FAFC] text-[#64748B] hover:bg-[#F1F5F9]'
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
-
-            {/* Subcategory if selected category has options */}
-            {availableSubcategories.length > 1 && (
-              <div className="flex items-center gap-1 text-xs ml-auto">
-                <span className="text-[#64748B] font-medium">Subtopic:</span>
-                <select
-                  aria-label="Filter Subcategory"
-                  value={selectedSubcategory}
-                  onChange={(e) => setSelectedSubcategory(e.target.value)}
-                  className="bg-[#F8FAFC] border border-[#CBD5E1] rounded px-2 py-0.5 text-xs text-[#0F172A] font-medium focus:outline-none focus:ring-1 focus:ring-[#1D4ED8]"
-                >
-                  {availableSubcategories.map((sub) => (
-                    <option key={sub} value={sub}>
-                      {sub}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
-
-          {/* Row 4: Format / Content Type & Difficulty Selectors */}
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-[#F1F5F9] text-xs">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[#64748B] font-semibold">Format:</span>
-              <select
-                aria-label="Filter Content Type"
-                value={selectedContentType}
-                onChange={(e) => setSelectedContentType(e.target.value as any)}
-                className="bg-[#F8FAFC] border border-[#CBD5E1] rounded px-2 py-1 font-heading text-xs text-[#0F172A] focus:outline-none focus:ring-1 focus:ring-[#1D4ED8]"
-              >
-                {contentTypes.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[#64748B] font-semibold">Difficulty:</span>
-              {(['All', 'Foundation', 'Standard', 'Exemplar / Board'] as const).map((diff) => (
-                <button
-                  key={diff}
-                  onClick={() => setSelectedDifficulty(diff)}
-                  className={`px-3 py-1.5 min-h-[36px] rounded-md text-xs font-medium transition-colors cursor-pointer ${
-                    selectedDifficulty === diff
-                      ? 'bg-[#1E293B] text-white'
-                      : 'bg-[#F1F5F9] text-[#64748B] hover:text-[#0F172A]'
-                  }`}
-                >
-                  {diff}
-                </button>
-              ))}
-            </div>
+          <div className="grid grid-cols-1 min-[400px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4 border-t border-slate-100 pt-4">
+            <FilterDropdown label="Grade" aria-label="Filter Grade" value={selectedClass} onChange={e => setSelectedClass(e.target.value)}>
+              {classes.map(grade => <option key={grade} value={grade}>{grade === 'All' ? 'All Grades' : grade}</option>)}
+            </FilterDropdown>
+            <FilterDropdown label="Category" aria-label="Filter Category" value={selectedCategory} onChange={e => {setSelectedCategory(e.target.value); setSelectedSubcategory('All');}}>
+              {categories.map(category => <option key={category} value={category}>{category === 'All' ? 'All Categories' : category}</option>)}
+            </FilterDropdown>
+            <FilterDropdown label="Subtopic" aria-label="Filter Subcategory" value={selectedSubcategory} disabled={availableSubcategories.length <= 1} onChange={e => setSelectedSubcategory(e.target.value)}>
+              {availableSubcategories.map(subtopic => <option key={subtopic} value={subtopic}>{subtopic === 'All' ? 'All Subtopics' : subtopic}</option>)}
+            </FilterDropdown>
+            <FilterDropdown label="Format" aria-label="Filter Content Type" value={selectedContentType} onChange={e => setSelectedContentType(e.target.value as ContentType | 'All')}>
+              {contentTypes.map(format => <option key={format.value} value={format.value}>{format.label}</option>)}
+            </FilterDropdown>
+            <FilterDropdown label="Difficulty" aria-label="Filter Difficulty" value={selectedDifficulty} onChange={e => setSelectedDifficulty(e.target.value as DifficultyLevel | 'All')}>
+              {(['All', 'Foundation', 'Standard', 'Exemplar / Board'] as const).map(difficulty => <option key={difficulty} value={difficulty}>{difficulty === 'All' ? 'All Levels' : difficulty}</option>)}
+            </FilterDropdown>
+            <FilterDropdown label="Access" aria-label="Filter Access" value={selectedAccessType} onChange={e => setSelectedAccessType(e.target.value as ContentAccessType | 'All')}>
+              <option value="All">All Access</option>
+              <option value="free">Free Access</option>
+              <option value="paid">Annual Pass</option>
+            </FilterDropdown>
           </div>
         </div>
 
