@@ -43,7 +43,7 @@ try {
   await page.getByRole('main').getByRole('button',{name:'Log In',exact:true}).click();
   await page.waitForURL('**/checkout?plan=annual-pass');
   await page.getByRole('heading',{name:'Activate Your Annual Pass',exact:true}).waitFor();
-  await page.getByRole('button',{name:'Close tour',exact:true}).click();
+  // The tour was dismissed earlier in this same application session.
   await page.getByText('Payments are temporarily unavailable.',{exact:false}).waitFor();
   assert.equal(sdkRequests.length,0,'globally paused checkout does not load the gateway');
   // Already signed in: enrollment goes straight to checkout and the payment
