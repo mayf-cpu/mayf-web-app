@@ -380,7 +380,7 @@ const ORIGINAL_FORMULA_ITEMS: FormulaItem[] = [
       { symbol: 'D', meaning: 'Discriminant = b² - 4ac' },
     ],
     explanation:
-      'Gives the exact roots of any quadratic equation ax² + bx + c = 0. The discriminant D determines root nature: if D > 0, roots are real and distinct; if D = 0, roots are real and equal; if D < 0, roots are imaginary.',
+      'Gives the exact roots of any quadratic equation ax² + bx + c = 0. The discriminant D determines root nature: if D > 0, roots are real and distinct; if D = 0, roots are real and equal; if D < 0, roots are nonreal complex numbers.',
     diagramType: 'algebra-parabola',
     diagramCaption: 'Roots α and β are the points where the parabola y = ax² + bx + c crosses the X-axis.',
     example: 'For x² - 5x + 6 = 0: a=1, b=-5, c=6. D = 25 - 24 = 1. x = (5 ± 1)/2 = 3 and 2.',
@@ -1149,8 +1149,16 @@ const ORIGINAL_FORMULA_ITEMS: FormulaItem[] = [
 // identical display expression a second time when extending the collection.
 const normaliseExpression = (value: string) => value.replace(/\s+/g, '');
 const existingExpressions = new Set(ORIGINAL_FORMULA_ITEMS.map(item => normaliseExpression(item.latexFormula)));
+const extendedByExpression = new Map(EXPANDED_FORMULA_ITEMS.map(item => [normaliseExpression(item.latexFormula), item]));
 export const FORMULA_DECK_ITEMS: FormulaItem[] = [
-  ...ORIGINAL_FORMULA_ITEMS,
+  ...ORIGINAL_FORMULA_ITEMS.map(item => {
+    const matchingReference = extendedByExpression.get(normaliseExpression(item.latexFormula));
+    return {
+      ...item,
+      applicableClasses: [...new Set([...item.applicableClasses, ...(matchingReference?.applicableClasses || []), 'Competitive Exams' as const])],
+      tags: [...new Set([...(item.tags || []), ...(matchingReference?.tags || [])])],
+    };
+  }),
   ...EXPANDED_FORMULA_ITEMS.filter(item => {
     const key = normaliseExpression(item.latexFormula);
     if (existingExpressions.has(key)) return false;

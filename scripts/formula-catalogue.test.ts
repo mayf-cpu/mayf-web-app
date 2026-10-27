@@ -10,6 +10,7 @@ test('large formula collection preserves published routes and covers school and 
   assert.equal(new Set(catalogue.map(f => f.slug)).size, catalogue.length);
   for (const slug of ['simple-interest', 'compound-interest', 'pythagoras-theorem', 'trig-ratios-right-triangle']) {
     assert.ok(catalogue.some(f => f.slug === slug), `published route ${slug}`);
+    assert.ok(catalogue.find(f => f.slug === slug)!.applicableClasses.includes('Competitive Exams'), `original formula included in exam revision: ${slug}`);
   }
   for (const category of FORMULA_CATEGORIES) {
     assert.ok(catalogue.some(f => f.category === category.id), category.id);
@@ -20,7 +21,9 @@ test('large formula collection preserves published routes and covers school and 
 });
 
 test('every formula has a valid display equation, identifier and usage note', () => {
+  const categories = new Set(FORMULA_CATEGORIES.map(category => category.id));
   for (const f of catalogue) {
+    assert.ok(categories.has(f.category as any), `filterable category: ${f.slug}`);
     assert.match(f.slug, /^[a-z0-9]+(?:-[a-z0-9]+)*$/);
     assert.ok(f.title.trim() && f.explanation.trim() && f.plainTextFormula.trim(), f.slug);
     assert.ok(f.applicableClasses.length && !f.applicableClasses.includes('All'), f.slug);
