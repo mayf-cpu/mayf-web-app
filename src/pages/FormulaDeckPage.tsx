@@ -1,3 +1,4 @@
+import {FilterDropdown} from '../components/ui/FilterDropdown';
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Search,
@@ -22,7 +23,7 @@ import { ShareButton } from '../components/ui/ShareButton';
 import { SeoHead } from '../components/common/SeoHead';
 import { AdSensePlacement } from '../components/adsense/AdSensePlacement';
 import { FORMULA_DECK_ITEMS, FORMULA_CATEGORIES } from '../data/formulaDeckData';
-import { StudentClass, FormulaCategory } from '../lib/firebase/types';
+import { FormulaLevel, FormulaCategory } from '../lib/firebase/types';
 import { Button } from '../components/ui/Button';
 import { Link, useNavigation } from '../context/NavigationContext';
 import { useAuth } from '../context/AuthContext';
@@ -33,7 +34,8 @@ export const FormulaDeckPage: React.FC = () => {
   const { savedItemIds } = useAuth();
 
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
-  const [selectedClass, setSelectedClass] = useState<StudentClass | 'All'>('All');
+  const [selectedClass, setSelectedClass] = useState<FormulaLevel>('All');
+  const [selectedTopic, setSelectedTopic] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'swipe'>('grid');
@@ -42,65 +44,42 @@ export const FormulaDeckPage: React.FC = () => {
   const PAGE_SIZE = 24;
 
   const canonicalUrl = 'https://mayf.co.in/formula-deck';
-  const pageTitle = 'Interactive Formula Deck (Classes 5–10)';
-  const pageDesc = 'Master all mathematical identities from Arithmetic to Trigonometry. Standalone indexable formula cards with KaTeX typesetting and NCERT step exemplars.';
+  const pageTitle = 'Formula Deck | Classes 5–12 & Competitive Exams';
+  const pageDesc = 'Browse mathematics formulas for Classes 5–12 and competitive exams: arithmetic, algebra, trigonometry, conics, calculus, matrices, vectors, statistics and probability, with usage conditions.';
 
   // Swipe Deck / Flashcard Index
   const [swipeIndex, setSwipeIndex] = useState(0);
   const touchStartXRef = useRef<number | null>(null);
   const touchEndXRef = useRef<number | null>(null);
 
-  const categories: (string | FormulaCategory)[] = [
-    'All',
-    'Arithmetic',
-    'Fractions',
-    'Algebra',
-    'Geometry',
-    'Mensuration',
-    'Coordinate Geometry',
-    'Statistics',
-    'Probability',
-    'Trigonometry',
-  ];
-
-  const classes: (StudentClass | 'All')[] = [
-    'All',
-    'Class 5',
-    'Class 6',
-    'Class 7',
-    'Class 8',
-    'Class 9',
-    'Class 10',
-  ];
+  const categories = ['All', ...FORMULA_CATEGORIES.map(category => category.id)];
+  const classes: FormulaLevel[] = ['All', 'Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11', 'Class 12', 'Competitive Exams'];
+  const topics = useMemo(() => ['All', ...new Set(FORMULA_DECK_ITEMS
+    .filter(formula => selectedCategory === 'All' || formula.category === selectedCategory)
+    .map(formula => formula.tags?.[0]).filter((topic): topic is string => Boolean(topic)))].sort((a,b) => a === 'All' ? -1 : b === 'All' ? 1 : a.localeCompare(b)), [selectedCategory]);
+  const topicLabel = (topic: string) => topic === 'All' ? 'All Topics' : topic.replace(/-/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase());
 
   const filteredFormulas = useMemo(() => {
+    const terms = searchQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
     return FORMULA_DECK_ITEMS.filter((f) => {
       const matchesCategory = selectedCategory === 'All' || f.category === selectedCategory;
       const matchesClass =
-        selectedClass === 'All' || f.applicableClasses.includes(selectedClass as StudentClass);
+        selectedClass === 'All' || f.applicableClasses.includes(selectedClass);
       const matchesFavorite = !favoritesOnly || savedItemIds.includes(f.id);
 
-      const q = searchQuery.toLowerCase().trim();
-      const matchesSearch =
-        !q ||
-        f.title.toLowerCase().includes(q) ||
-        f.plainTextFormula.toLowerCase().includes(q) ||
-        f.explanation.toLowerCase().includes(q) ||
-        f.category.toLowerCase().includes(q) ||
-        f.tags?.some((t) => t.toLowerCase().includes(q)) ||
-        f.variables?.some(
-          (v) => v.symbol.toLowerCase().includes(q) || v.meaning.toLowerCase().includes(q)
-        );
-
-      return matchesCategory && matchesClass && matchesFavorite && matchesSearch;
+      const searchable = [f.title, f.plainTextFormula, f.latexFormula, f.explanation, f.category,
+        ...(f.tags || []), ...(f.variables || []).flatMap(variable => [variable.symbol, variable.meaning])].join(' ').toLowerCase();
+      const matchesSearch = terms.every(term => searchable.includes(term));
+      const matchesTopic = selectedTopic === 'All' || f.tags?.[0] === selectedTopic;
+      return matchesCategory && matchesClass && matchesFavorite && matchesSearch && matchesTopic;
     });
-  }, [selectedCategory, selectedClass, favoritesOnly, searchQuery, savedItemIds]);
+  }, [selectedCategory, selectedClass, selectedTopic, favoritesOnly, searchQuery, savedItemIds]);
 
   // Reset pagination and keep swipeIndex in bounds when filters change
   useEffect(() => {
     setCurrentPage(1);
     setSwipeIndex(0);
-  }, [selectedCategory, selectedClass, favoritesOnly, searchQuery]);
+  }, [selectedCategory, selectedClass, selectedTopic, favoritesOnly, searchQuery]);
 
   // Keep swipeIndex in bounds
   useEffect(() => {
@@ -111,6 +90,7 @@ export const FormulaDeckPage: React.FC = () => {
 
   // Paginated formulas for Grid mode (prevents DOM freeze with 1000+ items)
   const totalPages = Math.ceil(filteredFormulas.length / PAGE_SIZE) || 1;
+  useEffect(() => {setCurrentPage(page => Math.min(page, totalPages));}, [totalPages]);
   const paginatedFormulas = useMemo(() => {
     const start = (currentPage - 1) * PAGE_SIZE;
     return filteredFormulas.slice(start, start + PAGE_SIZE);
@@ -157,6 +137,8 @@ export const FormulaDeckPage: React.FC = () => {
     if (viewMode !== 'swipe') return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName) || target?.isContentEditable) return;
       if (e.key === 'ArrowRight' || e.key === 'j') {
         handleNextSwipe();
       } else if (e.key === 'ArrowLeft' || e.key === 'k') {
@@ -195,7 +177,7 @@ export const FormulaDeckPage: React.FC = () => {
         structuredData={{
           '@context': 'https://schema.org',
           '@type': 'CollectionPage',
-          name: 'Class 5–10 Mathematics Formula Deck & Cheat Sheets',
+          name: 'Mathematics Formula Deck for Classes 5–12 & Competitive Exams',
           description: pageDesc,
           publisher: {
             '@type': 'Organization',
@@ -218,7 +200,7 @@ export const FormulaDeckPage: React.FC = () => {
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="inline-flex items-center gap-2 bg-blue-500/20 text-cyan-300 border border-cyan-400/30 px-3 py-1 rounded-full text-xs font-semibold backdrop-blur-xs">
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Interactive Formula Deck · Classes 5–10 NCERT Curriculum</span>
+                <span>Classes 5–12 · Competitive Exam Revision</span>
               </div>
 
               <ShareButton
@@ -235,15 +217,15 @@ export const FormulaDeckPage: React.FC = () => {
             </h1>
 
             <p className="text-sm md:text-base text-blue-100/90 leading-relaxed">
-              Every mathematical identity from Arithmetic to Trigonometry. Every formula is a standalone, indexable document with KaTeX mathematical typesetting, variable definitions, and step-by-step worked exemplars.
+              Explore school mathematics and competitive-exam formulas, from fractions and mensuration to calculus, vectors and probability. Each card includes a typeset equation and notes on when to use it.
             </p>
 
-            <div className="flex items-center gap-4 pt-2 text-xs text-blue-200">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-2 text-xs text-blue-200">
               <span>{FORMULA_DECK_ITEMS.length} Total Formulas</span>
               <span aria-hidden="true">·</span>
-              <span>9 Subject Categories</span>
+              <span>{FORMULA_CATEGORIES.length} Subject Categories</span>
               <span aria-hidden="true">·</span>
-              <span>Direct shareable URLs (/formula/[slug])</span>
+              <span>Search · Save · Revise</span>
             </div>
           </div>
         </div>
@@ -258,7 +240,7 @@ export const FormulaDeckPage: React.FC = () => {
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search formulas (e.g. Sridharacharya, cylinder volume, Pythagoras, section formula, LCM)..."
+                aria-label="Search formulas" placeholder="Search formulas, topics or conditions (e.g. integration, binomial, train crossing)…"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-300 rounded-lg text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-600 focus:bg-white transition-all"
@@ -266,6 +248,7 @@ export const FormulaDeckPage: React.FC = () => {
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery('')}
+                  aria-label="Clear formula search"
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs px-1"
                 >
                   ✕
@@ -321,52 +304,19 @@ export const FormulaDeckPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Category Tabs */}
-          <div>
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-              <span className="text-xs text-slate-500 font-semibold mr-1 shrink-0">
-                Category:
-              </span>
-              {categories.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-heading font-semibold transition-all shrink-0 cursor-pointer ${
-                    selectedCategory === cat
-                      ? 'bg-blue-700 text-white shadow-xs scale-102'
-                      : 'bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200'
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
+          <div className="grid grid-cols-1 min-[400px]:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4 border-t border-slate-100 pt-4">
+            <FilterDropdown label="Category" aria-label="Formula Category" value={selectedCategory} onChange={event => {setSelectedCategory(event.target.value); setSelectedTopic('All');}}>
+              {categories.map(category => <option key={category} value={category}>{category === 'All' ? 'All Categories' : category}</option>)}
+            </FilterDropdown>
+            <FilterDropdown label="Standard / Exam" aria-label="Formula Standard or Exam" value={selectedClass} onChange={event => setSelectedClass(event.target.value as FormulaLevel)}>
+              {classes.map(level => <option key={level} value={level}>{level === 'All' ? 'All Classes & Exams' : level}</option>)}
+            </FilterDropdown>
+            <FilterDropdown label="Topic" aria-label="Formula Topic" value={selectedTopic} onChange={event => setSelectedTopic(event.target.value)}>
+              {topics.map(topic => <option key={topic} value={topic}>{topicLabel(topic)}</option>)}
+            </FilterDropdown>
           </div>
-
-          {/* Standard / Class Level Tabs */}
-          <div className="flex items-center justify-between gap-3 pt-1 border-t border-slate-100">
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-              <span className="text-xs text-slate-500 font-semibold mr-1 shrink-0">
-                Standard:
-              </span>
-              {classes.map((cls) => (
-                <button
-                  key={cls}
-                  onClick={() => setSelectedClass(cls)}
-                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors shrink-0 cursor-pointer ${
-                    selectedClass === cls
-                      ? 'bg-cyan-600 text-white font-semibold'
-                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  {cls}
-                </button>
-              ))}
-            </div>
-
-            <div className="text-xs text-slate-500 shrink-0 font-medium">
-              Showing <span className="font-bold text-slate-900">{filteredFormulas.length}</span> formulas
-            </div>
+          <div data-testid="formula-result-count" className="text-xs text-slate-500 font-medium" aria-live="polite">
+            Showing <span className="font-bold text-slate-900">{filteredFormulas.length}</span> of {FORMULA_DECK_ITEMS.length} formulas
           </div>
         </div>
 
@@ -388,6 +338,7 @@ export const FormulaDeckPage: React.FC = () => {
                 size="md"
                 onClick={() => {
                   setSelectedCategory('All');
+                  setSelectedTopic('All');
                   setSelectedClass('All');
                   setFavoritesOnly(false);
                   setSearchQuery('');
@@ -518,7 +469,7 @@ export const FormulaDeckPage: React.FC = () => {
         {/* ======================================================== */}
         {viewMode === 'grid' && filteredFormulas.length > 0 && (
           <div className="space-y-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div data-testid="formula-grid" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {paginatedFormulas.map((formula) => (
                 <FormulaCard key={formula.id} formula={formula} openInNewTab={openInNewTab} />
               ))}
@@ -598,7 +549,7 @@ export const FormulaDeckPage: React.FC = () => {
             <h3 className="font-heading font-bold text-base text-slate-900">
               Browse Formulas by Curriculum Domain
             </h3>
-            <span className="text-xs text-slate-500">Class 5 to 10 Standard</span>
+            <span className="text-xs text-slate-500">Classes 5–12 & Competitive Exams</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -609,6 +560,7 @@ export const FormulaDeckPage: React.FC = () => {
                   key={c.id}
                   onClick={() => {
                     setSelectedCategory(c.id);
+                    setSelectedTopic('All');
                     setViewMode('grid');
                     window.scrollTo({ top: 200, behavior: 'smooth' });
                   }}

@@ -1,3 +1,4 @@
+import {EXPANDED_FORMULA_ITEMS} from './formulas/expandedFormulaDeck';
 import { FormulaItem, FormulaCategory, StudentClass } from '../lib/firebase/types';
 
 export const FORMULA_CATEGORIES: { id: FormulaCategory; label: string; icon: string; description: string }[] = [
@@ -55,9 +56,25 @@ export const FORMULA_CATEGORIES: { id: FormulaCategory; label: string; icon: str
     icon: 'θ',
     description: 'Pythagorean trigonometric identities, T-ratios, reciprocal, and complementary angles.',
   },
+  {'id': 'Number System', 'label': 'Number System', 'icon': 'ℕ', 'description': 'Divisibility, modular arithmetic, exponents and surds.'},
+  {'id': 'Sequences & Series', 'label': 'Sequences & Series', 'icon': 'Σ', 'description': 'Arithmetic, geometric and harmonic progressions and sums.'},
+  {'id': 'Sets & Functions', 'label': 'Sets & Functions', 'icon': '∪', 'description': 'Sets, relations, function composition and inverse functions.'},
+  {'id': 'Permutations & Combinations', 'label': 'Permutations & Combinations', 'icon': 'nCr', 'description': 'Counting, arrangements, binomial coefficients and selections.'},
+  {'id': 'Complex Numbers', 'label': 'Complex Numbers', 'icon': 'i', 'description': 'Conjugates, moduli, arguments and roots of unity.'},
+  {'id': 'Conic Sections', 'label': 'Conic Sections', 'icon': '◯', 'description': 'Parabolas, ellipses, hyperbolas, tangents and focal properties.'},
+  {'id': 'Inverse Trigonometry', 'label': 'Inverse Trigonometry', 'icon': 'θ', 'description': 'Principal branches, domains, ranges and inverse identities.'},
+  {'id': 'Matrices & Determinants', 'label': 'Matrices & Determinants', 'icon': '▦', 'description': 'Matrix operations, determinants, inverses and linear systems.'},
+  {'id': 'Vectors & 3D Geometry', 'label': 'Vectors & 3D Geometry', 'icon': '→', 'description': 'Vector products, lines, planes and spatial distances.'},
+  {'id': 'Limits & Continuity', 'label': 'Limits & Continuity', 'icon': 'lim', 'description': 'Standard limits, continuity and limit laws.'},
+  {'id': 'Differentiation', 'label': 'Differentiation', 'icon': 'd/dx', 'description': 'Derivatives, chain rules, tangent lines and rate of change.'},
+  {'id': 'Integration', 'label': 'Integration', 'icon': '∫', 'description': 'Antiderivatives, definite integrals and area or volume applications.'},
+  {'id': 'Differential Equations', 'label': 'Differential Equations', 'icon': 'dy/dx', 'description': 'Separable, linear and growth differential equations.'},
+  {'id': 'Competitive Aptitude', 'label': 'Competitive Aptitude', 'icon': '⏱', 'description': 'SSC, banking and railway quantitative aptitude shortcuts and conditions.'},
+  {'id': 'Linear Programming', 'label': 'Linear Programming', 'icon': 'Z', 'description': 'Objectives, constraints and feasible corner points.'},
+  {'id': 'Units & Measurement', 'label': 'Units & Measurement', 'icon': 'cm', 'description': 'Length, area, volume, time, mass and temperature conversions.'},
 ];
 
-export const FORMULA_DECK_ITEMS: FormulaItem[] = [
+const ORIGINAL_FORMULA_ITEMS: FormulaItem[] = [
   // ==========================================
   // 1. ARITHMETIC
   // ==========================================
@@ -1126,4 +1143,18 @@ export const FORMULA_DECK_ITEMS: FormulaItem[] = [
       keywords: ['trigonometric ratios', 'soh cah toa', 'sin cos tan formula', 'class 10 math'],
     },
   },
+];
+
+// Preserve the original IDs, URLs and saved-item references. Avoid adding an
+// identical display expression a second time when extending the collection.
+const normaliseExpression = (value: string) => value.replace(/\s+/g, '');
+const existingExpressions = new Set(ORIGINAL_FORMULA_ITEMS.map(item => normaliseExpression(item.latexFormula)));
+export const FORMULA_DECK_ITEMS: FormulaItem[] = [
+  ...ORIGINAL_FORMULA_ITEMS,
+  ...EXPANDED_FORMULA_ITEMS.filter(item => {
+    const key = normaliseExpression(item.latexFormula);
+    if (existingExpressions.has(key)) return false;
+    existingExpressions.add(key);
+    return true;
+  }),
 ];

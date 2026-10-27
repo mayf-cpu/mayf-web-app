@@ -414,6 +414,8 @@ export interface AnalyticsRollup {
 /**
  * Pedagogical Study & Formula Helper Types (Preserved for backwards-compatibility)
  */
+export type FormulaLevel = StudentClass | 'Class 11' | 'Class 12' | 'Competitive Exams';
+
 export type FormulaCategory =
   | 'Arithmetic'
   | 'Fractions'
@@ -423,7 +425,25 @@ export type FormulaCategory =
   | 'Coordinate Geometry'
   | 'Statistics'
   | 'Probability'
-  | 'Trigonometry';
+  | 'Trigonometry'
+  | 'Number System'
+  | 'Sequences & Series'
+  | 'Sets & Functions'
+  | 'Permutations & Combinations'
+  | 'Complex Numbers'
+  | 'Conic Sections'
+  | 'Inverse Trigonometry'
+  | 'Matrices & Determinants'
+  | 'Vectors & 3D Geometry'
+  | 'Limits & Continuity'
+  | 'Differentiation'
+  | 'Integration'
+  | 'Differential Equations'
+  | 'Competitive Aptitude'
+  | 'Linear Programming'
+  | 'Units & Measurement';
+
+
 
 export type MathSubjectCategory =
   | 'Number System'
@@ -460,7 +480,7 @@ export interface FormulaItem {
   slug: string;
   title: string;
   category: FormulaCategory | MathSubjectCategory;
-  applicableClasses: StudentClass[];
+  applicableClasses: FormulaLevel[];
   latexFormula: string;
   plainTextFormula: string;
   variables: { symbol: string; meaning: string; unit?: string }[];
@@ -468,7 +488,7 @@ export interface FormulaItem {
   diagramType?: string;
   diagramCaption?: string;
   example?: string;
-  exampleProblem: {
+  exampleProblem?: {
     question: string;
     stepByStepSolution: string[];
     answer: string;

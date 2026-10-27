@@ -48,7 +48,9 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/mayf-browser" --no-save playwright@1.64.1
           "$RUNNER_TEMP/mayf-browser/node_modules/.bin/playwright" install --with-deps chromium
-      - name: Math editor browser regression
+      - name: Browser regressions
         env:
           MAYF_PLAYWRIGHT_MODULE: ${{ runner.temp }}/mayf-browser/node_modules/playwright/index.mjs
-        run: node scripts/math-editor-browser-smoke.mjs
+        run: |
+          node scripts/math-editor-browser-smoke.mjs
+          node scripts/formula-deck-browser-smoke.mjs
