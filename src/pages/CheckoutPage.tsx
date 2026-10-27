@@ -1,3 +1,5 @@
+import {usePublicAnnualPassConfig} from '../lib/payments/usePublicAnnualPassConfig';
+import {checkoutLoginUrl, hasCheckoutSession, safeCheckoutReturn} from '../lib/auth/checkoutReturn';
 import { waitForPaymentConfirmation } from '../lib/payments/paymentConfirmation';
 /**
  * Authoritative Student Checkout Page
@@ -48,20 +50,26 @@ declare global {
 }
 
 export const CheckoutPage: React.FC = () => {
-  const { user, firebaseUser } = useAuth();
-  const { navigate } = useNavigation();
+  const { user, firebaseUser, loading: authLoading } = useAuth();
+  const { navigate, currentRoute } = useNavigation();
+  const signedIn = hasCheckoutSession(firebaseUser, user, import.meta.env.PROD);
+  const pricing = usePublicAnnualPassConfig();
+  const checkoutUrl = safeCheckoutReturn(currentRoute.path + '?' + currentRoute.searchParams.toString()) || '/checkout?plan=annual-pass';
+  useEffect(() => {
+    if (!authLoading && !signedIn) navigate(checkoutLoginUrl(checkoutUrl), {replace: true});
+  }, [authLoading, signedIn, checkoutUrl, navigate]);
 
   // Gateway Selection
   const [selectedProvider, setSelectedProvider] = useState<PaymentProvider>('razorpay');
   const providerRef = useRef(selectedProvider); providerRef.current = selectedProvider;
   const quoteGuard = useRef(new SessionGuard());
-  useEffect(() => { quoteGuard.current.invalidate(); setCouponValidation(null); setAppliedCoupon(''); setCouponLoading(false); }, [selectedProvider]);
+  useEffect(() => { quoteGuard.current.invalidate(); setCouponValidation(null); setAppliedCoupon(''); setCouponLoading(false); }, [selectedProvider, firebaseUser?.uid]);
 
   // Form State
   const [studentName, setStudentName] = useState(user?.displayName || '');
   const [email, setEmail] = useState(user?.email || '');
   const [phone, setPhone] = useState(user?.phoneNumber || '');
-  const [studentClass, setStudentClass] = useState(user?.studentClass || 'Class 10');
+  const [studentClass, setStudentClass] = useState(user?.studentClass || 'All');
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState('');
   const [couponLoading, setCouponLoading] = useState(false);
@@ -95,20 +103,36 @@ export const CheckoutPage: React.FC = () => {
 
   // Dynamically load Razorpay SDK
   useEffect(() => {
-    if (!window.Razorpay) {
+    if (authLoading || !signedIn || !pricing.data?.checkoutEnabled || !pricing.data.settings.enabled) return;
+    if (!window.Razorpay && !document.querySelector('script[data-mayf-payment-sdk]')) {
       const script = document.createElement('script');
       script.src = 'https://checkout.razorpay.com/v1/checkout.js';
       script.async = true;
+      script.dataset.mayfPaymentSdk = 'razorpay';
       document.body.appendChild(script);
     }
-  }, []);
+  }, [authLoading, signedIn, pricing.data]);
 
-  // Pricing calculations
-  const [configuredPriceINR, setConfiguredPriceINR] = useState(0);
-  const [pricingLoaded, setPricingLoaded] = useState(false);
-  const [passAvailable, setPassAvailable] = useState(false);
-  const [taxRate, setTaxRate] = useState(0);
-  const [configuredPassName, setConfiguredPassName] = useState('Maths at Your Fingertips Annual Pass (Class 5–10)');
+  // Public pricing is identical for visitors and authenticated students.
+  const configuredPriceINR = pricing.data?.effectivePriceINR || 0;
+  const pricingLoaded = Boolean(pricing.data);
+  const passAvailable = pricing.data?.settings.enabled === true && pricing.data?.checkoutEnabled === true;
+  const taxRate = pricing.data?.taxRatePercentage || 0;
+  const configuredPassName = pricing.data?.settings.name || 'Annual Pass';
+  const formOwner = useRef(user?.uid);
+  useEffect(() => {
+    if (formOwner.current !== user?.uid) {
+      formOwner.current = user?.uid;
+      setStudentName(user?.displayName || ''); setEmail(user?.email || '');
+      setPhone(user?.phoneNumber || ''); setStudentClass(user?.studentClass || 'All');
+      return;
+    }
+    if (!user) return;
+    setStudentName(value => value || user.displayName || '');
+    setEmail(value => value || user.email || '');
+    setPhone(value => value || user.phoneNumber || '');
+    setStudentClass(value => value === 'All' ? user.studentClass || 'All' : value);
+  }, [user?.uid, user?.displayName, user?.email, user?.phoneNumber, user?.studentClass]);
 
   // Authoritative server-side coupon validation
   const validateCouponOnServer = async (codeToValidate: string, gross: number) => {
@@ -199,40 +223,16 @@ export const CheckoutPage: React.FC = () => {
   };
 
   useEffect(() => {
-    async function loadConfigAndCoupon() {
-      let initialGross = 0;
-      try {
-        const res = await fetch('/api/annual-pass/config');
-        const data = await res.json();
-        if (!res.ok || !data.success || !Number.isFinite(data.effectivePriceINR) || data.effectivePriceINR <= 0 || !Number.isFinite(data.taxRatePercentage)) throw new Error('Checkout pricing is unavailable. Please retry later.');
-        initialGross = data.effectivePriceINR;
-        setConfiguredPriceINR(initialGross); setConfiguredPassName(data.settings.name);
-        setTaxRate(data.taxRatePercentage); setPassAvailable(data.settings.enabled === true && data.checkoutEnabled === true); setPricingLoaded(true);
-      } catch (error: any) { setErrorMsg(error.message || 'Checkout pricing could not be loaded.'); return; }
-
-      // Check URL query parameters for coupon
-      try {
-        const params = new URLSearchParams(window.location.search);
-        const urlCoupon = params.get('coupon') || '';
-        if (urlCoupon) {
-          const upper = urlCoupon.trim().toUpperCase();
-          setCouponCode(upper);
-          validateCouponOnServer(upper, initialGross);
-        }
-      } catch (err) {
-        console.warn('[CheckoutPage] URL coupon parsing error:', err);
-      }
-      // Log GA4 / Firebase Analytics checkout_started event
-      trackCheckoutStarted({
-        item_id: 'annual-pass',
-        item_name: 'Annual Pass',
-        plan_type: 'annual_pass',
-        price: initialGross,
-        currency: 'INR',
-      });
+    if (!pricing.data || authLoading || !signedIn) return;
+    const initialGross = pricing.data.effectivePriceINR;
+    const urlCoupon = currentRoute.searchParams.get('coupon') || '';
+    if (urlCoupon) {
+      const upper = urlCoupon.trim().toUpperCase();
+      setCouponCode(upper);
+      if (pricing.data.checkoutEnabled) validateCouponOnServer(upper, initialGross);
     }
-    loadConfigAndCoupon();
-  }, []);
+    trackCheckoutStarted({item_id: 'annual-pass', item_name: 'Annual Pass', plan_type: 'annual_pass', price: initialGross, currency: 'INR'});
+  }, [pricing.data, authLoading, signedIn, firebaseUser?.uid, currentRoute.searchParams.get('coupon')]);
 
   const isINR = selectedProvider === 'razorpay';
   const grossPrice = isINR ? configuredPriceINR : 29;
@@ -266,7 +266,7 @@ export const CheckoutPage: React.FC = () => {
 
     try {
       if (!pricingLoaded || !passAvailable) throw new Error('Checkout is not currently available.');
-      if (import.meta.env.PROD && !firebaseUser) throw new Error('Please sign in with Google before checkout.');
+      if (!signedIn) {navigate(checkoutLoginUrl(checkoutUrl), {replace: true}); return;}
       // 2. Obtain verified session token
       const token = firebaseUser
         ? await firebaseUser.getIdToken()
@@ -479,6 +479,10 @@ export const CheckoutPage: React.FC = () => {
     });
   };
 
+  if (authLoading || !signedIn) {
+    return <SharedLayout><p role="status" className="py-12 text-center text-slate-600">{authLoading ? 'Checking your sign-in…' : 'Please log in to continue to checkout…'}</p></SharedLayout>;
+  }
+
   return (
     <SharedLayout>
       <SeoHead
@@ -487,6 +491,8 @@ export const CheckoutPage: React.FC = () => {
         noindex={true}
       />
       <div className="max-w-4xl mx-auto space-y-8">
+        {pricing.error && <div role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{pricing.error} <button type="button" onClick={pricing.retry} className="ml-2 font-semibold underline">Retry pricing</button></div>}
+        {pricingLoaded && !passAvailable && <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Payments are temporarily unavailable. Your selected plan is shown below; please try again later.</p>}
         
         {/* Title & Security Header */}
         <div>
@@ -652,6 +658,7 @@ export const CheckoutPage: React.FC = () => {
                   onChange={(e) => setStudentClass(e.target.value as any)}
                   className="w-full bg-[#F8FAFC] border border-[#CBD5E1] rounded-md px-3 py-2 text-xs sm:text-sm text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#00687A]"
                 >
+                  <option value="All">All Grades</option>
                   <option value="Class 5">Class 5</option>
                   <option value="Class 6">Class 6</option>
                   <option value="Class 7">Class 7</option>

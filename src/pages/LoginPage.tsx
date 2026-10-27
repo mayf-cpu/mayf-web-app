@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import {safeCheckoutReturn, hasCheckoutSession, loginContinuation} from '../lib/auth/checkoutReturn';
+import React, { useState, useEffect } from 'react';
 import { Lock, Mail, Smartphone, ArrowRight, ShieldCheck, CheckCircle2, BookOpen } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
 import { SeoHead } from '../components/common/SeoHead';
@@ -9,8 +10,10 @@ import { trackLogin } from '../lib/analytics/analyticsService';
 
 export const LoginPage: React.FC = () => {
   const alternativesUnavailable = import.meta.env.PROD;
-  const { user, entitlements, signInWithGoogle, loginWithEmail, logout } = useAuth();
-  const { navigate } = useNavigation();
+  const { user, firebaseUser, loading: authLoading, entitlements, signInWithGoogle, loginWithEmail, logout } = useAuth();
+  const { navigate, currentRoute } = useNavigation();
+  const returnTo = safeCheckoutReturn(currentRoute.searchParams.get('returnTo'));
+  const signedIn = hasCheckoutSession(firebaseUser, user, import.meta.env.PROD);
 
   const [activeTab, setActiveTab] = useState<'student' | 'parent'>('student');
   const [method, setMethod] = useState<'google' | 'otp' | 'email'>('google');
@@ -21,8 +24,18 @@ export const LoginPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
+  const [completedLoginFallback, setCompletedLoginFallback] = useState<string | null>(null);
+  useEffect(() => {
+    const destination = loginContinuation(authLoading, signedIn, returnTo, completedLoginFallback);
+    if (destination) navigate(destination, {replace: true});
+  }, [authLoading, signedIn, returnTo, completedLoginFallback, navigate]);
+
+  if (returnTo && (authLoading || signedIn)) {
+    return <SharedLayout><p role="status" className="py-12 text-center text-slate-600">{authLoading ? 'Checking your sign-in…' : 'Continuing to checkout…'}</p></SharedLayout>;
+  }
+
   // If already logged in, show quick dashboard access
-  if (user) {
+  if (signedIn && user) {
     return (
       <SharedLayout>
       {loginError && <p role="alert" className="p-3 text-sm text-rose-700 bg-rose-50 rounded-lg">{loginError}</p>}
@@ -74,7 +87,7 @@ export const LoginPage: React.FC = () => {
     try {
       await signInWithGoogle();
       trackLogin('google');
-      navigate('/dashboard');
+      setCompletedLoginFallback('/dashboard');
     } catch (error: any) {
       setLoginError(error?.message || 'Sign-in failed. Please try again.');
     } finally {
@@ -103,7 +116,7 @@ export const LoginPage: React.FC = () => {
     try {
       await loginWithEmail(phoneNumber.includes('@') ? phoneNumber : `student.${phoneNumber.slice(-4)}@mayf.co.in`);
       trackLogin('phone');
-      navigate('/dashboard');
+      setCompletedLoginFallback('/dashboard');
     } catch (error: any) {
       setLoginError(error?.message || 'Sign-in failed. Please try again.');
     } finally {
@@ -121,9 +134,9 @@ export const LoginPage: React.FC = () => {
       trackLogin('email');
       const cleanEmail = email.trim().toLowerCase();
       if (['ntnagrawal146@gmail.com', '2026vivekkushwah@gmail.com', 'admin@mayf.co.in'].includes(cleanEmail)) {
-        navigate('/mgmt-sec-k92a');
+        setCompletedLoginFallback('/mgmt-sec-k92a');
       } else {
-        navigate('/dashboard');
+        setCompletedLoginFallback('/dashboard');
       }
     } catch (error: any) {
       setLoginError(error?.message || 'Sign-in failed. Please try again.');
@@ -141,6 +154,7 @@ export const LoginPage: React.FC = () => {
         noindex={true}
       />
       <div className="max-w-md mx-auto my-6 sm:my-10 space-y-4">
+        {returnTo && <p role="status" className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">Please log in to continue to checkout. You’ll return to your selected plan after sign-in.</p>}
         
         {/* IMPORTANT LOGIN RULE BANNER */}
         <div className="bg-[#EFF6FF] border border-[#BFDBFE] rounded-lg p-3.5 text-xs text-[#1E3A8A] flex items-start gap-2.5">
@@ -363,7 +377,7 @@ export const LoginPage: React.FC = () => {
               disabled={alternativesUnavailable}
               onClick={() => {
                 loginWithEmail('arjun.sharma@mayf.co.in');
-                navigate('/dashboard');
+                setCompletedLoginFallback('/dashboard');
               }}
               className="text-xs text-[#1D4ED8] hover:underline font-semibold cursor-pointer"
             >

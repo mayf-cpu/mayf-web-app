@@ -54,3 +54,4 @@ jobs:
         run: |
           node scripts/math-editor-browser-smoke.mjs
           node scripts/formula-deck-browser-smoke.mjs
+          node scripts/enrollment-browser-smoke.mjs

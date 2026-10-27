@@ -1,5 +1,8 @@
+import {usePublicAnnualPassConfig} from '../lib/payments/usePublicAnnualPassConfig';
+import {ANNUAL_PASS_CHECKOUT, checkoutLoginUrl, hasCheckoutSession} from '../lib/auth/checkoutReturn';
+import {useAuth} from '../context/AuthContext';
 import { passDisplayCopy } from '../lib/settings/launchDisplay';
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Check, Sparkles, ShieldCheck, HelpCircle, ArrowRight, Star, Calendar } from 'lucide-react';
 import { SharedLayout } from '../components/layout/SharedLayout';
 import { Button } from '../components/ui/Button';
@@ -11,7 +14,9 @@ import { PromotionalBanner } from '../components/ui/PromotionalBanner';
 import { AnnualPassSettings } from '../lib/payments/types';
 
 export const AnnualPassPage: React.FC = () => {
-  const [config, setConfig] = useState<AnnualPassSettings>({
+  const {user, firebaseUser, loading: authLoading} = useAuth();
+  const pricing = usePublicAnnualPassConfig();
+  const config: AnnualPassSettings = pricing.data?.settings || {
     enabled: true,
     name: 'All-Class Annual Pass',
     regularPrice: 1999,
@@ -30,25 +35,14 @@ export const AnnualPassPage: React.FC = () => {
     eligibleContent: ['Class 5–10 Math', 'Formula Deck', 'AI Teacher', 'Mock Tests'],
     promotionalStartDate: '2026-04-01',
     promotionalEndDate: '2027-03-31',
-  });
+  };
 
-  const [configLoaded, setConfigLoaded] = useState(false);
-  const [configError, setConfigError] = useState('');
-  const [displayPrice, setDisplayPrice] = useState(0);
-  const [checkoutEnabled, setCheckoutEnabled] = useState(false);
-
-  useEffect(() => {
-    async function loadConfig() {
-      try {
-        const res = await fetch('/api/annual-pass/config');
-        const data = await res.json();
-        if (!res.ok || !data.success || !Number.isFinite(data.effectivePriceINR)) throw new Error('Membership pricing is unavailable. Please retry later.');
-        setConfig(data.settings); setDisplayPrice(data.effectivePriceINR); setCheckoutEnabled(data.checkoutEnabled === true); setConfigLoaded(true);
-      } catch (error: any) { setConfigError(error.message || 'Membership pricing could not be loaded.'); }
-    }
-
-    loadConfig();
-  }, []);
+  const configLoaded = Boolean(pricing.data);
+  const configError = pricing.error;
+  const displayPrice = pricing.data?.effectivePriceINR || 0;
+  const checkoutEnabled = pricing.data?.checkoutEnabled === true;
+  const signedIn = hasCheckoutSession(firebaseUser, user, import.meta.env.PROD);
+  const enrollUrl = authLoading || signedIn ? ANNUAL_PASS_CHECKOUT : checkoutLoginUrl(ANNUAL_PASS_CHECKOUT);
 
   const isPromoActive = configLoaded && displayPrice < config.regularPrice;
 
@@ -66,7 +60,7 @@ export const AnnualPassPage: React.FC = () => {
       a: 'If you or your child are not completely delighted with Maths at Your Fingertips within 7 days of purchase, email support@mayf.co.in or request a refund from your dashboard for a 100% full refund.',
     },
     {
-      q: 'How does Professor Sigma (AI Teacher) help with homework?',
+      q: 'How does the AI Teacher help with homework?',
       a: 'Rather than just dumping the final numeric answer, our AI Teacher leads students through the underlying theorem, provides incremental step hints, and ensures the student genuinely grasps the concept.',
     },
   ];
@@ -77,7 +71,7 @@ export const AnnualPassPage: React.FC = () => {
 
   return (
     <SharedLayout>
-      {configError && <p role="alert" className="p-3 rounded bg-red-50 text-red-700">{configError}</p>}
+      {configError && <div role="alert" className="p-3 rounded bg-red-50 text-red-700 text-sm">{configError} <button type="button" onClick={pricing.retry} className="ml-2 font-semibold underline">Retry pricing</button></div>}
       <SeoHead
         title={pageTitle}
         description={pageDesc}
@@ -91,13 +85,13 @@ export const AnnualPassPage: React.FC = () => {
           '@type': 'Product',
           name: 'MAYF All-Class Annual Pass',
           description: pageDesc,
-          offers: {
+          offers: configLoaded ? {
             '@type': 'Offer',
             price: String(displayPrice),
             priceCurrency: config.currency,
             availability: configLoaded && config.enabled && checkoutEnabled ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
             url: 'https://mayf.co.in/annual-pass',
-          },
+          } : undefined,
         }}
       />
 
@@ -205,7 +199,7 @@ export const AnnualPassPage: React.FC = () => {
                 <span className="text-xs text-[#64748B]">/ {config.durationDays} days</span>
               </div>
               <p className="text-xs text-[#059669] font-semibold mb-6">
-                {configLoaded ? `About ₹${(displayPrice / config.durationDays).toFixed(2)} per day over the pass duration.` : 'Loading membership pricing…'}
+                {configLoaded ? `About ₹${(displayPrice / config.durationDays).toFixed(2)} per day over the pass duration.` : pricing.loading ? 'Loading membership pricing…' : 'Price unavailable. Please retry.'}
               </p>
 
               <div className="space-y-3 text-xs sm:text-sm text-[#0F172A] border-t border-[#F1F5F9] pt-6 font-medium">
@@ -220,18 +214,12 @@ export const AnnualPassPage: React.FC = () => {
 
             <p className="text-xs text-[#64748B]">AI requests have daily limits. Check available resources before purchasing; new content availability may change.</p>
             <div className="pt-8">
-              {configLoaded && config.enabled && checkoutEnabled ? (
-                <Link href="/checkout?plan=annual-pass">
-                  <Button variant="accent" fullWidth size="lg" className="font-bold text-base shadow-md">
-                    <span>Get Annual Pass for ₹{configLoaded ? displayPrice : '—'}</span>
-                    <ArrowRight className="w-4 h-4 ml-1.5" />
-                  </Button>
-                </Link>
-              ) : (
-                <Button variant="outline" fullWidth size="lg" disabled className="font-bold text-base">
-                  Enrollment Currently Closed
+              <Link href={enrollUrl} aria-label={configLoaded ? `Enroll in Annual Pass for ₹${displayPrice}` : 'Enroll in Annual Pass'}>
+                <Button variant="accent" fullWidth size="lg" className="font-bold text-base shadow-md">
+                  <span>{configLoaded ? `Enroll for ₹${displayPrice}` : 'Enroll in Annual Pass'}</span>
+                  <ArrowRight className="w-4 h-4 ml-1.5" />
                 </Button>
-              )}
+              </Link>
             </div>
           </div>
 
