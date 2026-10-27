@@ -19,6 +19,9 @@ try {
   });
   await page.goto('http://127.0.0.1:5124/formula-deck');
   await page.getByRole('heading', {name: 'Formula Deck', exact: true}).waitFor();
+  // Development uses a fresh demo student; dismiss that student's first-visit tour.
+  await page.getByRole('button', {name: 'Close tour', exact: true}).click();
+  await page.getByRole('dialog').waitFor({state: 'hidden'});
   const category = page.getByLabel('Formula Category', {exact: true});
   const standard = page.getByLabel('Formula Standard or Exam', {exact: true});
   const topic = page.getByLabel('Formula Topic', {exact: true});
