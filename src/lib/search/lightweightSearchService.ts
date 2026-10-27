@@ -10,7 +10,7 @@
  */
 
 import { SearchService, SearchQuery, SearchResultItem } from './searchInterface';
-import { INITIAL_FORMULAS, INITIAL_CHAPTERS } from '../../data/curriculumData';
+import { INITIAL_CHAPTERS } from '../../data/curriculumData';
 
 /**
  * Normalizes user queries and text strings into clean tokens
@@ -35,16 +35,20 @@ export class LightweightSearchService implements SearchService {
     const tokens = normalized.split(' ').filter((t) => t.length > 1);
     const maxLimit = params.limit || 15;
 
-    const response = await fetch(`/api/catalogue?${new URLSearchParams({ search: rawQuery, classLevel: params.classLevel || 'All', categoryId: params.categoryId || 'All', pageSize: String(Math.min(20, maxLimit)) })}`);
-    const catalogue = await response.json();
-    if (!response.ok) throw new Error(catalogue.error || 'Search unavailable');
-    const results: { item: SearchResultItem; score: number }[] = catalogue.items.map((item: any) => ({
+    let contentItems: any[] = [];
+    try {
+      const response = await fetch(`/api/catalogue?${new URLSearchParams({ search: rawQuery, classLevel: params.classLevel || 'All', categoryId: params.categoryId || 'All', pageSize: String(Math.min(20, maxLimit)) })}`);
+      const catalogue = await response.json();
+      if (response.ok && Array.isArray(catalogue.items)) contentItems = catalogue.items;
+    } catch { /* Formula and chapter search remain available during catalogue outages. */ }
+    const results: { item: SearchResultItem; score: number }[] = contentItems.map((item: any) => ({
       score: 15, item: { id: item.id, title: item.title, slug: item.slug, type: 'chapter', snippet: item.shortDescription || '', classLevel: item.classLevels?.[0], category: item.categoryId, accessType: item.accessType, url: `/study/${item.slug}` },
     }));
 
-    // Search formulas
-    for (const f of INITIAL_FORMULAS) {
-      if (params.classLevel && !f.applicableClasses.includes(params.classLevel)) {
+    // Load the full formula collection only when a search is requested.
+    const {FORMULA_DECK_ITEMS} = await import('../../data/formulaDeckData');
+    for (const f of FORMULA_DECK_ITEMS) {
+      if (params.classLevel && params.classLevel !== 'All' && !f.applicableClasses.includes(params.classLevel)) {
         continue;
       }
       if (params.categoryId && f.category !== params.categoryId) {
@@ -138,10 +142,14 @@ export class LightweightSearchService implements SearchService {
     const clean = prefix.toLowerCase().trim();
     if (clean.length < 2) return [];
 
-    const response = await fetch(`/api/catalogue?search=${encodeURIComponent(clean)}&pageSize=20`);
-    const data = await response.json();
-    if (!response.ok) return [];
-    const items = data.items || [];
+    let items: any[] = [];
+    try {
+      const response = await fetch(`/api/catalogue?search=${encodeURIComponent(clean)}&pageSize=20`);
+      const data = await response.json();
+      if (response.ok && Array.isArray(data.items)) items = data.items;
+    } catch { /* Formula suggestions can still be supplied from the local reference library. */ }
+    const {FORMULA_DECK_ITEMS} = await import('../../data/formulaDeckData');
+    items = [...items, ...FORMULA_DECK_ITEMS];
     const suggestions = new Set<string>();
 
     for (const item of items) {

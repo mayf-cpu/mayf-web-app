@@ -9,9 +9,9 @@ export const FormulaSeo: React.FC<FormulaSeoProps> = ({ formula }) => {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const baseTitle = `${formula.title} – Formula, Variables & Examples | MAYF`;
+    const baseTitle = `${formula.title} – Formula & Usage Notes | MAYF`;
     const seoTitle = formula.seo?.title || baseTitle;
-    const baseDescription = `Master ${formula.title} (${formula.plainTextFormula}). Detailed variable meanings, geometric diagrams, solved NCERT exemplars for ${formula.applicableClasses.join(', ')}.`;
+    const baseDescription = `Master ${formula.title} (${formula.plainTextFormula}). Equation and usage notes for ${formula.applicableClasses.join(', ')}.`;
     const seoDesc = formula.seo?.description || baseDescription;
     const currentUrl = window.location.origin + window.location.pathname;
 
