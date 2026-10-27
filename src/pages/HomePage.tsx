@@ -173,9 +173,9 @@ export const HomePage: React.FC = () => {
           </div>
         )}
 
-        <div className="max-w-3xl">
+        <div className="relative w-full text-center">
           {/* Academic Kicker */}
-          <div className="flex items-center gap-2 text-xs font-heading font-semibold text-[#00687A] mb-3">
+          <div className="flex items-center justify-center gap-2 text-xs font-heading font-semibold text-[#00687A] mb-3">
             <span className="uppercase tracking-wider">
               {config.kickerText || 'CBSE & ICSE Board Aligned · Classes 5 to 10'}
             </span>
@@ -187,21 +187,21 @@ export const HomePage: React.FC = () => {
           </h1>
 
           {/* Subheadline */}
-          <p className="text-base sm:text-lg text-[#475569] leading-relaxed mb-8 max-w-2xl">
+          <p className="text-base sm:text-lg text-[#475569] leading-relaxed mb-8 w-full">
             {config.subheadline ||
               'From foundational fraction arithmetic to Class 10 board exam derivations. Explore interactive formula flashcards, step-by-step problem breakdowns, and 24/7 AI Teacher doubt clearance.'}
           </p>
 
           {/* Actions */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-            <Link href={config.primaryButtonLink || '/study-material'}>
+          <div className="flex flex-col sm:flex-row sm:flex-wrap items-center justify-center gap-3">
+            <Link className="w-full sm:w-auto" href={config.primaryButtonLink || '/study-material'}>
               <Button size="lg" variant="primary" className="w-full sm:w-auto font-bold shadow-md">
                 <span>{config.primaryButtonText || 'Explore Class 5–10 Syllabus'}</span>
                 <ArrowRight className="w-4 h-4 ml-1.5" />
               </Button>
             </Link>
 
-            <Link href={config.secondaryButtonLink || '/ai-teacher'}>
+            <Link className="w-full sm:w-auto" href={config.secondaryButtonLink || '/ai-teacher'}>
               <Button size="lg" variant="secondary" className="w-full sm:w-auto font-semibold">
                 <Bot className="w-4 h-4 mr-1 text-[#06B6D4]" />
                 <span>{config.secondaryButtonText || 'Ask AI Teacher a Doubt'}</span>
@@ -218,7 +218,7 @@ export const HomePage: React.FC = () => {
           </div>
 
           {/* Adjacent Proof Point */}
-          <div className="mt-8 pt-6 border-t border-[#E2E8F0] flex flex-wrap items-center gap-6 text-xs text-[#64748B]">
+          <div className="mt-8 pt-6 border-t border-[#E2E8F0] flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-xs text-[#64748B]">
             <div className="flex items-center gap-1.5 font-medium">
               <CheckCircle2 className="w-4 h-4 text-[#10B981]" />
               <span>School Mathematics Revision</span>
