@@ -37,13 +37,13 @@ try {
   await page.waitForFunction(first => document.querySelector('[data-testid="formula-grid"] h3').textContent !== first, firstTitle);
   await standard.selectOption('Class 12');
   await category.selectOption('Integration');
-  await page.getByLabel('Search formulas', {exact: true}).fill('power antiderivative');
-  await page.getByRole('heading', {name: 'Power antiderivative', exact: true}).waitFor();
+  await page.getByLabel('Search formulas', {exact: true}).fill('leading arctangent');
+  await page.getByRole('heading', {name: 'Integral leading to arctangent', exact: true}).waitFor();
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="formula-grid"] h3').length === 1);
   assert.ok(await page.locator('[data-testid="formula-grid"] .katex').count());
-  await page.getByRole('link', {name: 'Power antiderivative', exact: true}).click();
-  await page.waitForURL('**/formula/reference-power-antiderivative');
-  await page.getByRole('heading', {name: 'Power antiderivative', exact: true}).waitFor();
+  await page.getByRole('link', {name: 'Integral leading to arctangent', exact: true}).click();
+  await page.waitForURL('**/formula/reference-integral-leading-to-arctangent');
+  await page.getByRole('heading', {name: 'Integral leading to arctangent', exact: true}).waitFor();
   assert.deepEqual(errors, []);
   console.log('PASS: full Formula Deck route, dropdowns, viewport fit, pagination, grade/category/search filters, LaTeX and detail URL');
 } finally {
