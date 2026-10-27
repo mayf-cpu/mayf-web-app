@@ -40,7 +40,7 @@ try {
   assert.equal(sdkRequests.length,0,'no SDK request before login');
   await page.getByRole('button',{name:'Email',exact:true}).click();
   await page.getByPlaceholder('student@example.com').fill('enrollment-preview@example.com');
-  await page.getByRole('button',{name:'Log In',exact:true}).click();
+  await page.getByRole('main').getByRole('button',{name:'Log In',exact:true}).click();
   await page.waitForURL('**/checkout?plan=annual-pass');
   await page.getByRole('heading',{name:'Activate Your Annual Pass',exact:true}).waitFor();
   await page.getByRole('button',{name:'Close tour',exact:true}).click();
