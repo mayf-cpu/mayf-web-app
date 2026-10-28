@@ -8,6 +8,16 @@ export type RegistryVisibility = 'Visible' | 'Hidden';
 export type ImportJobStatus = 'pending' | 'approved' | 'importing' | 'imported' | 'failed';
 
 export interface ContentRegistryRow {
+  approval_status?: 'Pending' | 'Approved' | 'Rejected';
+  rejection_notes?: string;
+  generation_prompt?: string;
+  download_permission_confirmed?: boolean;
+  drive_file_ids?: string;
+  modules_json?: string;
+  equations_json?: string;
+  total_marks?: number;
+  duration_minutes?: number;
+  questions_count?: number;
   // 30 Core Columns
   content_id: string;
   title: string;
